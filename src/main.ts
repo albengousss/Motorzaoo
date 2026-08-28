@@ -115,6 +115,7 @@ function drawFrame() {
             'gcd', 'lcm', 'extendedgcd',
             'div', 'mod', 'division', 'modularexponent', 'mixednumber', 'rationalize',
             'binomialdist', 'pascal', 'hypergeometric', 'poisson', 'zipf', 'normal', 'cauchy', 'exponential', 'weibull', 'gamma', 'chisquared', 'tdistribution',
+            'determinant', 'applymatrix',
             'samplesd', 'covariance', 'variance', 'samplevariance',
             'mean', 'median', 'unique', 'frequency',
             'fitpoly', 'fitpow', 'fitexp', 'fitsin', 'fitlog', 'normalize',
@@ -281,39 +282,59 @@ function drawFrame() {
                     }
 
                     // Mapeia comandos GeoGebra para Giac nativo!
-                    let giacCommand = currentQuery;
-                    if (cmdName === 'derivative' || cmdName === 'nderivative') giacCommand = `diff(${cmdArgs})`;
+                    // Converte sintaxe de matriz GeoGebra {{1,2},{3,4}} para sintaxe Giac [[1,2],[3,4]]
+                    const giacArgs = cmdArgs.replace(/\{/g, '[').replace(/\}/g, ']');
+
+                    let giacCommand = `${cmdName}(${giacArgs})`;
+                    
+                    if (cmdName === 'derivative' || cmdName === 'nderivative') giacCommand = `diff(${giacArgs})`;
                     else if (cmdName === 'implicitderivative') {
-                        // ImplicitDerivative(x^2 + y^2, y, x) -> diff(expr, x)/diff(expr, y)*(-1)
-                        const args = cmdArgs.split(',').map(s => s.trim());
-                        if (args.length === 1) {
-                            giacCommand = `-(diff(${args[0]}, x))/(diff(${args[0]}, y))`;
-                        } else if (args.length === 3) {
-                            giacCommand = `-(diff(${args[0]}, ${args[2]}))/(diff(${args[0]}, ${args[1]}))`;
-                        }
+                        const args = giacArgs.split(',').map(s => s.trim());
+                        if (args.length === 1) giacCommand = `-(diff(${args[0]}, x))/(diff(${args[0]}, y))`;
+                        else if (args.length === 3) giacCommand = `-(diff(${args[0]}, ${args[2]}))/(diff(${args[0]}, ${args[1]}))`;
                     }
-                    else if (cmdName === 'integral' || cmdName === 'integralsymbolic' || cmdName === 'nintegral') giacCommand = `integrate(${cmdArgs})`;
+                    else if (cmdName === 'integral' || cmdName === 'integralsymbolic' || cmdName === 'nintegral') giacCommand = `integrate(${giacArgs})`;
                     else if (cmdName === 'integralbetween') {
-                        // IntegralBetween(f, g, a, b)
-                        const args = cmdArgs.split(',').map(s => s.trim());
+                        const args = giacArgs.split(',').map(s => s.trim());
                         if (args.length === 4) giacCommand = `integrate(${args[0]} - (${args[1]}), x, ${args[2]}, ${args[3]})`;
                         else if (args.length === 5) giacCommand = `integrate(${args[0]} - (${args[1]}), ${args[2]}, ${args[3]}, ${args[4]})`;
                     }
-                    else if (cmdName === 'limitabove') giacCommand = `limit(${cmdArgs}, 1)`;
-                    else if (cmdName === 'limitbelow') giacCommand = `limit(${cmdArgs}, -1)`;
-                    else if (cmdName === 'completesquare') giacCommand = `canonical_form(${cmdArgs})`;
-                    else if (cmdName === 'nsolve' || cmdName === 'nsolutions') giacCommand = `fsolve(${cmdArgs})`;
-                    else if (cmdName === 'solutions') giacCommand = `solve(${cmdArgs})`;
-                    else if (cmdName === 'cross') giacCommand = `cross_point(${cmdArgs})`; 
-                    else if (cmdName === 'dot') giacCommand = `dot_product(${cmdArgs})`;
-                    else if (cmdName === 'primefactors') giacCommand = `ifactors(${cmdArgs})`;
-                    else if (cmdName === 'matrixrank') giacCommand = `rank(${cmdArgs})`;
-                    else if (cmdName === 'reducedrowechelonform') giacCommand = `rref(${cmdArgs})`;
-                    else if (cmdName === 'nsolveode') {
-                        // NSolveODE is complicated (needs lists of variables).
-                        // Fallback to desolve for now
-                        giacCommand = `desolve(${cmdArgs})`;
+                    else if (cmdName === 'limitabove') giacCommand = `limit(${giacArgs}, 1)`;
+                    else if (cmdName === 'limitbelow') giacCommand = `limit(${giacArgs}, -1)`;
+                    else if (cmdName === 'completesquare') giacCommand = `canonical_form(${giacArgs})`;
+                    else if (cmdName === 'nsolve' || cmdName === 'nsolutions') giacCommand = `fsolve(${giacArgs})`;
+                    else if (cmdName === 'solutions') giacCommand = `solve(${giacArgs})`;
+                    else if (cmdName === 'cross') giacCommand = `cross_point(${giacArgs})`; 
+                    else if (cmdName === 'dot') giacCommand = `dot_product(${giacArgs})`;
+                    else if (cmdName === 'primefactors') giacCommand = `ifactors(${giacArgs})`;
+                    else if (cmdName === 'matrixrank') giacCommand = `rank(${giacArgs})`;
+                    else if (cmdName === 'reducedrowechelonform') giacCommand = `rref(${giacArgs})`;
+                    else if (cmdName === 'determinant') giacCommand = `det(${giacArgs})`;
+                    else if (cmdName === 'eigenvalues') giacCommand = `eigenvals(${giacArgs})`;
+                    else if (cmdName === 'eigenvectors') giacCommand = `eigenvects(${giacArgs})`;
+                    else if (cmdName === 'invert') giacCommand = `inv(${giacArgs})`;
+                    else if (cmdName === 'ludecomposition') giacCommand = `lu(${giacArgs})`;
+                    else if (cmdName === 'lcm') giacCommand = `lcm(${giacArgs})`;
+                    else if (cmdName === 'jordandiagonalization') giacCommand = `jordan(${giacArgs})`;
+                    else if (cmdName === 'characteristicpolynomial') giacCommand = `charpoly(${giacArgs})`;
+                    else if (cmdName === 'minimalpolynomial') giacCommand = `pmin(${giacArgs})`;
+                    else if (cmdName === 'dimension') giacCommand = `dim(${giacArgs})`;
+                    else if (cmdName === 'length') giacCommand = `abs(${giacArgs})`;
+                    else if (cmdName === 'transpose') giacCommand = `tran(${giacArgs})`;
+                    else if (cmdName === 'unitvector') giacCommand = `normalize(${giacArgs})`;
+                    else if (cmdName === 'svd') giacCommand = `svd(${giacArgs})`;
+                    else if (cmdName === 'qrdecomposition') giacCommand = `qr(${giacArgs})`;
+                    else if (cmdName === 'laplace') {
+                        const args = giacArgs.split(',').map(s => s.trim());
+                        if (args.length === 1) giacCommand = `laplace(${args[0]}, t, s)`;
+                        else if (args.length === 2) giacCommand = `laplace(${args[0]}, ${args[1]}, s)`;
+                        else giacCommand = `laplace(${giacArgs})`;
                     }
+                    else if (cmdName === 'applymatrix') {
+                        const args = giacArgs.split(',').map(s => s.trim());
+                        if (args.length >= 2) giacCommand = `${args[0]} * ${args[1]}`;
+                    }
+                    else if (cmdName === 'nsolveode') giacCommand = `desolve(${giacArgs})`;
                     
                     MathEngine.askGiac(giacCommand).then(res => {
                         StateManager.pendingCas[item.id] = false;
