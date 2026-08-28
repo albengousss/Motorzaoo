@@ -67,6 +67,14 @@ function drawFrame() {
             .replace(/⋅/g, '*')
             .replace(/×/g, '*');
 
+        // Indexação de matrizes e listas (MathLive subscript para Giac 0-indexed)
+        cleanStr = cleanStr.replace(/([a-zA-Z_][a-zA-Z0-9_]*)_\(([0-9]+),([0-9]+)\)/g, (_match, p1, p2, p3) => {
+            return `${p1}[${parseInt(p2)-1},${parseInt(p3)-1}]`;
+        });
+        cleanStr = cleanStr.replace(/([a-zA-Z_][a-zA-Z0-9_]*)_([0-9]+)/g, (_match, p1, p2) => {
+            return `${p1}[${parseInt(p2)-1}]`;
+        });
+        
         // Normalização de plicas (derivadas)
         cleanStr = cleanStr
             .replace(/\^\s*\{\s*\\prime\s*\}/g, "'")
