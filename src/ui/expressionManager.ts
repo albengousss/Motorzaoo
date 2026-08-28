@@ -140,43 +140,84 @@ export class ExpressionManager {
 
         const block = document.createElement('div');
         block.id = blockId;
-        block.style.cssText = 'display: flex; background: #fff; border-bottom: 1px solid #ccc; transition: background 0.2s, box-shadow 0.2s;';
+        block.style.cssText = 'display: flex; background: #fff; border-bottom: 1px solid #f0f0f0; transition: background 0.2s;';
 
         // --- ZONA DE CAPTURA E VISIBILIDADE ---
         const grabZone = document.createElement('div');
-        grabZone.style.cssText = 'width: 44px; background: #f7f7f7; border-right: 1px solid #e0e0e0; display: flex; flex-direction: column; align-items: center; justify-content: center; flex-shrink: 0; user-select: none; color: #777; gap: 4px;';
+        grabZone.style.cssText = 'width: 48px; background: #ffffff; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding-top: 14px; flex-shrink: 0; user-select: none; color: #5f6368; gap: 6px;';
         
-        const numberSpan = document.createElement('span');
-        numberSpan.className = 'block-number';
-        numberSpan.style.cssText = 'cursor: grab; font-size: 13px; font-weight: bold; width: 100%; text-align: center; padding: 4px 0;';
-        
-        const visibilityBtn = document.createElement('div');
-        visibilityBtn.className = 'visibility-toggle';
-        visibilityBtn.dataset.visible = 'true';
-        visibilityBtn.innerHTML = '●'; // Círculo cheio
-        visibilityBtn.title = 'Mostrar / Esconder';
-        visibilityBtn.style.cssText = 'cursor: pointer; font-size: 16px; opacity: 1; color: #1e88e5; user-select: none; transition: 0.2s; margin-top: -6px;';
-        
-        visibilityBtn.onclick = () => {
-            const isVisible = visibilityBtn.dataset.visible === 'true';
-            visibilityBtn.dataset.visible = isVisible ? 'false' : 'true';
-            visibilityBtn.innerHTML = isVisible ? '○' : '●'; // Círculo vazio/cheio
-            visibilityBtn.style.color = isVisible ? '#ccc' : '#1e88e5';
-            this.onUpdateCallback();
-        };
-        
-        grabZone.appendChild(numberSpan);
-        grabZone.appendChild(visibilityBtn);
+                  const colorIndex = this.blockCounter % 5;
+          const colors = ['#c74440', '#2d70b3', '#388c46', '#6042a6', '#fa7e19'];
+          const blockColor = colors[colorIndex];
+
+          const visibilityBtn = document.createElement('div');
+          visibilityBtn.className = 'visibility-toggle';
+          visibilityBtn.dataset.visible = 'true';
+          visibilityBtn.title = 'Mostrar / Esconder';
+          // Desmos-style circle
+          visibilityBtn.style.cssText = `width: 28px; height: 28px; border-radius: 50%; border: 2px solid ${blockColor}; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; background: ${blockColor}20;`;
+          
+          const numberSpan = document.createElement('span');
+          numberSpan.className = 'block-number';
+          numberSpan.style.cssText = `font-size: 14px; font-weight: bold; color: ${blockColor}; cursor: grab;`;
+          numberSpan.innerText = this.blockCounter.toString();
+          
+          visibilityBtn.appendChild(numberSpan);
+          
+          visibilityBtn.onclick = () => {
+              const isVisible = visibilityBtn.dataset.visible === 'true';
+              visibilityBtn.dataset.visible = isVisible ? 'false' : 'true';
+              visibilityBtn.style.background = isVisible ? 'transparent' : `${blockColor}20`;
+              visibilityBtn.style.borderStyle = isVisible ? 'dashed' : 'solid';
+              numberSpan.style.opacity = isVisible ? '0.3' : '1';
+              this.onUpdateCallback();
+          };
+          
+          grabZone.appendChild(visibilityBtn);
 
         // --- ÁREA DE CONTEÚDO (Matemática + Slider) ---
         const contentZone = document.createElement('div');
         contentZone.style.cssText = 'display: flex; flex-direction: column; flex-grow: 1; overflow: hidden;';
 
         const topRow = document.createElement('div');
-        topRow.style.cssText = 'display: flex; align-items: center; padding: 8px; gap: 8px; overflow: hidden;';
+        topRow.style.cssText = 'display: flex; align-items: center; padding: 12px 8px; gap: 8px; overflow: hidden; min-height: 56px;';
         
         const mf = document.createElement('math-field');
-                const mathField = mf as any;
+        
+        mf.style.cssText = 'flex-grow: 1; border: none; outline: none; font-size: 18px; background: transparent;';
+        
+        const resultSpan = document.createElement('div');
+        resultSpan.className = 'result-display';
+        resultSpan.style.cssText = 'color: #555; font-size: 14px; font-weight: bold; font-family: math; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 50%; flex-shrink: 1; text-align: right; margin-right: 5px; cursor: help; user-select: text;';
+
+        const delBtn = document.createElement('button');
+        delBtn.innerHTML = '&#10005;'; // Elegant 'x'
+        delBtn.style.cssText = 'background: none; border: none; color: #999; cursor: pointer; font-size: 16px; padding: 8px 12px; flex-shrink: 0; margin-left: auto; transition: color 0.2s, opacity 0.2s; opacity: 0.4; outline: none;';
+        delBtn.onmouseover = () => { delBtn.style.opacity = '1'; delBtn.style.color = '#333'; };
+        delBtn.onmouseout = () => { delBtn.style.opacity = '0.4'; delBtn.style.color = '#999'; };
+        
+        topRow.appendChild(mf);
+        topRow.appendChild(resultSpan);
+        topRow.appendChild(delBtn);
+        contentZone.appendChild(topRow);
+
+        // --- LINHA DO SLIDER ---
+        const sliderRow = document.createElement('div');
+        sliderRow.className = 'slider-row';
+        sliderRow.style.cssText = 'display: none; gap: 8px; align-items: center; padding: 8px 12px; background: #fafafa; border-top: 1px dashed #eee;';
+        
+        sliderRow.innerHTML = `
+            <input type="text" class="min-val" value="-10" style="width: 45px; padding: 2px; text-align: center; border: 1px solid #ccc; border-radius: 3px; font-size: 12px;">
+            <input type="range" class="slider-input" min="-10" max="10" step="0.1" value="1" style="flex-grow: 1; cursor: pointer;">
+            <input type="text" class="max-val" value="10" style="width: 45px; padding: 2px; text-align: center; border: 1px solid #ccc; border-radius: 3px; font-size: 12px;">
+        `;
+        contentZone.appendChild(sliderRow);
+        
+        block.appendChild(grabZone);
+        block.appendChild(contentZone);
+        this.container.appendChild(block);
+
+        const mathField = mf as any;
         mathField.smartMode = false;
         mathField.smartFence = false;
         mathField.mathVirtualKeyboardPolicy = 'manual';
@@ -202,36 +243,6 @@ export class ExpressionManager {
         mathField.style.setProperty('--placeholder-color', 'transparent');
         mathField.style.setProperty('--placeholder-opacity', '0');
         mathField.style.setProperty('--selection-background-color', 'rgba(180, 200, 255, 0.4)');
-        mf.style.cssText = 'flex-grow: 1; border: none; outline: none; font-size: 18px; background: transparent;';
-        
-        const resultSpan = document.createElement('div');
-        resultSpan.className = 'result-display';
-        resultSpan.style.cssText = 'color: #555; font-size: 14px; font-weight: bold; font-family: math; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 50%; flex-shrink: 1; text-align: right; margin-right: 5px; cursor: help; user-select: text;';
-
-        const delBtn = document.createElement('button');
-        delBtn.innerHTML = '×';
-        delBtn.style.cssText = 'background: none; border: none; color: #ff4444; cursor: pointer; font-size: 18px; padding: 0 4px; flex-shrink: 0; margin-left: auto;';
-        
-        topRow.appendChild(mf);
-        topRow.appendChild(resultSpan);
-        topRow.appendChild(delBtn);
-        contentZone.appendChild(topRow);
-
-        // --- LINHA DO SLIDER ---
-        const sliderRow = document.createElement('div');
-        sliderRow.className = 'slider-row';
-        sliderRow.style.cssText = 'display: none; gap: 8px; align-items: center; padding: 8px 12px; background: #fafafa; border-top: 1px dashed #eee;';
-        
-        sliderRow.innerHTML = `
-            <input type="text" class="min-val" value="-10" style="width: 45px; padding: 2px; text-align: center; border: 1px solid #ccc; border-radius: 3px; font-size: 12px;">
-            <input type="range" class="slider-input" min="-10" max="10" step="0.1" value="1" style="flex-grow: 1; cursor: pointer;">
-            <input type="text" class="max-val" value="10" style="width: 45px; padding: 2px; text-align: center; border: 1px solid #ccc; border-radius: 3px; font-size: 12px;">
-        `;
-        contentZone.appendChild(sliderRow);
-        
-        block.appendChild(grabZone);
-        block.appendChild(contentZone);
-        this.container.appendChild(block);
 
         const sliderInput = sliderRow.querySelector('.slider-input') as HTMLInputElement;
         const minInput = sliderRow.querySelector('.min-val') as HTMLInputElement;
