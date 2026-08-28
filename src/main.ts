@@ -377,6 +377,8 @@ function drawFrame() {
                         } else {
                             // Limpa as aspas do Giac
                             let cleanResult = res.replace(/"/g, '').replace(/list\[/g, '[').replace(/usr_/g, '');
+                            const arrowMatchClean = cleanResult.match(/^(?:\(?[a-zA-Z_]+\)?->)(.*)/);
+                            if (arrowMatchClean) cleanResult = arrowMatchClean[1];
                             
                             const lambdaMatch = cleanResult.match(/^\(\w\)->(.*)$/);
                             if (lambdaMatch) {
@@ -413,7 +415,10 @@ function drawFrame() {
                               let resAst = null;
                               if (!cleanResult.includes('Erro')) {
                                   try {
-                                      resAst = new PrattParser(cleanResult).parseExpression();
+                                      let parseableResult = cleanResult;
+                                      const arrowMatch = cleanResult.match(/^(?:\(?[a-zA-Z_]+\)?->)(.*)/);
+                                      if (arrowMatch) parseableResult = arrowMatch[1];
+                                      resAst = new PrattParser(parseableResult).parseExpression();
                                   } catch (e) {
                                       resAst = ast;
                                   }
