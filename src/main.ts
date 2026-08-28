@@ -637,23 +637,23 @@ setTimeout(() => {
                     [
                         { insert: "´", label: "´" },
                         { latex: "x" }, { latex: "y" }, { latex: "t" }, { latex: "C_0" },
-                        { insert: "Solveode(", label: "EDO" },
-                        { insert: "Integral(", latex: "\\int" }
+                        { insert: "Solveode(", label: "EDO" }
                     ],
                     [
                         { latex: "f_1" }, { latex: "f_2" }, { latex: "=" },
                         { insert: "Derivative(", latex: "\\frac{d}{dx}" },
                         { insert: "Slopefield(", label: "Campo" },
-                        { class: 'action font-glyph bottom right', label: '&#x232b;', command: ['performWithFeedback', 'deleteBackward'] }
+                        { insert: "Integral(", latex: "\\int" }
                     ],
                     [
                         { latex: "<" }, { latex: ">" }, { latex: "\\le" }, { latex: "\\ge" },
                         { insert: "IntegralBetween(", latex: "\\int_a^b" },
-                        { insert: "Limit(", latex: "\\lim" },
-                        { class: 'action font-glyph bottom right', label: '&#x23ce;', command: ['performWithFeedback', 'commit'] }
+                        { insert: "Limit(", latex: "\\lim" }
                     ],
                     [
-                        { class: 'action', label: '⬇ Fechar Teclado', command: ['toggleVirtualKeyboard'] }
+                        { class: 'action', label: '⬇ Ocultar', command: ['toggleVirtualKeyboard'] },
+                        { class: 'action font-glyph', label: '&#x232b;', command: ['performWithFeedback', 'deleteBackward'] },
+                        { class: 'action font-glyph', label: '&#x23ce;', command: ['performWithFeedback', 'commit'] }
                     ]
                 ]
             },
@@ -703,13 +703,30 @@ window.addEventListener('touchmove', (e) => {
 
 window.addEventListener('touchend', () => isDraggingSidebar = false);
 
-// Garante que o MathLive perca o foco quando o teclado virtual é escondido
+// Garante que o MathLive perca o foco quando o teclado virtual é escondido e ajusta a tela estilo Desmos
 setTimeout(() => {
     if ((window as any).mathVirtualKeyboard) {
         (window as any).mathVirtualKeyboard.addEventListener('virtual-keyboard-toggle', () => {
             const vk = (window as any).mathVirtualKeyboard;
-            if (!vk.visible) {
-                // Remove focus de qualquer math-field ativo
+            if (vk.visible) {
+                // Teclado Abriu! Empurra a lista de expressões para cima para não ser tampada
+                if (window.innerWidth <= 768) {
+                    sidebarEl.style.paddingBottom = '35vh';
+                    const currentHeight = sidebarEl.getBoundingClientRect().height;
+                    const minHeight = window.innerHeight * 0.6; // Força no mínimo 60% da tela
+                    if (currentHeight < minHeight) {
+                        sidebarEl.style.height = `${minHeight}px`;
+                        drawFrame();
+                    }
+                    setTimeout(() => {
+                        if (document.activeElement && document.activeElement.tagName.toLowerCase() === 'math-field') {
+                            document.activeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+                    }, 100);
+                }
+            } else {
+                // Teclado Fechou!
+                sidebarEl.style.paddingBottom = '0';
                 if (document.activeElement && document.activeElement.tagName.toLowerCase() === 'math-field') {
                     (document.activeElement as HTMLElement).blur();
                 }
