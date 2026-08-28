@@ -450,12 +450,13 @@ function drawFrame() {
             const rightSide = assignmentMatch[2];
             const rightSideClean = cleanStr.substring(cleanStr.indexOf('=') + 1).trim();
             
-            // É matriz ou vetor? (Começa com { ou [ )
-            const isMatrix = rightSideClean.startsWith('{') || rightSideClean.startsWith('[');
+            // É matriz ou vetor? Limpa barras invertidas que o MathLive injeta (ex: \{ )
+            const cleanMatStr = rightSideClean.replace(/\\/g, '');
+            const isMatrix = cleanMatStr.startsWith('{') || cleanMatStr.startsWith('[');
             
             if (isMatrix) {
                 // Substitui as chaves {} por colchetes [] para sintaxe Giac
-                const giacMatrix = rightSideClean.replace(/\{/g, '[').replace(/\}/g, ']');
+                const giacMatrix = cleanMatStr.replace(/\{/g, '[').replace(/\}/g, ']');
                 const giacDef = `${varName}:=${giacMatrix}`;
                 
                 if (StateManager.giacDefinitions[varName] !== giacDef) {

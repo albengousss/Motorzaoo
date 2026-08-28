@@ -29,18 +29,38 @@ export class ExpressionManager {
         'Solutions': ['Solutions( <Equação> )'],
         'NSolve': ['NSolve( <Equação> )'],
         'MatrixRank': ['MatrixRank( <Matriz> )'],
-        'Invert': ['Invert( <Matriz> )']
+        'Invert': ['Invert( <Matriz> )'],
+        'Determinant': ['Determinant( <Matriz> )'],
+        'Eigenvalues': ['Eigenvalues( <Matriz> )'],
+        'Eigenvectors': ['Eigenvectors( <Matriz> )'],
+        'LUDecomposition': ['LUDecomposition( <Matriz> )'],
+        'Laplace': ['Laplace( <Função> )', 'Laplace( <Função>, <Variável>, <S> )'],
+        'LCM': ['LCM( <Número>, <Número> )', 'LCM( <Polinómio>, <Polinómio> )'],
+        'JordanDiagonalization': ['JordanDiagonalization( <Matriz> )'],
+        'ApplyMatrix': ['ApplyMatrix( <Matriz>, <Objeto> )'],
+        'CharacteristicPolynomial': ['CharacteristicPolynomial( <Matriz> )'],
+        'MinimalPolynomial': ['MinimalPolynomial( <Matriz> )'],
+        'Dimension': ['Dimension( <Matriz> )'],
+        'Dot': ['Dot( <Vetor>, <Vetor> )'],
+        'Cross': ['Cross( <Vetor>, <Vetor> )'],
+        'Length': ['Length( <Vetor> )'],
+        'QRDecomposition': ['QRDecomposition( <Matriz> )'],
+        'ReducedRowEchelonForm': ['ReducedRowEchelonForm( <Matriz> )'],
+        'SVD': ['SVD( <Matriz> )'],
+        'Transpose': ['Transpose( <Matriz> )'],
+        'UnitVector': ['UnitVector( <Vetor> )']
     };
 
     static showAutocomplete(mf: any) {
-        const ascii = mf.getValue('ascii-math');
+        // Remover espaços para evitar que 'I n' falhe na deteção
+        const ascii = mf.getValue('ascii-math').replace(/\s+/g, '');
         // Check if cursor is typing a word. Mathlive might have a selection. 
-        // We'll just check if the last word typed matches a CAS command prefix.
-        const match = ascii.match(/([A-Z][A-Za-z]*)$/);
+        // We'll just check if the last word typed matches a CAS command prefix (case-insensitive).
+        const match = ascii.match(/([A-Za-z]{2,})$/); // Requer pelo menos 2 letras para sugerir
         
         if (match) {
-            const prefix = match[1];
-            const suggestions = Object.keys(this.casDocs).filter(k => k.startsWith(prefix));
+            const prefix = match[1].toLowerCase();
+            const suggestions = Object.keys(this.casDocs).filter(k => k.toLowerCase().startsWith(prefix));
             
             if (suggestions.length > 0) {
                 this.autocompleteDiv.innerHTML = '';
@@ -63,8 +83,12 @@ export class ExpressionManager {
                     row.onmouseleave = () => row.style.background = 'white';
                     
                     row.onclick = () => {
-                        // Replace the typed prefix with the full command and a parenthesis
-                        const newAscii = ascii.substring(0, ascii.length - prefix.length) + cmd + '(';
+                        // Obter o ASCII original (com espaços) para fazer a substituição correta no final
+                        const originalAscii = mf.getValue('ascii-math');
+                        const regexMatch = originalAscii.match(/[A-Za-z\s]+$/);
+                        let typedRaw = regexMatch ? regexMatch[0] : match[1];
+                        
+                        const newAscii = originalAscii.substring(0, originalAscii.length - typedRaw.length) + cmd + '(';
                         mf.setValue(newAscii, { format: 'ascii-math' });
                         mf.executeCommand(['performWithFeedback', 'moveToMathFieldEnd']);
                         this.autocompleteDiv.style.display = 'none';
