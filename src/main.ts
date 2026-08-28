@@ -206,7 +206,7 @@ function drawFrame() {
                     
                     MathEngine.askGiac(giacQ).then(res => {
                         StateManager.pendingOdes[item.id] = false;
-                        const cleanResult = res.replace(/"/g, '').replace(/list\[/g, '[').replace(/usr_/g, '');
+                        const cleanResult = res.replace(/"/g, '').replace(/list\[/g, '[').replace(/usr_/g, '').trim();
                         
                         let finalExpr = cleanResult;
                         if (cleanResult.startsWith('[') && cleanResult.endsWith(']')) {
@@ -277,7 +277,7 @@ function drawFrame() {
                 }
                 
                 if (cached.ast) {
-                    validEquations.push({ id: item.id, ast: cached.ast, isImplicit: false, isEdo: false, name: cached.name || '', operator: '=', isDerivative: false, isHidden: !item.visible });
+                    validEquations.push({ id: item.id, ast: cached.ast, isImplicit: false, isEdo: false, name: cached.name || '', operator: '=', isDerivative: false, isHidden: !item.visible, variable: cached.variable });
                     
                     // Registar para que f_n(3) funcione!
                     if (cached.name) {
@@ -375,12 +375,12 @@ function drawFrame() {
                             StateManager.casSolutions[item.id] = { query: currentQuery, result: 'Erro no cálculo' };
                             ExpressionManager.setResult(item.id, `Erro CAS`);
                         } else {
-                            // Limpa as aspas do Giac
-                            let cleanResult = res.replace(/"/g, '').replace(/list\[/g, '[').replace(/usr_/g, '');
-                            const arrowMatchClean = cleanResult.match(/^(?:\(?[a-zA-Z_]+\)?->)(.*)/);
+                            // Limpa as aspas do Giac e espaços extras
+                            let cleanResult = res.replace(/"/g, '').replace(/list\[/g, '[').replace(/usr_/g, '').trim();
+                            const arrowMatchClean = cleanResult.match(/^(?:\(?[a-zA-Z_]+\)?\s*->\s*)(.*)/);
                             if (arrowMatchClean) cleanResult = arrowMatchClean[1];
                             
-                            const lambdaMatch = cleanResult.match(/^\(\w\)->(.*)$/);
+                            const lambdaMatch = cleanResult.match(/^\(\w\)\s*->\s*(.*)$/);
                             if (lambdaMatch) {
                                 cleanResult = lambdaMatch[1];
                             }
@@ -416,7 +416,7 @@ function drawFrame() {
                               if (!cleanResult.includes('Erro')) {
                                   try {
                                       let parseableResult = cleanResult;
-                                      const arrowMatch = cleanResult.match(/^(?:\(?[a-zA-Z_]+\)?->)(.*)/);
+                                      const arrowMatch = cleanResult.match(/^(?:\(?[a-zA-Z_]+\)?\s*->\s*)(.*)/);
                                       if (arrowMatch) parseableResult = arrowMatch[1];
                                       resAst = new PrattParser(parseableResult).parseExpression();
                                   } catch (e) {
@@ -435,7 +435,7 @@ function drawFrame() {
                               }
                               
                               if (resAst && fname) {
-                                  validEquations.push({ id: item.id, ast: resAst, isImplicit: false, isEdo: false, name: fname, operator: '=', isDerivative: false, isHidden: !item.visible });
+                                  validEquations.push({ id: item.id, ast: resAst, isImplicit: false, isEdo: false, name: fname, operator: '=', isDerivative: false, isHidden: !item.visible, variable: extractVar });
                                   
                                   // Registar para que f_n(3) funcione!
                                   const cleanName = fname.replace(/[\{\}\\]/g, '');
@@ -567,7 +567,7 @@ function drawFrame() {
                     StateManager.giacDefinitions[varName] = giacDef;
                     StateManager.casSolutions = {}; // INVALIDE CACHE SO DEPENDENTS UPDATE!
                     MathEngine.askGiac(giacDef).then(res => {
-                        let formattedRes = res.replace(/"/g, '').replace(/list\[/g, '[').replace(/usr_/g, '');
+                        let formattedRes = res.replace(/"/g, '').replace(/list\[/g, '[').replace(/usr_/g, '').trim();
                         ExpressionManager.setResult(item.id, `= ${formattedRes}`);
                     });
                 } else {
@@ -662,7 +662,7 @@ function drawFrame() {
 
                         MathEngine.askGiac(giacQuery).then(res => {
                             StateManager.pendingCas[item.id] = false;
-                            let formattedRes = res.replace(/"/g, '').replace(/list\[/g, '[').replace(/usr_/g, '');
+                            let formattedRes = res.replace(/"/g, '').replace(/list\[/g, '[').replace(/usr_/g, '').trim();
                             
                             // If Giac returns an error, fallback to local eval if we can
                             if (formattedRes.includes('Erro') || formattedRes.includes('undef')) {
