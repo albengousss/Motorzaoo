@@ -637,20 +637,17 @@ setTimeout(() => {
                     [
                         { insert: "´", label: "´" },
                         { latex: "x" }, { latex: "y" }, { latex: "t" }, { latex: "C_0" },
-                        { class: 'separator w5' },
                         { insert: "Solveode(", label: "EDO" },
                         { insert: "Integral(", latex: "\\int" }
                     ],
                     [
-                        { latex: "f_1" }, { latex: "f_2" }, { latex: "f_3" }, { latex: "=" },
-                        { class: 'separator w5' },
+                        { latex: "f_1" }, { latex: "f_2" }, { latex: "=" },
                         { insert: "Derivative(", latex: "\\frac{d}{dx}" },
-                        { insert: "Slopefield(", label: "Campos" },
+                        { insert: "Slopefield(", label: "Campo" },
                         { class: 'action font-glyph bottom right', label: '&#x232b;', command: ['performWithFeedback', 'deleteBackward'] }
                     ],
                     [
                         { latex: "<" }, { latex: ">" }, { latex: "\\le" }, { latex: "\\ge" },
-                        { class: 'separator w5' },
                         { insert: "IntegralBetween(", latex: "\\int_a^b" },
                         { insert: "Limit(", latex: "\\lim" },
                         { class: 'action font-glyph bottom right', label: '&#x23ce;', command: ['performWithFeedback', 'commit'] }
@@ -683,6 +680,7 @@ sidebarHeader.addEventListener('touchstart', (e) => {
         isDraggingSidebar = true;
         startY = e.touches[0].clientY;
         startHeight = sidebarEl.getBoundingClientRect().height;
+        sidebarEl.style.flex = 'none'; // Previne conflitos do flexbox
     }
 }, {passive: true});
 
@@ -704,6 +702,21 @@ window.addEventListener('touchmove', (e) => {
 }, {passive: false});
 
 window.addEventListener('touchend', () => isDraggingSidebar = false);
+
+// Garante que o MathLive perca o foco quando o teclado virtual é escondido
+setTimeout(() => {
+    if ((window as any).mathVirtualKeyboard) {
+        (window as any).mathVirtualKeyboard.addEventListener('virtual-keyboard-toggle', () => {
+            const vk = (window as any).mathVirtualKeyboard;
+            if (!vk.visible) {
+                // Remove focus de qualquer math-field ativo
+                if (document.activeElement && document.activeElement.tagName.toLowerCase() === 'math-field') {
+                    (document.activeElement as HTMLElement).blur();
+                }
+            }
+        });
+    }
+}, 1000);
 
 let isDragging = false;
 let lastX = 0; let lastY = 0;
