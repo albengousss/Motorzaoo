@@ -9,14 +9,27 @@ export class Renderer {
         this.ctx = this.canvas.getContext('2d')!; 
     }
 
-    // Lê o tamanho do container CSS e aplica na resolução interna do Canvas
+    // Lê o tamanho do container CSS e aplica na resolução interna do Canvas com densidade de pixel correta
     resize() {
         const parent = this.canvas.parentElement;
         if (parent) {
-            this.canvas.width = parent.clientWidth;
-            this.canvas.height = parent.clientHeight;
-            // Comunica a câmera para ela arrumar a proporção!
-            Camera.resize(this.canvas.width, this.canvas.height);
+            const dpr = window.devicePixelRatio || 1;
+            const rect = parent.getBoundingClientRect();
+            
+            // O tamanho lógico (CSS)
+            this.canvas.style.width = rect.width + 'px';
+            this.canvas.style.height = rect.height + 'px';
+            
+            // O tamanho físico (Pixels reais)
+            this.canvas.width = rect.width * dpr;
+            this.canvas.height = rect.height * dpr;
+            
+            // Normaliza o contexto para não termos que multiplicar tudo por dpr depois
+            this.ctx.resetTransform();
+            this.ctx.scale(dpr, dpr);
+            
+            // Comunica a câmera para ela arrumar a proporção (usando tamanho lógico)!
+            Camera.resize(rect.width, rect.height);
         }
     }
 

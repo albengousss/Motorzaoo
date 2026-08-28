@@ -624,10 +624,75 @@ function drawFrame() {
 }
 
 ExpressionManager.init(drawFrame);
+
+// --- TECLADO VIRTUAL PERSONALIZADO MATHLIVE ---
+setTimeout(() => {
+    if ((window as any).mathVirtualKeyboard) {
+        (window as any).mathVirtualKeyboard.layouts = [
+            'numeric',
+            {
+                label: 'Motor-Calc',
+                tooltip: 'EDO, Integrais e Atalhos',
+                rows: [
+                    [
+                        { latex: "´", label: "Derivada (´)" },
+                        { latex: "x" }, { latex: "y" }, { latex: "t" }, { latex: "C_0" }, { latex: "C_1" },
+                        { class: 'separator w5' },
+                        { insert: "Solveode(", label: "Solveode" },
+                        { insert: "Integral(", label: "Integral" }
+                    ],
+                    [
+                        { latex: "f_1" }, { latex: "f_2" }, { latex: "=" },
+                        { class: 'separator w5' },
+                        { insert: "Derivative(", label: "Derivative" },
+                        { insert: "Slopefield(", label: "Slopefield" },
+                        { class: 'action font-glyph bottom right', label: '&#x232b;', command: ['performWithFeedback', 'deleteBackward'] }
+                    ],
+                    [
+                        { latex: "<" }, { latex: ">" }, { latex: "\\le" }, { latex: "\\ge" }, { latex: "\\neq" },
+                        { class: 'separator w5' },
+                        { insert: "IntegralBetween(", label: "IntDefinida" },
+                        { insert: "Limit(", label: "Limit" },
+                        { class: 'action font-glyph bottom right', label: '&#x23ce;', command: ['performWithFeedback', 'commit'] }
+                    ]
+                ]
+            },
+            'symbols',
+            'alphabetic'
+        ];
+    }
+}, 500);
+
 window.addEventListener('resize', drawFrame);
 
 // --- CONTROLES DE INTERFACE DO RATO ---
 const canvasEl = document.getElementById('graphCanvas') as HTMLCanvasElement;
+const sidebarEl = document.getElementById('sidebar') as HTMLElement;
+const sidebarHeader = document.getElementById('sidebar-header') as HTMLElement;
+
+// Permite arrastar o topo do painel no celular para ajustar o tamanho!
+let isDraggingSidebar = false;
+let startY = 0;
+let startHeight = 0;
+
+sidebarHeader.addEventListener('touchstart', (e) => {
+    if (window.innerWidth <= 768) {
+        isDraggingSidebar = true;
+        startY = e.touches[0].clientY;
+        startHeight = sidebarEl.getBoundingClientRect().height;
+    }
+}, {passive: true});
+window.addEventListener('touchmove', (e) => {
+    if (!isDraggingSidebar) return;
+    const dy = startY - e.touches[0].clientY; // Invertido porque o painel cresce para cima
+    let newHeight = startHeight + dy;
+    if (newHeight < 100) newHeight = 100;
+    if (newHeight > window.innerHeight * 0.8) newHeight = window.innerHeight * 0.8;
+    sidebarEl.style.height = `${newHeight}px`;
+    drawFrame();
+});
+window.addEventListener('touchend', () => isDraggingSidebar = false);
+
 let isDragging = false;
 let lastX = 0; let lastY = 0;
 
@@ -733,3 +798,51 @@ canvasEl.addEventListener('wheel', (e) => {
     drawFrame();
     tooltip.style.display = 'none'; 
 }, { passive: false });
+
+// --- TOUCH EVENTS PARA CELULAR ---
+let initialPinchDistance = -1;
+
+canvasEl.addEventListener('touchstart', (e) => {
+    e.preventDefault(); // Impede scroll natural na tela
+    if (e.touches.length === 1) {
+        isDragging = true;
+        lastX = e.touches[0].clientX;
+        lastY = e.touches[0].clientY;
+        tooltip.style.display = 'none';
+    } else if (e.touches.length === 2) {
+        isDragging = false;
+        initialPinchDistance = Math.hypot(
+            e.touches[0].clientX - e.touches[1].clientX,
+            e.touches[0].clientY - e.touches[1].clientY
+        );
+    }
+}, {passive: false});
+
+canvasEl.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    const rect = canvasEl.getBoundingClientRect();
+    if (e.touches.length === 1 && isDragging) {
+        Camera.pan(e.touches[0].clientX - lastX, e.touches[0].clientY - lastY);
+        lastX = e.touches[0].clientX;
+        lastY = e.touches[0].clientY;
+        drawFrame();
+    } else if (e.touches.length === 2) {
+        const currentDistance = Math.hypot(
+            e.touches[0].clientX - e.touches[1].clientX,
+            e.touches[0].clientY - e.touches[1].clientY
+        );
+        if (initialPinchDistance > 0) {
+            const factor = initialPinchDistance / currentDistance;
+            const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+            const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+            Camera.zoom(factor, factor, centerX - rect.left, centerY - rect.top);
+            initialPinchDistance = currentDistance;
+            drawFrame();
+        }
+    }
+}, {passive: false});
+
+canvasEl.addEventListener('touchend', (e) => {
+    if (e.touches.length < 2) initialPinchDistance = -1;
+    if (e.touches.length === 0) isDragging = false;
+});
