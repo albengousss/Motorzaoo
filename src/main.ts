@@ -635,24 +635,24 @@ setTimeout(() => {
                 tooltip: 'EDO, Integrais e Atalhos',
                 rows: [
                     [
-                        { latex: "´", label: "Derivada (´)" },
-                        { latex: "x" }, { latex: "y" }, { latex: "t" }, { latex: "C_0" }, { latex: "C_1" },
+                        { insert: "´", label: "´" },
+                        { latex: "x" }, { latex: "y" }, { latex: "t" }, { latex: "C_0" },
                         { class: 'separator w5' },
-                        { insert: "Solveode(", label: "Solveode" },
+                        { insert: "Solveode(", label: "Sol. ODE" },
                         { insert: "Integral(", label: "Integral" }
                     ],
                     [
-                        { latex: "f_1" }, { latex: "f_2" }, { latex: "=" },
+                        { latex: "f_1" }, { latex: "f_2" }, { latex: "f_3" }, { latex: "=" },
                         { class: 'separator w5' },
-                        { insert: "Derivative(", label: "Derivative" },
-                        { insert: "Slopefield(", label: "Slopefield" },
+                        { insert: "Derivative(", label: "Derivada" },
+                        { insert: "Slopefield(", label: "Slope" },
                         { class: 'action font-glyph bottom right', label: '&#x232b;', command: ['performWithFeedback', 'deleteBackward'] }
                     ],
                     [
-                        { latex: "<" }, { latex: ">" }, { latex: "\\le" }, { latex: "\\ge" }, { latex: "\\neq" },
+                        { latex: "<" }, { latex: ">" }, { latex: "\\le" }, { latex: "\\ge" },
                         { class: 'separator w5' },
-                        { insert: "IntegralBetween(", label: "IntDefinida" },
-                        { insert: "Limit(", label: "Limit" },
+                        { insert: "IntegralBetween(", label: "IntDef" },
+                        { insert: "Limit(", label: "Lim" },
                         { class: 'action font-glyph bottom right', label: '&#x23ce;', command: ['performWithFeedback', 'commit'] }
                     ]
                 ]
@@ -682,15 +682,24 @@ sidebarHeader.addEventListener('touchstart', (e) => {
         startHeight = sidebarEl.getBoundingClientRect().height;
     }
 }, {passive: true});
+
 window.addEventListener('touchmove', (e) => {
     if (!isDraggingSidebar) return;
-    const dy = startY - e.touches[0].clientY; // Invertido porque o painel cresce para cima
+    // Previne o scroll da página enquanto arrasta a barra
+    if (e.cancelable) e.preventDefault(); 
+    
+    const dy = startY - e.touches[0].clientY; // Cresce para cima
     let newHeight = startHeight + dy;
-    if (newHeight < 100) newHeight = 100;
-    if (newHeight > window.innerHeight * 0.8) newHeight = window.innerHeight * 0.8;
+    
+    // Limita a altura, ignorando o innerHeight que buga com teclado aberto
+    if (newHeight < 80) newHeight = 80; 
+    const maxH = screen.availHeight * 0.8;
+    if (newHeight > maxH) newHeight = maxH;
+    
     sidebarEl.style.height = `${newHeight}px`;
     drawFrame();
-});
+}, {passive: false});
+
 window.addEventListener('touchend', () => isDraggingSidebar = false);
 
 let isDragging = false;

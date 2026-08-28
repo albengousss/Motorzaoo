@@ -33,6 +33,23 @@
         z-index: 10;
       }
 
+      /* Esconder o botão de teclado virtual se estiver no desktop */
+      @media (min-width: 769px) {
+        math-field::part(virtual-keyboard-toggle) {
+          display: none;
+        }
+      }
+
+      /* Teclado virtual compacto para mobile */
+      @media (max-width: 768px) {
+        math-virtual-keyboard {
+          --keyboard-height: 35vh;
+          --keycap-height: 2.2rem;
+          --keycap-font-size: 1.2rem;
+          --keyboard-background: #f1f3f4;
+        }
+      }
+
       /* Responsividade para Celulares */
       @media (max-width: 768px) {
         body {
