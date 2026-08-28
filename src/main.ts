@@ -24,6 +24,16 @@ tooltip.style.cssText = 'position: fixed; background: rgba(0, 0, 0, 0.75); color
 document.body.appendChild(tooltip);
 
 function drawFrame() {
+    const prefixGiac = (str: string): string => {
+        let res = str;
+        const vars = Object.keys(StateManager.giacDefinitions);
+        vars.sort((a,b) => b.length - a.length); // replace longer first
+        for (const v of vars) {
+            res = res.replace(new RegExp(`\\b${v}\\b`, 'g'), `usr_${v}`);
+        }
+        return res;
+    };
+
     renderer.resize();
     renderer.clear();
     renderer.drawAxes(hoverX, hoverY);
@@ -185,7 +195,7 @@ function drawFrame() {
                     
                     MathEngine.askGiac(giacQ).then(res => {
                         StateManager.pendingOdes[item.id] = false;
-                        const cleanResult = res.replace(/"/g, '').replace(/list\[/g, '[');
+                        const cleanResult = res.replace(/"/g, '').replace(/list\[/g, '[').replace(/usr_/g, '');
                         
                         let finalExpr = cleanResult;
                         if (cleanResult.startsWith('[') && cleanResult.endsWith(']')) {
@@ -286,7 +296,7 @@ function drawFrame() {
 
                     // Mapeia comandos GeoGebra para Giac nativo!
                     // Converte sintaxe de matriz GeoGebra {{1,2},{3,4}} para sintaxe Giac [[1,2],[3,4]]
-                    const giacArgs = cmdArgs.replace(/\{/g, '[').replace(/\}/g, ']');
+                    const giacArgs = prefixGiac(cmdArgs.replace(/\{/g, '[').replace(/\}/g, ']'));
 
                     let giacCommand = `${cmdName}(${giacArgs})`;
                     
@@ -355,7 +365,7 @@ function drawFrame() {
                             ExpressionManager.setResult(item.id, `Erro CAS`);
                         } else {
                             // Limpa as aspas do Giac
-                            let cleanResult = res.replace(/"/g, '').replace(/list\[/g, '[');
+                            let cleanResult = res.replace(/"/g, '').replace(/list\[/g, '[').replace(/usr_/g, '');
                             
                             const lambdaMatch = cleanResult.match(/^\(\w\)->(.*)$/);
                             if (lambdaMatch) {
@@ -479,7 +489,7 @@ function drawFrame() {
                     validEquations.push({ id: item.id, ast, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
                     
                     // Envia para o Giac para poder ser integrada/derivada simbolicamente!
-                    const giacDef = `${funcName}(${paramName}):=${expr}`;
+                    const giacDef = `usr_${funcName}(${paramName}):=${expr}`;
                     if (StateManager.giacDefinitions[funcName] !== giacDef) {
                         StateManager.giacDefinitions[funcName] = giacDef;
                         StateManager.casSolutions = {}; // INVALIDE CACHE
@@ -526,13 +536,13 @@ function drawFrame() {
                 }
                 // Fix missing commas between rows: [[a,b][c,d]] -> [[a,b],[c,d]]
                 giacMatrix = giacMatrix.replace(/\]\s*\[/g, '],[');
-                const giacDef = `${varName}:=${giacMatrix}`;
+                const giacDef = `usr_${varName}:=${giacMatrix}`;
                 
                 if (StateManager.giacDefinitions[varName] !== giacDef) {
                     StateManager.giacDefinitions[varName] = giacDef;
                     StateManager.casSolutions = {}; // INVALIDE CACHE SO DEPENDENTS UPDATE!
                     MathEngine.askGiac(giacDef).then(res => {
-                        let formattedRes = res.replace(/"/g, '').replace(/list\[/g, '[');
+                        let formattedRes = res.replace(/"/g, '').replace(/list\[/g, '[').replace(/usr_/g, '');
                         ExpressionManager.setResult(item.id, `= ${formattedRes}`);
                     });
                 } else {
@@ -550,7 +560,7 @@ function drawFrame() {
                     ExpressionManager.setResult(item.id, ''); 
                     
                     // Envia variável para o Giac!
-                    const giacDef = `${varName}:=${rightSideClean}`;
+                    const giacDef = `usr_${varName}:=${rightSideClean}`;
                     if (StateManager.giacDefinitions[varName] !== giacDef) {
                         StateManager.giacDefinitions[varName] = giacDef;
                         MathEngine.askGiac(giacDef);
@@ -620,14 +630,14 @@ function drawFrame() {
                         ExpressionManager.setResult(item.id, 'Calculando...');
                         StateManager.pendingCas[item.id] = true;
                         
-                        let giacQuery = expressaoPlot.replace(/\\left\\{/g, '[').replace(/\\right\\}/g, ']')
+                        let giacQuery = prefixGiac(expressaoPlot).replace(/\\left\\{/g, '[').replace(/\\right\\}/g, ']')
                                          .replace(/\\{/g, '[').replace(/\\}/g, ']')
                                          .replace(/\\left\[/g, '[').replace(/\\right\]/g, ']');
                         giacQuery = giacQuery.replace(/\]\s*\[/g, '],[');
 
                         MathEngine.askGiac(giacQuery).then(res => {
                             StateManager.pendingCas[item.id] = false;
-                            let formattedRes = res.replace(/"/g, '').replace(/list\[/g, '[');
+                            let formattedRes = res.replace(/"/g, '').replace(/list\[/g, '[').replace(/usr_/g, '');
                             
                             // If Giac returns an error, fallback to local eval if we can
                             if (formattedRes.includes('Erro') || formattedRes.includes('undef')) {
