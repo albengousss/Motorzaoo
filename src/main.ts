@@ -239,10 +239,11 @@ function drawFrame() {
                 }
             }
             return; // Interrompe para não renderizar mais nada como texto
-        } else if (genericCasMatch && casCommandsList.has(genericCasMatch[1].toLowerCase())) {
-            const cmdName = genericCasMatch[1].toLowerCase();
-            const cmdArgs = genericCasMatch[2];
-            const currentQuery = `${cmdName}(${cmdArgs})`;
+        } else if (genericCasMatch && casCommandsList.has(genericCasMatch[2].toLowerCase())) {
+            const assignTarget = genericCasMatch[1];
+            const cmdName = genericCasMatch[2].toLowerCase();
+            const cmdArgs = genericCasMatch[3];
+            const currentQuery = assignTarget ? `${assignTarget}=${cmdName}(${cmdArgs})` : `${cmdName}(${cmdArgs})`;
 
             const cached = StateManager.casSolutions[item.id];
             if (cached && cached.query === currentQuery) {
@@ -336,6 +337,12 @@ function drawFrame() {
                     }
                     else if (cmdName === 'nsolveode') giacCommand = `desolve(${giacArgs})`;
                     
+                    if (assignTarget) {
+                    
+                        giacCommand = `${assignTarget}:=${giacCommand}`;
+                    
+                    }
+                    
                     MathEngine.askGiac(giacCommand).then(res => {
                         StateManager.pendingCas[item.id] = false;
                         if (res.includes('carregar')) {
@@ -362,15 +369,23 @@ function drawFrame() {
                                   const isListOrMatrix = cleanResult.trim().startsWith('[');
                                   
                                   if (!nonPlottingCmds.includes(cmdName) && !isJustNumber && !isListOrMatrix) {
-                                      // Se o parse deu certo e é uma expressão algébrica, vamos dar um nome f_n!
-                                      idx = StateManager.getNextFuncIndex();
-                                      fname = `f_{${idx}}`;
+                                      if (assignTarget && assignTarget.includes('(')) {
+                                          fname = assignTarget.split('(')[0].replace(/[\\{\\}\\]/g, '');
+                                          extractVar = assignTarget.split('(')[1].replace(')', '').replace(/[\\{\\}\\]/g, '');
+                                      } else if (assignTarget) {
+                                          fname = assignTarget.replace(/[\\{\\}\\]/g, '');
+                                      } else {
+                                          idx = StateManager.getNextFuncIndex();
+                                          fname = `f_{${idx}}`;
+                                      }
                                   }
                               } catch(e) {}
                               
                               StateManager.casSolutions[item.id] = { query: currentQuery, result: cleanResult, ast, name: fname, variable: extractVar, index: idx };
                               
-                              if (fname) {
+                              if (assignTarget && assignTarget.includes('(')) {
+                                  ExpressionManager.setResult(item.id, `= ${cleanResult}`);
+                              } else if (fname && !assignTarget) {
                                   ExpressionManager.setResult(item.id, `= ${fname}(${extractVar}) = ${cleanResult}`);
                               } else {
                                   ExpressionManager.setResult(item.id, `= ${cleanResult}`);
@@ -514,7 +529,7 @@ function drawFrame() {
                 return; // Encerra o processamento, pois não queremos renderizar gráfico disto
             }
 
-            if (!['x', 'y', 'e', 'pi'].includes(varName) && !rightSide.includes('x') && !rightSide.includes('y')) {
+            if (!['x', 'y', 'e', 'pi'].includes(varName) && !rightSide.includes('x') && !rightSide.includes('y') && !genericCasMatch) {
                 activeVars.push(varName);
                 try {
                     const parser = new PrattParser(rightSideClean);
