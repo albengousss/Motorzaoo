@@ -473,7 +473,10 @@ function drawFrame() {
             const varName = assignmentMatch[1].replace(/[\\]/g, '');
             const rightSide = assignmentMatch[2];
             const rightSideClean = cleanStr.substring(cleanStr.indexOf('=') + 1).trim();
-            const rawLatex = (mf as any).getValue('latex') || '';
+            
+            const blockEl = document.getElementById(item.id);
+            const mfEl = blockEl ? blockEl.querySelector('math-field') : null;
+            const rawLatex = mfEl ? (mfEl as any).getValue('latex') : '';
             
             // É matriz ou vetor? Verifica LaTeX, chaves e colchetes
             const cleanMatStr = rightSideClean.replace(/\\/g, '');
