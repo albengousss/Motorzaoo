@@ -127,6 +127,50 @@
           background-color: transparent !important;
           outline: none !important;
         }
+    
+        /* AGGRESSIVE MATHLIVE OVERRIDES */
+        :root, math-field, body {
+          --contains-highlight-background: transparent !important;
+          --highlight-background: transparent !important;
+          --selection-background-color: rgba(180, 200, 255, 0.4) !important;
+          --placeholder-color: transparent !important;
+          --keyboard-background: #f1f3f4;
+        }
+        math-field::part(container) {
+          background-color: transparent !important;
+        }
+        math-field:focus-within {
+          background-color: transparent !important;
+          outline: none !important;
+        }
+        .ML__contains-highlight, .ML__highlight {
+          background: transparent !important;
+          background-color: transparent !important;
+        }
+
+    
+        /* Remove ALL MathLive gray backgrounds (placeholders, highlights, selections) */
+        math-field {
+          --placeholder-color: #a0a0a0 !important;
+          --placeholder-opacity: 0.5 !important;
+          --contains-highlight-background: transparent !important;
+          --highlight-background: transparent !important;
+          --selection-background-color: rgba(0, 100, 255, 0.2) !important;
+          --caret-color: #000 !important;
+        }
+        math-field::part(placeholder) {
+          background: transparent !important;
+          background-color: transparent !important;
+        }
+        .ML__placeholder {
+          background: transparent !important;
+          background-color: transparent !important;
+        }
+        .ML__contains-highlight, .ML__highlight {
+          background: transparent !important;
+          background-color: transparent !important;
+        }
+
     </style>
   </head>
   <body>

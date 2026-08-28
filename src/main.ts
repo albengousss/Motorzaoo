@@ -50,7 +50,9 @@ function drawFrame() {
         let cleanStr = ascii
             .replace(/\\left/g, '')
             .replace(/\\right/g, '')
-            .replace(/\\cdot/g, '*');
+            .replace(/\\cdot/g, '*')
+            .replace(/\\times/g, '*')
+            .replace(/\\ast/g, '*');
 
         // Normalização de plicas (derivadas)
         cleanStr = cleanStr
