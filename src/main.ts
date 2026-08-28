@@ -521,6 +521,8 @@ function drawFrame() {
                 } else {
                     giacMatrix = cleanMatStr.replace(/\{/g, '[').replace(/\}/g, ']');
                 }
+                // Fix missing commas between rows: [[a,b][c,d]] -> [[a,b],[c,d]]
+                giacMatrix = giacMatrix.replace(/\]\s*\[/g, '],[');
                 const giacDef = `${varName}:=${giacMatrix}`;
                 
                 if (StateManager.giacDefinitions[varName] !== giacDef) {
@@ -603,11 +605,21 @@ function drawFrame() {
             if (!isPlot && !isImplicit && !isDerivativePlot && !isExplicitY) {
                 const isSingleVar = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(expressaoPlot);
                 if (isSingleVar && StateManager.giacDefinitions[expressaoPlot] && !StateManager.values.hasOwnProperty(expressaoPlot)) {
-                    MathEngine.askGiac(expressaoPlot).then(res => {
-                        const formattedRes = res.replace(/"/g, '').replace(/list\[/g, '[');
-                        ExpressionManager.setResult(item.id, `= ${formattedRes}`);
-                        drawFrame();
-                    });
+                    const currentQuery = expressaoPlot;
+                    const cached = StateManager.casSolutions[item.id];
+                    if (cached && cached.query === currentQuery) {
+                        ExpressionManager.setResult(item.id, `= ${cached.result}`);
+                    } else if (!StateManager.pendingCas[item.id]) {
+                        ExpressionManager.setResult(item.id, 'Calculando...');
+                        StateManager.pendingCas[item.id] = true;
+                        MathEngine.askGiac(expressaoPlot).then(res => {
+                            StateManager.pendingCas[item.id] = false;
+                            const formattedRes = res.replace(/"/g, '').replace(/list\[/g, '[');
+                            StateManager.casSolutions[item.id] = { query: currentQuery, result: formattedRes, ast: null };
+                            ExpressionManager.setResult(item.id, `= ${formattedRes}`);
+                            drawFrame();
+                        });
+                    }
                     return;
                 }
                 
