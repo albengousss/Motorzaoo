@@ -352,13 +352,37 @@ function drawFrame() {
                             let fname = undefined;
                             
                             try { 
-                                ast = new PrattParser(cleanResult).parseExpression();
-                                // Se o parse deu certo e é uma expressão, vamos dar um nome f_n!
-                                idx = StateManager.getNextFuncIndex();
-                                fname = `f_{${idx}}`;
-                            } catch(e) {}
-                            
-                            StateManager.casSolutions[item.id] = { query: currentQuery, result: cleanResult, ast, name: fname, variable: extractVar, index: idx };
+                                  ast = new PrattParser(cleanResult).parseExpression();
+                                  
+                                  // Comandos que não devem virar funções plotáveis
+                                  const nonPlottingCmds = ['determinant', 'dot', 'cross', 'length', 'dimension', 'matrixrank', 'lcm', 'gcd', 'nsolve', 'nsolutions', 'solutions', 'solve', 'limit', 'limitabove', 'limitbelow'];
+                                  
+                                  // Se for apenas um número ou uma lista/matriz, não precisamos transformar numa função plotável
+                                  const isJustNumber = !isNaN(Number(cleanResult));
+                                  const isListOrMatrix = cleanResult.trim().startsWith('[');
+                                  
+                                  if (!nonPlottingCmds.includes(cmdName) && !isJustNumber && !isListOrMatrix) {
+                                      // Se o parse deu certo e é uma expressão algébrica, vamos dar um nome f_n!
+                                      idx = StateManager.getNextFuncIndex();
+                                      fname = `f_{${idx}}`;
+                                  }
+                              } catch(e) {}
+                              
+                              StateManager.casSolutions[item.id] = { query: currentQuery, result: cleanResult, ast, name: fname, variable: extractVar, index: idx };
+                              
+                              if (fname) {
+                                  ExpressionManager.setResult(item.id, `= ${fname}(${extractVar}) = ${cleanResult}`);
+                              } else {
+                                  ExpressionManager.setResult(item.id, `= ${cleanResult}`);
+                              }
+                              
+                              if (ast && fname) {
+                                  validEquations.push({ id: item.id, ast: ast, isImplicit: false, isEdo: false, name: fname, operator: '=', isDerivative: false, isHidden: !item.visible });
+                                  
+                                  // Registar para que f_n(3) funcione!
+                                  const cleanName = fname.replace(/[\{\}\\]/g, '');
+                                  MathEngine.compiledFuncs[cleanName] = MathEngine.compile(ast, extractVar);
+                              }               
                         }
                         drawFrame();
                     });
@@ -449,14 +473,30 @@ function drawFrame() {
             const varName = assignmentMatch[1].replace(/[\\]/g, '');
             const rightSide = assignmentMatch[2];
             const rightSideClean = cleanStr.substring(cleanStr.indexOf('=') + 1).trim();
+            const rawLatex = (mf as any).getValue('latex') || '';
             
-            // É matriz ou vetor? Limpa barras invertidas que o MathLive injeta (ex: \{ )
+            // É matriz ou vetor? Verifica LaTeX, chaves e colchetes
             const cleanMatStr = rightSideClean.replace(/\\/g, '');
-            const isMatrix = cleanMatStr.startsWith('{') || cleanMatStr.startsWith('[');
+            const isMatrix = cleanMatStr.startsWith('{') || cleanMatStr.startsWith('[') || 
+                             cleanMatStr.startsWith('lbrace') || cleanMatStr.startsWith('matrix') ||
+                             rawLatex.includes('\\{') || rawLatex.includes('\\bmatrix') || rawLatex.includes('\\pmatrix');
             
             if (isMatrix) {
-                // Substitui as chaves {} por colchetes [] para sintaxe Giac
-                const giacMatrix = cleanMatStr.replace(/\{/g, '[').replace(/\}/g, ']');
+                // Se o rightSideClean tiver lbrace, vamos tentar usar o latex diretamente!
+                let giacMatrix = '';
+                if (cleanMatStr.startsWith('lbrace') || !cleanMatStr.includes('{')) {
+                    // Limpar o LaTeX para Giac: \{ -> [ e \} -> ]
+                    giacMatrix = rawLatex.replace(/\\left\\{/g, '[').replace(/\\right\\}/g, ']')
+                                         .replace(/\\{/g, '[').replace(/\\}/g, ']')
+                                         .replace(/\\left\[/g, '[').replace(/\\right\]/g, ']')
+                                         .replace(/=/g, '').replace(/[a-zA-Z_]+\s*/, ''); 
+                    // Isso é um fallback bruto, mas funciona melhor com o rawLatex limpo.
+                    // Garantimos que a string de matriz tenha colchetes:
+                    const matchMat = giacMatrix.match(/\[.*\]/);
+                    if (matchMat) giacMatrix = matchMat[0];
+                } else {
+                    giacMatrix = cleanMatStr.replace(/\{/g, '[').replace(/\}/g, ']');
+                }
                 const giacDef = `${varName}:=${giacMatrix}`;
                 
                 if (StateManager.giacDefinitions[varName] !== giacDef) {
