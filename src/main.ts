@@ -480,6 +480,7 @@ function drawFrame() {
                     const giacDef = `${funcName}(${paramName}):=${expr}`;
                     if (StateManager.giacDefinitions[funcName] !== giacDef) {
                         StateManager.giacDefinitions[funcName] = giacDef;
+                        StateManager.casSolutions = {}; // INVALIDE CACHE
                         MathEngine.askGiac(giacDef);
                     }
                 }
@@ -527,6 +528,7 @@ function drawFrame() {
                 
                 if (StateManager.giacDefinitions[varName] !== giacDef) {
                     StateManager.giacDefinitions[varName] = giacDef;
+                    StateManager.casSolutions = {}; // INVALIDE CACHE SO DEPENDENTS UPDATE!
                     MathEngine.askGiac(giacDef).then(res => {
                         let formattedRes = res.replace(/"/g, '').replace(/list\[/g, '[');
                         ExpressionManager.setResult(item.id, `= ${formattedRes}`);
@@ -603,8 +605,11 @@ function drawFrame() {
             // MODO CALCULADORA (Sem gráficos)
             const isPlot = expressaoPlot.includes('x') || expressaoPlot.includes('y');
             if (!isPlot && !isImplicit && !isDerivativePlot && !isExplicitY) {
-                const isSingleVar = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(expressaoPlot);
-                if (isSingleVar && StateManager.giacDefinitions[expressaoPlot] && !StateManager.values.hasOwnProperty(expressaoPlot)) {
+                const giacVars = Object.keys(StateManager.giacDefinitions);
+                const hasGiacVar = giacVars.some(v => new RegExp(`\\b${v}\\b`).test(expressaoPlot)) && !StateManager.values.hasOwnProperty(expressaoPlot);
+                const isMatrixArithmetic = expressaoPlot.includes('{') || expressaoPlot.includes('[');
+
+                if (hasGiacVar || isMatrixArithmetic) {
                     const currentQuery = expressaoPlot;
                     const cached = StateManager.casSolutions[item.id];
                     if (cached && cached.query === currentQuery) {
@@ -612,9 +617,21 @@ function drawFrame() {
                     } else if (!StateManager.pendingCas[item.id]) {
                         ExpressionManager.setResult(item.id, 'Calculando...');
                         StateManager.pendingCas[item.id] = true;
-                        MathEngine.askGiac(expressaoPlot).then(res => {
+                        
+                        let giacQuery = expressaoPlot.replace(/\\left\\{/g, '[').replace(/\\right\\}/g, ']')
+                                         .replace(/\\{/g, '[').replace(/\\}/g, ']')
+                                         .replace(/\\left\[/g, '[').replace(/\\right\]/g, ']');
+                        giacQuery = giacQuery.replace(/\]\s*\[/g, '],[');
+
+                        MathEngine.askGiac(giacQuery).then(res => {
                             StateManager.pendingCas[item.id] = false;
-                            const formattedRes = res.replace(/"/g, '').replace(/list\[/g, '[');
+                            let formattedRes = res.replace(/"/g, '').replace(/list\[/g, '[');
+                            
+                            // If Giac returns an error, fallback to local eval if we can
+                            if (formattedRes.includes('Erro') || formattedRes.includes('undef')) {
+                                formattedRes = 'Erro no cálculo';
+                            }
+                            
                             StateManager.casSolutions[item.id] = { query: currentQuery, result: formattedRes, ast: null };
                             ExpressionManager.setResult(item.id, `= ${formattedRes}`);
                             drawFrame();

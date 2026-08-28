@@ -115,6 +115,18 @@
         box-shadow: 0 1px 2px rgba(0,0,0,0.05);
       }
 
+            /* Remove MathLive default gray backgrounds */
+        math-field {
+          --contains-highlight-background: transparent;
+          background-color: transparent !important;
+        }
+        math-field::part(container) {
+          background-color: transparent !important;
+        }
+        math-field:focus-within {
+          background-color: transparent !important;
+          outline: none !important;
+        }
     </style>
   </head>
   <body>
