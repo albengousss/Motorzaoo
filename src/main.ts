@@ -92,7 +92,7 @@ function drawFrame() {
         const campoMatch = noSpaceStr.match(/^(?:campovetorial|slopefield|campo)\((.+)\)$/i);
         const solveMatch = noSpaceStr.match(/^(?:solveode|resolvere|resolveredo|edo)\((.+)\)$/i);
         // Universal CAS command detector (e.g. Factor, Simplify, Substitute, etc.)
-        const genericCasMatch = noSpaceStr.match(/^([A-Za-z]+)\((.*)\)$/);
+        const genericCasMatch = noSpaceStr.match(/^(?:([a-zA-Z_][a-zA-Z0-9_\\{\\}]*(?:\\([a-zA-Z_]\\))?)=)?([A-Za-z]+)\\((.*)\\)$/);
         
         const casCommandsList = new Set([
             'factor', 'ifactor', 'cfactor', 'cifactor', 'expand', 'simplify',
