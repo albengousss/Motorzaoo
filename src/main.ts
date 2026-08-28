@@ -354,6 +354,12 @@ function drawFrame() {
                         } else {
                             // Limpa as aspas do Giac
                             let cleanResult = res.replace(/"/g, '').replace(/list\[/g, '[');
+                            
+                            const lambdaMatch = cleanResult.match(/^\(\w\)->(.*)$/);
+                            if (lambdaMatch) {
+                                cleanResult = lambdaMatch[1];
+                            }
+                            
                             let ast = null;
                             let idx = undefined;
                             let fname = undefined;
@@ -595,6 +601,16 @@ function drawFrame() {
             // MODO CALCULADORA (Sem gráficos)
             const isPlot = expressaoPlot.includes('x') || expressaoPlot.includes('y');
             if (!isPlot && !isImplicit && !isDerivativePlot && !isExplicitY) {
+                const isSingleVar = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(expressaoPlot);
+                if (isSingleVar && StateManager.giacDefinitions[expressaoPlot] && !StateManager.values.hasOwnProperty(expressaoPlot)) {
+                    MathEngine.askGiac(expressaoPlot).then(res => {
+                        const formattedRes = res.replace(/"/g, '').replace(/list\[/g, '[');
+                        ExpressionManager.setResult(item.id, `= ${formattedRes}`);
+                        drawFrame();
+                    });
+                    return;
+                }
+                
                 const evalFunc = MathEngine.compile(ast);
                 const val = evalFunc(0, 0, StateManager.values);
                 if (!isNaN(val)) ExpressionManager.setResult(item.id, '= ' + parseFloat(val.toFixed(4)).toString());
