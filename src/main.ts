@@ -443,13 +443,33 @@ function drawFrame() {
             return; 
         }
 
-        // 4. SLIDERS GLOBAIS
+        // 4. SLIDERS GLOBAIS E DEFINIÇÃO DE MATRIZES
         const assignmentMatch = noSpaceStr.match(/^\\?([a-zA-Z_][a-zA-Z0-9_]*)=(.+)$/);
         if (assignmentMatch) {
             const varName = assignmentMatch[1].replace(/[\\]/g, '');
             const rightSide = assignmentMatch[2];
-            // Validate using cleanStr to preserve spaces in the expression being parsed
-            const rightSideClean = cleanStr.substring(cleanStr.indexOf('=') + 1);
+            const rightSideClean = cleanStr.substring(cleanStr.indexOf('=') + 1).trim();
+            
+            // É matriz ou vetor? (Começa com { ou [ )
+            const isMatrix = rightSideClean.startsWith('{') || rightSideClean.startsWith('[');
+            
+            if (isMatrix) {
+                // Substitui as chaves {} por colchetes [] para sintaxe Giac
+                const giacMatrix = rightSideClean.replace(/\{/g, '[').replace(/\}/g, ']');
+                const giacDef = `${varName}:=${giacMatrix}`;
+                
+                if (StateManager.giacDefinitions[varName] !== giacDef) {
+                    StateManager.giacDefinitions[varName] = giacDef;
+                    MathEngine.askGiac(giacDef).then(res => {
+                        let formattedRes = res.replace(/"/g, '').replace(/list\[/g, '[');
+                        ExpressionManager.setResult(item.id, `= ${formattedRes}`);
+                    });
+                } else {
+                    ExpressionManager.setResult(item.id, `= [Matriz Registada]`);
+                }
+                return; // Encerra o processamento, pois não queremos renderizar gráfico disto
+            }
+
             if (!['x', 'y', 'e', 'pi'].includes(varName) && !rightSide.includes('x') && !rightSide.includes('y')) {
                 activeVars.push(varName);
                 try {
