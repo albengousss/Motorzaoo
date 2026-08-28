@@ -62,7 +62,10 @@ function drawFrame() {
             .replace(/\\right/g, '')
             .replace(/\\cdot/g, '*')
             .replace(/\\times/g, '*')
-            .replace(/\\ast/g, '*');
+            .replace(/\\ast/g, '*')
+            .replace(/∗/g, '*')
+            .replace(/⋅/g, '*')
+            .replace(/×/g, '*');
 
         // Normalização de plicas (derivadas)
         cleanStr = cleanStr

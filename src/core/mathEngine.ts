@@ -7,6 +7,7 @@ export class MathEngine {
      * O Método Mágico Assíncrono: Pede ao Oráculo para resolver integrais, derivadas e limites!
      */
     static async askGiac(expression: string): Promise<string> {
+        console.log("GIAC QUERY:", expression);
         return new Promise((resolve) => {
             const m = (window as any).Module;
             if (!(window as any).giacReady || !m) {

@@ -176,26 +176,32 @@ export class ExpressionManager {
         topRow.style.cssText = 'display: flex; align-items: center; padding: 8px; gap: 8px; overflow: hidden;';
         
         const mf = document.createElement('math-field');
-        (mf as any).setOptions({
-            smartMode: false,
-            virtualKeyboardMode: 'manual', // Somente abre pelo botão do teclado
-            menuItems: [], // Remove a barra escura de menu/opções
-            inlineShortcuts: {
-                'pi': '\\pi',
-                'theta': '\\theta',
-                'alpha': '\\alpha',
-                'beta': '\\beta',
-                'gamma': '\\gamma',
-                'int': '\\int',
-                'limit': '\\lim',
-                'lim': '\\lim',
-                'e': 'e',
-                'sqrt': '\\sqrt',
-                '<=': '\\le',
-                '>=': '\\ge',
-                '/': '\\frac{#@}{#?}'
-            }
-        });
+                const mathField = mf as any;
+        mathField.smartMode = false;
+        mathField.smartFence = false;
+        mathField.mathVirtualKeyboardPolicy = 'manual';
+        mathField.menuItems = [];
+        mathField.inlineShortcuts = {
+            'pi': '\\pi',
+            'theta': '\\theta',
+            'alpha': '\\alpha',
+            'beta': '\\beta',
+            'gamma': '\\gamma',
+            'int': '\\int',
+            'limit': '\\lim',
+            'lim': '\\lim',
+            'e': 'e',
+            'sqrt': '\\sqrt',
+            '<=': '\\le',
+            '>=': '\\ge',
+            '/': '\\frac{#@}{#?}'
+        };
+        mathField.style.setProperty('--contains-highlight-background', 'transparent');
+        mathField.style.setProperty('--highlight-background', 'transparent');
+        mathField.style.setProperty('--highlight-color', 'transparent');
+        mathField.style.setProperty('--placeholder-color', 'transparent');
+        mathField.style.setProperty('--placeholder-opacity', '0');
+        mathField.style.setProperty('--selection-background-color', 'rgba(180, 200, 255, 0.4)');
         mf.style.cssText = 'flex-grow: 1; border: none; outline: none; font-size: 18px; background: transparent;';
         
         const resultSpan = document.createElement('div');
