@@ -410,7 +410,16 @@ function drawFrame() {
                                   }
                               } catch(e) {}
                               
-                              StateManager.casSolutions[item.id] = { query: currentQuery, result: cleanResult, ast, name: fname, variable: extractVar, index: idx };
+                              let resAst = null;
+                              if (!cleanResult.includes('Erro')) {
+                                  try {
+                                      resAst = new PrattParser(cleanResult).parseExpression();
+                                  } catch (e) {
+                                      resAst = ast;
+                                  }
+                              }
+
+                              StateManager.casSolutions[item.id] = { query: currentQuery, result: cleanResult, ast: resAst, name: fname, variable: extractVar, index: idx };
                               
                               if (assignTarget && assignTarget.includes('(')) {
                                   ExpressionManager.setResult(item.id, `= ${cleanResult}`);
@@ -420,12 +429,12 @@ function drawFrame() {
                                   ExpressionManager.setResult(item.id, `= ${cleanResult}`);
                               }
                               
-                              if (ast && fname) {
-                                  validEquations.push({ id: item.id, ast: ast, isImplicit: false, isEdo: false, name: fname, operator: '=', isDerivative: false, isHidden: !item.visible });
+                              if (resAst && fname) {
+                                  validEquations.push({ id: item.id, ast: resAst, isImplicit: false, isEdo: false, name: fname, operator: '=', isDerivative: false, isHidden: !item.visible });
                                   
                                   // Registar para que f_n(3) funcione!
                                   const cleanName = fname.replace(/[\{\}\\]/g, '');
-                                  MathEngine.compiledFuncs[cleanName] = MathEngine.compile(ast, extractVar);
+                                  MathEngine.compiledFuncs[cleanName] = MathEngine.compile(resAst, extractVar);
                               }               
                         }
                         drawFrame();
