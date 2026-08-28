@@ -154,7 +154,7 @@ export class ExpressionManager {
         const mf = document.createElement('math-field');
         (mf as any).setOptions({
             smartMode: false,
-            virtualKeyboardMode: window.innerWidth <= 768 ? 'onfocus' : 'manual',
+            virtualKeyboardMode: 'manual', // Somente abre pelo botão do teclado
             menuItems: [], // Remove a barra escura de menu/opções
             inlineShortcuts: {
                 'pi': '\\pi',

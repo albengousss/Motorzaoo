@@ -638,22 +638,25 @@ setTimeout(() => {
                         { insert: "´", label: "´" },
                         { latex: "x" }, { latex: "y" }, { latex: "t" }, { latex: "C_0" },
                         { class: 'separator w5' },
-                        { insert: "Solveode(", label: "Sol. ODE" },
-                        { insert: "Integral(", label: "Integral" }
+                        { insert: "Solveode(", label: "EDO" },
+                        { insert: "Integral(", latex: "\\int" }
                     ],
                     [
                         { latex: "f_1" }, { latex: "f_2" }, { latex: "f_3" }, { latex: "=" },
                         { class: 'separator w5' },
-                        { insert: "Derivative(", label: "Derivada" },
-                        { insert: "Slopefield(", label: "Slope" },
+                        { insert: "Derivative(", latex: "\\frac{d}{dx}" },
+                        { insert: "Slopefield(", label: "Campos" },
                         { class: 'action font-glyph bottom right', label: '&#x232b;', command: ['performWithFeedback', 'deleteBackward'] }
                     ],
                     [
                         { latex: "<" }, { latex: ">" }, { latex: "\\le" }, { latex: "\\ge" },
                         { class: 'separator w5' },
-                        { insert: "IntegralBetween(", label: "IntDef" },
-                        { insert: "Limit(", label: "Lim" },
+                        { insert: "IntegralBetween(", latex: "\\int_a^b" },
+                        { insert: "Limit(", latex: "\\lim" },
                         { class: 'action font-glyph bottom right', label: '&#x23ce;', command: ['performWithFeedback', 'commit'] }
+                    ],
+                    [
+                        { class: 'action', label: '⬇ Fechar Teclado', command: ['toggleVirtualKeyboard'] }
                     ]
                 ]
             },
