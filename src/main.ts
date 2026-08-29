@@ -266,18 +266,7 @@ function drawFrame() {
                                     }
                                 });
                                 
-                                // Auto-spawn da função explícita
-                                const cleanFnName = nextName.replace(/[\{\}\\]/g, '');
-                                const expressionStr = `${cleanFnName}(x) = ${finalExpr}`;
-                                
-                                let spawnedId = StateManager.odeSolutions[item.id]?.spawnedBlockId;
-                                if (spawnedId && document.getElementById(spawnedId)) {
-                                    ExpressionManager.updateExpression(spawnedId, expressionStr);
-                                } else {
-                                    spawnedId = ExpressionManager.addExpression(expressionStr);
-                                }
-                                
-                                StateManager.odeSolutions[item.id] = { query: currentQuery, name: nextName, expr: finalExpr, ast, index: idx, spawnedBlockId: spawnedId };
+                                StateManager.odeSolutions[item.id] = { query: currentQuery, name: nextName, expr: finalExpr, ast, index: idx };
                             } catch(e) {
                                 StateManager.odeSolutions[item.id] = { query: currentQuery, name: 'Erro', expr: 'Parse falhou', ast: null, index: -1 };
                             }
@@ -482,37 +471,26 @@ function drawFrame() {
                                   }
                               }
 
-                                let spawnedId = StateManager.casSpawnedBlocks[item.id];
-                                StateManager.casSolutions[item.id] = { query: currentQuery, result: cleanResult, ast: resAst, name: fname, variable: extractVar, index: idx, spawnedBlockId: spawnedId };
+                              StateManager.casSolutions[item.id] = { query: currentQuery, result: cleanResult, ast: resAst, name: fname, variable: extractVar, index: idx };
+        
+                              if (fname && !assignTarget) {
+                                  const cleanFnName = fname.replace(/[\{\}\\]/g, '');
+                                  ExpressionManager.setResult(item.id, `= ${cleanFnName}(${extractVar}) = ${cleanResult}`);
+                                  StateManager.casIndices[item.id] = idx!;
+                              } else {
+                                  ExpressionManager.setResult(item.id, `= ${cleanResult}`);
+                              }
 
-                                if (fname && !assignTarget) {
-                                    const cleanFnName = fname.replace(/[\{\}\\]/g, '');
-                                    const expressionStr = `${cleanFnName}(${extractVar}) = ${cleanResult}`;
-                                    if (spawnedId && document.getElementById(spawnedId)) {
-                                        ExpressionManager.updateExpression(spawnedId, expressionStr);
-                                    } else {
-                                        spawnedId = ExpressionManager.addExpression(expressionStr);
-                                        StateManager.casSpawnedBlocks[item.id] = spawnedId;
-                                        StateManager.casIndices[item.id] = idx!;
-                                    }
-                                    ExpressionManager.setResult(item.id, '');
-                                } else {
-                                    if (assignTarget && assignTarget.includes('(')) {
-                                        ExpressionManager.setResult(item.id, `= ${cleanResult}`);
-                                    } else {
-                                        ExpressionManager.setResult(item.id, `= ${cleanResult}`);
-                                    }
-                                    
-                                    // Remove orfaned block if query morphed into a number/non-plotting result
-                                    if (spawnedId && document.getElementById(spawnedId)) {
-                                        document.getElementById(spawnedId)!.remove();
-                                        delete StateManager.casSpawnedBlocks[item.id];
-                                        delete StateManager.casIndices[item.id];
-                                        ExpressionManager.updateBlockNumbers();
-                                    }
-                                }
-                              
-                              if (resAst && fname && assignTarget) {
+                              // Cleanup orphaned blocks from previous app versions (legacy)
+                              const spawnedId = StateManager.casSpawnedBlocks[item.id];
+                              if (spawnedId && document.getElementById(spawnedId)) {
+                                  document.getElementById(spawnedId)!.remove();
+                                  delete StateManager.casSpawnedBlocks[item.id];
+                                  delete StateManager.casIndices[item.id];
+                                  ExpressionManager.updateBlockNumbers();
+                              }
+
+                              if (resAst && fname) {
                                   validEquations.push({ color: item.color, id: item.id, ast: resAst, isImplicit: false, isEdo: false, name: fname, operator: '=', isDerivative: false, isHidden: !item.visible, variable: extractVar });
                                   
                                   // Registar para que f_n(3) funcione!
