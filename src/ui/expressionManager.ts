@@ -140,7 +140,7 @@ export class ExpressionManager {
 
         const block = document.createElement('div');
         block.id = blockId;
-        block.style.cssText = 'display: flex; background: #fff; border-bottom: 1px solid #f0f0f0; transition: background 0.2s;';
+        block.className = 'flex border-b border-gray-200 bg-white transition-colors duration-200 relative group';
 
         // --- ZONA DE CAPTURA E VISIBILIDADE ---
         const grabZone = document.createElement('div');
@@ -177,22 +177,22 @@ export class ExpressionManager {
 
         // --- ÁREA DE CONTEÚDO (Matemática + Slider) ---
         const contentZone = document.createElement('div');
-        contentZone.style.cssText = 'display: flex; flex-direction: column; flex-grow: 1; overflow: hidden;';
+        contentZone.className = 'flex flex-col grow overflow-hidden';
 
         const topRow = document.createElement('div');
-        topRow.style.cssText = 'display: flex; align-items: center; padding: 12px 8px; gap: 8px; overflow: hidden; min-height: 56px;';
+        topRow.className = 'flex items-center px-2 py-3 gap-2 overflow-hidden min-h-[56px]';
         
         const mf = document.createElement('math-field');
         
-        mf.style.cssText = 'flex-grow: 1; border: none; outline: none; font-size: 18px; background: transparent;';
+        mf.className = 'grow border-none outline-none text-lg bg-transparent';
         
         const resultSpan = document.createElement('div');
         resultSpan.className = 'result-display';
-        resultSpan.style.cssText = 'color: #555; font-size: 14px; font-weight: bold; font-family: math; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 50%; flex-shrink: 1; text-align: right; margin-right: 5px; cursor: help; user-select: text;';
+        resultSpan.className = 'result-display text-gray-600 text-sm font-semibold whitespace-nowrap overflow-hidden text-ellipsis max-w-[50%] shrink text-right mr-1 cursor-help select-text';
 
         const delBtn = document.createElement('button');
-        delBtn.innerHTML = '&#10005;'; // Elegant 'x'
-        delBtn.style.cssText = 'background: none; border: none; color: #999; cursor: pointer; font-size: 16px; padding: 8px 12px; flex-shrink: 0; margin-left: auto; transition: color 0.2s, opacity 0.2s; opacity: 0.4; outline: none;';
+        delBtn.innerHTML = '<i data-lucide="x" class="w-5 h-5"></i>'; // Elegant 'x'
+        delBtn.className = 'bg-transparent border-none text-gray-400 cursor-pointer text-base py-2 px-3 shrink-0 ml-auto transition-all opacity-40 hover:opacity-100 hover:text-gray-800 outline-none';
         delBtn.onmouseover = () => { delBtn.style.opacity = '1'; delBtn.style.color = '#333'; };
         delBtn.onmouseout = () => { delBtn.style.opacity = '0.4'; delBtn.style.color = '#999'; };
         
@@ -216,6 +216,7 @@ export class ExpressionManager {
         block.appendChild(grabZone);
         block.appendChild(contentZone);
         this.container.appendChild(block);
+        if ((window as any).lucide) (window as any).lucide.createIcons({ root: block });
 
         const mathField = mf as any;
         mathField.smartMode = false;
@@ -316,8 +317,8 @@ export class ExpressionManager {
         grabZone.addEventListener('pointerdown', (e) => {
             e.preventDefault();
             grabZone.style.cursor = 'grabbing';
-            block.style.backgroundColor = '#e8f0fe'; // Azul igual do Desmos!
-            block.style.boxShadow = '0 2px 10px rgba(0,0,0,0.15)';
+            block.classList.add('bg-blue-50', 'shadow-md', 'z-50'); // Azul igual do Desmos!
+            // handled by tailwind
             block.style.position = 'relative';
             block.style.zIndex = '1000';
 
@@ -453,8 +454,23 @@ export class ExpressionManager {
         if (block) {
             const resDisplay = block.querySelector('.result-display') as HTMLElement;
             if (resDisplay) {
-                resDisplay.innerText = result;
-                resDisplay.title = result; // Adiciona tooltip para textos muito longos
+                resDisplay.title = result; 
+                const win = window as any;
+                if (win.katex && result.startsWith('= ')) {
+                     try {
+                          const mathStr = result.substring(2);
+                          if (mathStr.includes('Erro') || mathStr.includes('indefinido') || mathStr.includes('carregar')) {
+                               resDisplay.innerText = result;
+                          } else {
+                               const html = win.katex.renderToString(mathStr, { throwOnError: false });
+                               resDisplay.innerHTML = '= <span style="display:inline-block; vertical-align: middle;">' + html + '</span>';
+                          }
+                     } catch(e) {
+                          resDisplay.innerText = result;
+                     }
+                } else {
+                    resDisplay.innerText = result;
+                }
             }
         }
     }

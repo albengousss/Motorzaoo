@@ -4,29 +4,28 @@ const { chromium } = require('playwright');
   const browser = await chromium.launch();
   const page = await browser.newPage();
   
-  page.on('console', msg => console.log('BROWSER:', msg.text()));
-
   await page.goto('http://localhost:4173');
-  
   await page.waitForFunction('window.giacReady === true');
   
   const res1 = await page.evaluate(async () => {
-    // MathEngine is not exported globally. We need to evaluate via giac directly.
-    const m = window.Module;
-    const evalGiac = m.cwrap('caseval', 'string', ['string']);
-    return evalGiac("usr_M:=[[2,2],[3,4]]");
+    return window.Module.cwrap('caseval', 'string', ['string'])("diff(x, x)");
   });
-  console.log('RES1:', res1);
+  console.log('diff(x,x) ->', res1);
 
   const res2 = await page.evaluate(async () => {
-    return window.Module.cwrap('caseval', 'string', ['string'])("usr_N:=[[8,9],[3,7]]");
+    return window.Module.cwrap('caseval', 'string', ['string'])("g(x):=diff(x, x)");
   });
-  console.log('RES2:', res2);
+  console.log('g(x):=diff(x,x) ->', res2);
 
   const res3 = await page.evaluate(async () => {
-    return window.Module.cwrap('caseval', 'string', ['string'])("usr_M * usr_N");
+    return window.Module.cwrap('caseval', 'string', ['string'])("g(x)");
   });
-  console.log('RES3:', res3);
+  console.log('g(x) ->', res3);
+
+  const res4 = await page.evaluate(async () => {
+    return window.Module.cwrap('caseval', 'string', ['string'])("g(2)");
+  });
+  console.log('g(2) ->', res4);
 
   await browser.close();
 })();
