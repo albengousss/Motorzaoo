@@ -165,14 +165,38 @@ export class ExpressionManager {
           
           visibilityBtn.appendChild(numberSpan);
           
-          visibilityBtn.onclick = () => {
-              const isVisible = visibilityBtn.dataset.visible === 'true';
-              visibilityBtn.dataset.visible = isVisible ? 'false' : 'true';
-              visibilityBtn.style.background = isVisible ? 'transparent' : `${blockColor}20`;
-              visibilityBtn.style.borderStyle = isVisible ? 'dashed' : 'solid';
-              numberSpan.style.opacity = isVisible ? '0.3' : '1';
-              this.onUpdateCallback();
-          };
+                  visibilityBtn.onclick = () => {
+            const isVisible = visibilityBtn.dataset.visible === 'true';
+            visibilityBtn.dataset.visible = isVisible ? 'false' : 'true';
+            const currentColor = block.dataset.color || blockColor;
+            visibilityBtn.style.background = isVisible ? 'transparent' : `${currentColor}20`;
+            visibilityBtn.style.borderStyle = isVisible ? 'dashed' : 'solid';
+            numberSpan.style.opacity = isVisible ? '0.3' : '1';
+            this.onUpdateCallback();
+        };
+
+        visibilityBtn.oncontextmenu = (e) => {
+            e.preventDefault();
+            const colorInput = document.createElement('input');
+            colorInput.type = 'color';
+            colorInput.value = block.dataset.color || blockColor;
+            colorInput.style.position = 'absolute';
+            colorInput.style.opacity = '0';
+            document.body.appendChild(colorInput);
+            colorInput.focus();
+            colorInput.click();
+            
+            colorInput.onchange = () => {
+                const newColor = colorInput.value;
+                block.dataset.color = newColor;
+                const isVisible = visibilityBtn.dataset.visible === 'true';
+                visibilityBtn.style.borderColor = newColor;
+                visibilityBtn.style.background = isVisible ? `${newColor}20` : 'transparent';
+                numberSpan.style.color = newColor;
+                this.onUpdateCallback();
+                document.body.removeChild(colorInput);
+            };
+        };
           
           grabZone.appendChild(visibilityBtn);
 

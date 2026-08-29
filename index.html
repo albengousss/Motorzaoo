@@ -76,6 +76,9 @@
         <button id="reset-view-btn" title="Repor Vista" class="w-10 h-10 flex items-center justify-center bg-white/90 backdrop-blur-sm rounded-full shadow-md text-gray-500 hover:text-blue-500 hover:shadow-lg transition-all border border-gray-200" onclick="if(window._resetView) window._resetView()">
           <i data-lucide="home" class="w-5 h-5"></i>
         </button>
+        <button id="settings-btn" title="Configurações" class="w-10 h-10 flex items-center justify-center bg-white/90 backdrop-blur-sm rounded-full shadow-md text-gray-500 hover:text-blue-500 hover:shadow-lg transition-all border border-gray-200" onclick="if(window._toggleSettings) window._toggleSettings()">
+          <i data-lucide="settings" class="w-5 h-5"></i>
+        </button>
         <button id="clear-all-btn" title="Limpar Tudo" class="w-10 h-10 flex items-center justify-center bg-white/90 backdrop-blur-sm rounded-full shadow-md text-gray-500 hover:text-red-500 hover:shadow-lg transition-all border border-gray-200" onclick="if(window._clearAll) window._clearAll()">
           <i data-lucide="trash-2" class="w-5 h-5"></i>
         </button>
@@ -108,6 +111,32 @@
       }, 500);
     </script>
     <script src="/giacwasm.js" onerror="console.error('Falha ao carregar giacwasm.js da pasta public. Use o CDN.')"></script>
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 hidden flex-col items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col border border-gray-100">
+        <div class="px-5 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+          <h3 class="font-bold text-gray-800 flex items-center gap-2"><i data-lucide="settings" class="w-5 h-5 text-gray-500"></i> Configurações do Gráfico</h3>
+          <button id="close-settings-btn" class="text-gray-400 hover:text-gray-700 transition-colors p-1" onclick="if(window._toggleSettings) window._toggleSettings()"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        <div class="p-5 flex flex-col gap-5">
+          <div class="flex justify-between items-center">
+            <span class="text-sm font-medium text-gray-700">Mostrar Eixos</span>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="setting-axes" class="sr-only peer" checked onchange="if(window._updateSettings) window._updateSettings()">
+              <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
+            </label>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-sm font-medium text-gray-700">Mostrar Grelha (Grid)</span>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="setting-grid" class="sr-only peer" checked onchange="if(window._updateSettings) window._updateSettings()">
+              <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

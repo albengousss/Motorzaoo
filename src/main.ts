@@ -897,6 +897,31 @@ ExpressionManager.init(drawFrame);
 // ─── HANDLERS GLOBAIS DOS BOTÕES DO HUD ───────────────────────────────────────
 
 /** Repõe a vista para o estado padrão (zoom 1:1, centrado na origem) */
+
+// --- CONFIGURAÇÕES DO GRÁFICO ---
+(window as any)._toggleSettings = () => {
+    const modal = document.getElementById('settings-modal');
+    if (modal) {
+        if (modal.classList.contains('hidden')) {
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        } else {
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+    }
+};
+
+(window as any)._updateSettings = () => {
+    const axesCb = document.getElementById('setting-axes') as HTMLInputElement;
+    const gridCb = document.getElementById('setting-grid') as HTMLInputElement;
+    if (axesCb && gridCb) {
+        renderer.showAxes = axesCb.checked;
+        renderer.showGrid = gridCb.checked;
+        drawFrame();
+    }
+};
+
 (window as any)._resetView = () => {
     Camera.reset();
     renderer.resize();
@@ -939,7 +964,7 @@ setTimeout(() => {
                 tooltip: 'Funções Avançadas',
                 rows: [
                     [
-                        { insert: "sin(", latex: "\\sin" }, { insert: "cos(", latex: "\\cos" }, { insert: "tan(", latex: "\\tan" }, 
+                        { insert: "´", label: "´" }, { insert: "sin(", latex: "\\sin" }, { insert: "cos(", latex: "\\cos" }, { insert: "tan(", latex: "\\tan" }, 
                         { latex: "<" }, { latex: ">" }, { latex: "\\le" }, { latex: "\\ge" }
                     ],
                     [

@@ -3,6 +3,8 @@ import { Camera } from './camera';
 export class Renderer {
     private ctx: CanvasRenderingContext2D;
     private canvas: HTMLCanvasElement;
+    showGrid: boolean = true;
+    showAxes: boolean = true;
 
     constructor(canvasId: string) {
         this.canvas = document.getElementById(canvasId) as HTMLCanvasElement;
@@ -113,22 +115,24 @@ export class Renderer {
         for (let x = startX; x <= Camera.xMax; x += step) {
             const px = Camera.toPixelX(x);
             const isAxis = Math.abs(x) < 1e-10;
-            this.ctx.beginPath();
-            this.ctx.moveTo(px, 0);
-            this.ctx.lineTo(px, H); // ← lógico, não físico
-            
-            if (isAxis) {
-                this.ctx.strokeStyle = hoverY ? '#2d70b3' : '#000';
-                this.ctx.lineWidth = hoverY ? 3 : 2;
-            } else {
-                this.ctx.strokeStyle = '#e0e0e0';
-                this.ctx.lineWidth = 1;
-            }
-            this.ctx.stroke();
+            if ((isAxis && this.showAxes) || (!isAxis && this.showGrid)) {
+                this.ctx.beginPath();
+                this.ctx.moveTo(px, 0);
+                this.ctx.lineTo(px, H);
+                
+                if (isAxis) {
+                    this.ctx.strokeStyle = hoverY ? '#2d70b3' : '#000';
+                    this.ctx.lineWidth = hoverY ? 3 : 2;
+                } else {
+                    this.ctx.strokeStyle = '#e0e0e0';
+                    this.ctx.lineWidth = 1;
+                }
+                this.ctx.stroke();
 
-            if (!isAxis) {
-                const numStr = parseFloat(x.toFixed(4)).toString();
-                this.ctx.fillText(numStr, px, zeroY + 5);
+                if (!isAxis && this.showAxes) {
+                    const numStr = parseFloat(x.toFixed(4)).toString();
+                    this.ctx.fillText(numStr, px, zeroY + 5);
+                }
             }
         }
 
@@ -138,22 +142,24 @@ export class Renderer {
         for (let y = startY; y <= Camera.yMax; y += step) {
             const py = Camera.toPixelY(y);
             const isAxis = Math.abs(y) < 1e-10;
-            this.ctx.beginPath();
-            this.ctx.moveTo(0, py);
-            this.ctx.lineTo(W, py); // ← lógico, não físico
-            
-            if (isAxis) {
-                this.ctx.strokeStyle = hoverX ? '#2d70b3' : '#000';
-                this.ctx.lineWidth = hoverX ? 3 : 2;
-            } else {
-                this.ctx.strokeStyle = '#e0e0e0';
-                this.ctx.lineWidth = 1;
-            }
-            this.ctx.stroke();
+            if ((isAxis && this.showAxes) || (!isAxis && this.showGrid)) {
+                this.ctx.beginPath();
+                this.ctx.moveTo(0, py);
+                this.ctx.lineTo(W, py);
+                
+                if (isAxis) {
+                    this.ctx.strokeStyle = hoverX ? '#2d70b3' : '#000';
+                    this.ctx.lineWidth = hoverX ? 3 : 2;
+                } else {
+                    this.ctx.strokeStyle = '#e0e0e0';
+                    this.ctx.lineWidth = 1;
+                }
+                this.ctx.stroke();
 
-            if (!isAxis) {
-                const numStr = parseFloat(y.toFixed(4)).toString();
-                this.ctx.fillText(numStr, zeroX - 5, py);
+                if (!isAxis && this.showAxes) {
+                    const numStr = parseFloat(y.toFixed(4)).toString();
+                    this.ctx.fillText(numStr, zeroX - 5, py);
+                }
             }
         }
     }
