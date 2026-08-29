@@ -42,25 +42,11 @@
     ══════════════════════════════════════════ -->
     <div id="sidebar" class="w-full md:w-[380px] md:min-w-[240px] md:resize-x bg-white border-t md:border-t-0 md:border-r border-gray-200 shadow-lg flex flex-col shrink-0 overflow-hidden z-10 h-[42vh] md:h-auto">
 
-      <!-- HUD HEADER -->
-      <div id="sidebar-header" class="bg-white px-4 py-3 border-b border-gray-100 flex flex-col items-center gap-2 shadow-sm touch-none select-none shrink-0">
-        <!-- Drag handle — visível apenas no mobile -->
-        <div id="drag-handle" class="w-10 h-1 bg-gray-300 rounded-full block md:hidden mb-0.5 shadow-inner"></div>
-        <div class="w-full flex justify-between items-center gap-2">
-          <!-- Logo -->
-          <div class="flex items-center gap-1.5">
-            <span class="text-xl font-black text-blue-500 leading-none">∑</span>
-            <span class="text-base font-semibold text-gray-800 tracking-tight">motor<span class="font-light text-gray-400">-calc</span></span>
-          </div>
-          <!-- Botões de Ação -->
-          <div class="flex items-center gap-1">
-            <button id="reset-view-btn" title="Repor Vista (Home)" class="p-1.5 rounded-lg text-gray-400 hover:text-blue-500 hover:bg-blue-50 transition-all" onclick="window._resetView && window._resetView()">
-              <i data-lucide="home" class="w-4 h-4"></i>
-            </button>
-            <button id="clear-all-btn" title="Limpar Todas as Expressões" class="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all" onclick="window._clearAll && window._clearAll()">
-              <i data-lucide="trash-2" class="w-4 h-4"></i>
-            </button>
-          </div>
+      <div id="sidebar-header" class="bg-white px-3 py-2 border-b border-gray-100 flex justify-between items-center shadow-[0_2px_4px_rgba(0,0,0,0.02)] touch-none select-none shrink-0">
+        <div class="flex items-center gap-1.5 w-full justify-center md:justify-start relative">
+            <div id="drag-handle" class="w-8 h-1 bg-gray-300 rounded-full block md:hidden shadow-inner absolute -top-1"></div>
+            <span class="text-lg font-black text-blue-500 leading-none mt-2 md:mt-0">∑</span>
+            <span class="text-sm font-semibold text-gray-800 tracking-tight mt-2 md:mt-0">motor<span class="font-light text-gray-400">-calc</span></span>
         </div>
       </div>
       
@@ -68,10 +54,10 @@
       <div id="expressions-list" class="flex flex-col gap-0 overflow-y-auto flex-1 overscroll-contain"></div>
       
       <!-- Botão Adicionar -->
-      <div class="px-3 py-2.5 border-t border-gray-100 shrink-0">
-        <button id="add-expr-btn" class="w-full flex items-center justify-center gap-2 p-2.5 cursor-pointer bg-white border border-dashed border-gray-300 rounded-lg text-blue-500 font-medium text-sm transition-all hover:bg-blue-50 hover:border-blue-300 hover:shadow-sm active:scale-[0.98]">
+      <div class="px-3 py-3 shrink-0">
+        <button id="add-expr-btn" class="w-full flex items-center justify-center gap-2 p-2 cursor-pointer bg-transparent border border-transparent rounded-md text-gray-400 font-medium text-sm transition-all hover:bg-gray-50 hover:text-blue-500 active:scale-[0.98]">
           <i data-lucide="plus" class="w-4 h-4"></i>
-          Adicionar Expressão
+          Nova Expressão
         </button>
       </div>
 
@@ -84,8 +70,19 @@
     ══════════════════════════════════════════ -->
     <div id="graph-container" class="grow relative overflow-hidden">
       <canvas id="graphCanvas" class="block w-full h-full bg-white"></canvas>
-      <!-- Coordenadas do cursor (canto inferior direito) -->
-      <div id="cursor-coords" class="absolute bottom-3 right-4 text-xs text-gray-400 font-mono pointer-events-none hidden md:block"></div>
+      
+      <!-- Botoes flutuantes -->
+      <div class="absolute top-4 right-4 flex flex-col gap-2 z-20">
+        <button id="reset-view-btn" title="Repor Vista" class="w-10 h-10 flex items-center justify-center bg-white/90 backdrop-blur-sm rounded-full shadow-md text-gray-500 hover:text-blue-500 hover:shadow-lg transition-all border border-gray-200" onclick="if(window._resetView) window._resetView()">
+          <i data-lucide="home" class="w-5 h-5"></i>
+        </button>
+        <button id="clear-all-btn" title="Limpar Tudo" class="w-10 h-10 flex items-center justify-center bg-white/90 backdrop-blur-sm rounded-full shadow-md text-gray-500 hover:text-red-500 hover:shadow-lg transition-all border border-gray-200" onclick="if(window._clearAll) window._clearAll()">
+          <i data-lucide="trash-2" class="w-5 h-5"></i>
+        </button>
+      </div>
+      
+      <!-- Coordenadas do cursor -->
+      <div id="cursor-coords" class="absolute bottom-3 right-4 text-xs text-gray-500 font-mono pointer-events-none hidden md:block bg-white/80 px-2 py-1 rounded backdrop-blur-sm shadow-sm border border-gray-100"></div>
     </div>
 
     

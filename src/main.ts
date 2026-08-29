@@ -935,33 +935,29 @@ setTimeout(() => {
         (window as any).mathVirtualKeyboard.layouts = [
             'numeric',
             {
-                label: 'Motor-Calc',
-                tooltip: 'EDO, Integrais e Atalhos',
+                label: 'f(x)',
+                tooltip: 'Funções Avançadas',
                 rows: [
                     [
-                        { insert: "´", label: "´" },
+                        { insert: "sin(", latex: "\\sin" }, { insert: "cos(", latex: "\\cos" }, { insert: "tan(", latex: "\\tan" }, 
+                        { latex: "<" }, { latex: ">" }, { latex: "\\le" }, { latex: "\\ge" }
+                    ],
+                    [
+                        { insert: "log(", latex: "\\log" }, { insert: "ln(", latex: "\\ln" }, { latex: "f_1" }, { latex: "f_2" },
+                        { insert: "Derivative(", latex: "\\frac{d}{dx}" }, { insert: "Limit(", latex: "\\lim" }
+                    ],
+                    [
                         { latex: "x" }, { latex: "y" }, { latex: "t" }, { latex: "C_0" },
-                        { insert: "Solveode(", label: "EDO" }
+                        { insert: "Integral(", latex: "\\int" }, { insert: "IntegralBetween(", latex: "\\int_a^b" }
                     ],
                     [
-                        { latex: "f_1" }, { latex: "f_2" }, { latex: "=" },
-                        { insert: "Derivative(", latex: "\\frac{d}{dx}" },
-                        { insert: "Slopefield(", label: "Campo" },
-                        { insert: "Integral(", latex: "\\int" }
-                    ],
-                    [
-                        { latex: "<" }, { latex: ">" }, { latex: "\\le" }, { latex: "\\ge" },
-                        { insert: "IntegralBetween(", latex: "\\int_a^b" },
-                        { insert: "Limit(", latex: "\\lim" }
-                    ],
-                    [
-                        { class: 'action', label: '⬇ Ocultar', command: ['toggleVirtualKeyboard'] },
-                        { class: 'action font-glyph', label: '&#x232b;', command: ['performWithFeedback', 'deleteBackward'] },
-                        { class: 'action font-glyph', label: '&#x23ce;', command: ['performWithFeedback', 'commit'] }
+                        { insert: "Solveode(", label: "EDO" }, { insert: "Slopefield(", label: "Campo" },
+                        { class: 'separator w5' },
+                        { class: 'action font-glyph w15', label: '&#x232b;', command: ['performWithFeedback', 'deleteBackward'] },
+                        { class: 'action font-glyph w15', label: '&#x23ce;', command: ['performWithFeedback', 'commit'] }
                     ]
                 ]
             },
-            'symbols',
             'alphabetic'
         ];
     }

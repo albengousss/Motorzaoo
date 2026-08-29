@@ -141,7 +141,7 @@ export class ExpressionManager {
 
         const block = document.createElement('div');
         block.id = blockId;
-        block.className = 'flex border-b border-gray-200 bg-white transition-colors duration-200 relative group';
+        block.className = 'flex border-b border-gray-100 bg-white transition-colors duration-200 relative group';
 
         const grabZone = document.createElement('div');
         grabZone.className = 'w-12 bg-white flex flex-col items-center justify-start pt-[14px] shrink-0 select-none text-gray-500 gap-1.5';
@@ -179,26 +179,26 @@ export class ExpressionManager {
         // --- ÁREA DE CONTEÚDO (Matemática + Slider) ---
         const contentZone = document.createElement('div');
         contentZone.className = 'flex flex-col grow overflow-hidden';
-
         const topRow = document.createElement('div');
-        topRow.className = 'flex items-center px-2 py-3 gap-2 overflow-hidden min-h-[56px]';
-        
+        topRow.className = 'flex items-start px-2 py-3 gap-2 overflow-hidden min-h-[56px]';
+
+        const mathContainer = document.createElement('div');
+        mathContainer.className = 'flex flex-col grow overflow-hidden pt-1';
+
         const mf = document.createElement('math-field');
-        
-        mf.className = 'grow border-none outline-none text-lg bg-transparent';
+        mf.className = 'border-none outline-none text-lg bg-transparent w-full';
         
         const resultSpan = document.createElement('div');
-        // Single className assignment — removed duplicate from previous version
-        resultSpan.className = 'result-display text-gray-500 text-sm font-semibold overflow-x-auto max-w-[50%] shrink text-right mr-1 cursor-help select-text';
+        resultSpan.className = 'result-display text-gray-400 text-sm font-semibold overflow-x-auto w-full shrink text-left mt-1 hidden select-text';
 
         const delBtn = document.createElement('button');
         delBtn.innerHTML = '<i data-lucide="x" class="w-5 h-5"></i>';
-        delBtn.className = 'bg-transparent border-none text-gray-400 cursor-pointer text-base py-2 px-3 shrink-0 ml-auto transition-all opacity-40 hover:opacity-100 hover:text-gray-800 outline-none';
-        // No more redundant onmouseover/out — Tailwind handles hover state
+        delBtn.className = 'bg-transparent border-none text-gray-400 cursor-pointer text-base py-1 px-3 shrink-0 ml-auto transition-all opacity-40 hover:opacity-100 hover:text-gray-800 outline-none';
 
-        
-        topRow.appendChild(mf);
-        topRow.appendChild(resultSpan);
+        mathContainer.appendChild(mf);
+        mathContainer.appendChild(resultSpan);
+
+        topRow.appendChild(mathContainer);
         topRow.appendChild(delBtn);
         contentZone.appendChild(topRow);
 
@@ -457,22 +457,27 @@ export class ExpressionManager {
         if (block) {
             const resDisplay = block.querySelector('.result-display') as HTMLElement;
             if (resDisplay) {
-                resDisplay.title = result; 
-                const win = window as any;
-                if (win.katex && result.startsWith('= ')) {
-                     try {
-                          const mathStr = result.substring(2);
-                          if (mathStr.includes('Erro') || mathStr.includes('indefinido') || mathStr.includes('carregar')) {
-                               resDisplay.innerText = result;
-                          } else {
-                               const html = win.katex.renderToString(mathStr, { throwOnError: false });
-                               resDisplay.innerHTML = '= <span style="display:inline-block; vertical-align: middle;">' + html + '</span>';
-                          }
-                     } catch(e) {
-                          resDisplay.innerText = result;
-                     }
+                if (!result) {
+                    resDisplay.classList.add('hidden');
                 } else {
-                    resDisplay.innerText = result;
+                    resDisplay.classList.remove('hidden');
+                    resDisplay.title = result;
+                    const win = window as any;
+                    if (win.katex && result.startsWith('= ')) {
+                        try {
+                            const mathStr = result.substring(2);
+                            if (mathStr.includes('Erro') || mathStr.includes('indefinido') || mathStr.includes('carregar')) {
+                                resDisplay.innerText = result;
+                            } else {
+                                const html = win.katex.renderToString(mathStr, { throwOnError: false });
+                                resDisplay.innerHTML = '= <span style="display:inline-block; vertical-align: middle;">' + html + '</span>';
+                            }
+                        } catch(e) {
+                            resDisplay.innerText = result;
+                        }
+                    } else {
+                        resDisplay.innerText = result;
+                    }
                 }
             }
         }
