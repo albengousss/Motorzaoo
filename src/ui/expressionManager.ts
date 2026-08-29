@@ -91,6 +91,7 @@ export class ExpressionManager {
                         const newAscii = originalAscii.substring(0, originalAscii.length - typedRaw.length) + cmd + '(';
                         mf.setValue(newAscii, { format: 'ascii-math' });
                         mf.executeCommand(['performWithFeedback', 'moveToMathFieldEnd']);
+                        mf.executeCommand(['performWithFeedback', 'moveToPreviousChar']);
                         this.autocompleteDiv.style.display = 'none';
                         this.onUpdateCallback();
                     };

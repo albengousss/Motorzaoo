@@ -431,8 +431,18 @@ function drawFrame() {
                                       } else if (assignTarget) {
                                           fname = assignTarget.replace(/[\\{\\}\\]/g, '');
                                       } else {
-                                          idx = StateManager.getNextFuncIndex();
+                                          idx = StateManager.casSolutions[item.id]?.index ?? StateManager.getNextFuncIndex();
                                           fname = `f_{${idx}}`;
+                                          if (cmdName === 'integral' && cmdArgs.split(',').length <= 2) {
+                                              const cName = `C_{${idx}}`;
+                                              if (!cleanResult.includes(cName)) {
+                                                  cleanResult += ` + ${cName}`;
+                                                  if (!StateManager.values.hasOwnProperty(cName)) {
+                                                      StateManager.values[cName] = 0;
+                                                      ExpressionManager.addExpression(`${cName} = 0`);
+                                                  }
+                                              }
+                                          }
                                       }
                                   }
                               } catch(e) {}
@@ -449,15 +459,23 @@ function drawFrame() {
                                   }
                               }
 
-                              StateManager.casSolutions[item.id] = { query: currentQuery, result: cleanResult, ast: resAst, name: fname, variable: extractVar, index: idx };
-                              
-                              if (assignTarget && assignTarget.includes('(')) {
-                                  ExpressionManager.setResult(item.id, `= ${cleanResult}`);
-                              } else if (fname && !assignTarget) {
-                                  ExpressionManager.setResult(item.id, `= ${fname}(${extractVar}) = ${cleanResult}`);
-                              } else {
-                                  ExpressionManager.setResult(item.id, `= ${cleanResult}`);
-                              }
+                                let spawnedId = StateManager.casSolutions[item.id]?.spawnedBlockId;
+                                StateManager.casSolutions[item.id] = { query: currentQuery, result: cleanResult, ast: resAst, name: fname, variable: extractVar, index: idx, spawnedBlockId: spawnedId };
+
+                                if (fname && !assignTarget) {
+                                    const expressionStr = `${fname}(${extractVar}) = ${cleanResult}`;
+                                    if (spawnedId && document.getElementById(spawnedId)) {
+                                        ExpressionManager.updateExpression(spawnedId, expressionStr);
+                                    } else {
+                                        spawnedId = ExpressionManager.addExpression(expressionStr);
+                                        StateManager.casSolutions[item.id].spawnedBlockId = spawnedId;
+                                    }
+                                    ExpressionManager.setResult(item.id, '');
+                                } else if (assignTarget && assignTarget.includes('(')) {
+                                    ExpressionManager.setResult(item.id, `= ${cleanResult}`);
+                                } else {
+                                    ExpressionManager.setResult(item.id, `= ${cleanResult}`);
+                                }
                               
                               if (resAst && fname) {
                                   validEquations.push({ id: item.id, ast: resAst, isImplicit: false, isEdo: false, name: fname, operator: '=', isDerivative: false, isHidden: !item.visible, variable: extractVar });
