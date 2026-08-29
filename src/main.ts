@@ -123,7 +123,8 @@ function drawFrame() {
         cleanStr = cleanStr.replace(/([a-zA-Z_][a-zA-Z0-9_]*)_\(([0-9]+),([0-9]+)\)/g, (_match, p1, p2, p3) => {
             return `${p1}[${parseInt(p2)-1},${parseInt(p3)-1}]`;
         });
-        cleanStr = cleanStr.replace(/([a-zA-Z_][a-zA-Z0-9_]*)_([0-9]+)/g, (_match, p1, p2) => {
+        cleanStr = cleanStr.replace(/([a-zA-Z_][a-zA-Z0-9_]*)_([0-9]+)/g, (match, p1, p2) => {
+            if (['f', 'g', 'h', 'c', 'C', 'y', 'x'].includes(p1)) return match;
             return `${p1}[${parseInt(p2)-1}]`;
         });
         
@@ -296,12 +297,17 @@ function drawFrame() {
             const cached = StateManager.casSolutions[item.id];
             if (cached && cached.query === currentQuery) {
                 if (cached.name && cached.variable && !cached.result.startsWith('Erro')) {
-                    ExpressionManager.setResult(item.id, `= ${cached.name}(${cached.variable}) = ${cached.result}`);
+                    if (!assignTarget) {
+                        // If it spawned a block, don't show inline and don't push to validEquations!
+                        ExpressionManager.setResult(item.id, '');
+                    } else {
+                        ExpressionManager.setResult(item.id, `= ${cached.result}`);
+                    }
                 } else {
                     ExpressionManager.setResult(item.id, cached.result.includes('Erro') ? `- Erro no cálculo` : `= ${cached.result}`);
                 }
                 
-                if (cached.ast) {
+                if (cached.ast && (assignTarget || !cached.name)) {
                     validEquations.push({ id: item.id, ast: cached.ast, isImplicit: false, isEdo: false, name: cached.name || '', operator: '=', isDerivative: false, isHidden: !item.visible, variable: cached.variable });
                     
                     // Registar para que f_n(3) funcione!
