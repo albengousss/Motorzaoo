@@ -463,7 +463,8 @@ function drawFrame() {
                                 StateManager.casSolutions[item.id] = { query: currentQuery, result: cleanResult, ast: resAst, name: fname, variable: extractVar, index: idx, spawnedBlockId: spawnedId };
 
                                 if (fname && !assignTarget) {
-                                    const expressionStr = `${fname}(${extractVar}) = ${cleanResult}`;
+                                    const cleanFnName = fname.replace(/[\{\}\\]/g, '');
+                                    const expressionStr = `${cleanFnName}(${extractVar}) = ${cleanResult}`;
                                     if (spawnedId && document.getElementById(spawnedId)) {
                                         ExpressionManager.updateExpression(spawnedId, expressionStr);
                                     } else {
@@ -477,7 +478,7 @@ function drawFrame() {
                                     ExpressionManager.setResult(item.id, `= ${cleanResult}`);
                                 }
                               
-                              if (resAst && fname) {
+                              if (resAst && fname && assignTarget) {
                                   validEquations.push({ id: item.id, ast: resAst, isImplicit: false, isEdo: false, name: fname, operator: '=', isDerivative: false, isHidden: !item.visible, variable: extractVar });
                                   
                                   // Registar para que f_n(3) funcione!

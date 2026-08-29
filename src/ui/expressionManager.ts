@@ -135,7 +135,7 @@ export class ExpressionManager {
         });
     }
 
-    static addBlock(): string {
+    static addBlock(autoFocus: boolean = true): string {
         this.blockCounter++;
         const blockId = 'expr-block-' + this.blockCounter;
 
@@ -364,12 +364,12 @@ export class ExpressionManager {
             document.addEventListener('pointerup', onUp);
         });
 
-        setTimeout(() => mf.focus(), 10);
+        if (autoFocus) setTimeout(() => mf.focus(), 10);
         return blockId;
     }
 
-    static addExpression(asciiValue: string): string {
-        const blockId = this.addBlock();
+    static addExpression(asciiValue: string, autoFocus: boolean = false): string {
+        const blockId = this.addBlock(autoFocus);
         const block = document.getElementById(blockId);
         if (block) {
             const mf = block.querySelector('math-field');
