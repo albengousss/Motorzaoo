@@ -288,13 +288,17 @@ function drawFrame() {
             const cmdName = genericCasMatch[2].toLowerCase();
             const cmdArgs = genericCasMatch[3];
             const currentQuery = assignTarget ? `${assignTarget}=${cmdName}(${cmdArgs})` : `${cmdName}(${cmdArgs})`;
+                    if (cmdArgs.trim() === '') {
+                        ExpressionManager.setResult(item.id, '');
+                        return;
+                    }
 
             const cached = StateManager.casSolutions[item.id];
             if (cached && cached.query === currentQuery) {
                 if (cached.name && cached.variable && !cached.result.startsWith('Erro')) {
                     ExpressionManager.setResult(item.id, `= ${cached.name}(${cached.variable}) = ${cached.result}`);
                 } else {
-                    ExpressionManager.setResult(item.id, `= ${cached.result}`);
+                    ExpressionManager.setResult(item.id, cached.result.includes('Erro') ? `- Erro no cálculo` : `= ${cached.result}`);
                 }
                 
                 if (cached.ast) {
@@ -313,7 +317,7 @@ function drawFrame() {
                     // Força a exigir variável de integração se só for passado 1 argumento
                     if ((cmdName === 'integral' || cmdName === 'nintegral' || cmdName === 'derivative') && !cmdArgs.includes(',')) {
                         StateManager.casSolutions[item.id] = { query: currentQuery, result: 'Erro: Informe a variável. Ex: Integral(expressão, x)' };
-                        ExpressionManager.setResult(item.id, `Erro CAS`);
+                        ExpressionManager.setResult(item.id, `- Erro no cálculo`);
                         StateManager.pendingCas[item.id] = false;
                         drawFrame();
                         return;
@@ -394,7 +398,7 @@ function drawFrame() {
                             StateManager.pendingCas[item.id] = false;
                         } else if (res.includes('Erro') || res.includes('ausente') || res.includes('Mock')) {
                             StateManager.casSolutions[item.id] = { query: currentQuery, result: 'Erro no cálculo' };
-                            ExpressionManager.setResult(item.id, `Erro CAS`);
+                            ExpressionManager.setResult(item.id, `- Erro no cálculo`);
                         } else {
                             // Limpa as aspas do Giac e espaços extras
                             let cleanResult = res.replace(/"/g, '').replace(/list\[/g, '[').replace(/usr_/g, '').trim();
@@ -589,7 +593,7 @@ function drawFrame() {
                     StateManager.casSolutions = {}; // INVALIDE CACHE SO DEPENDENTS UPDATE!
                     MathEngine.askGiac(giacDef).then(res => {
                         let formattedRes = res.replace(/"/g, '').replace(/list\[/g, '[').replace(/usr_/g, '').trim();
-                        ExpressionManager.setResult(item.id, `= ${formattedRes}`);
+                        ExpressionManager.setResult(item.id, formattedRes.includes('Erro') ? `- Erro no cálculo` : `= ${formattedRes}`);
                     });
                 } else {
                     ExpressionManager.setResult(item.id, `= [Matriz Registada]`);
@@ -671,7 +675,7 @@ function drawFrame() {
                     const currentQuery = expressaoPlot;
                     const cached = StateManager.casSolutions[item.id];
                     if (cached && cached.query === currentQuery) {
-                        ExpressionManager.setResult(item.id, `= ${cached.result}`);
+                        ExpressionManager.setResult(item.id, cached.result.includes('Erro') ? `- Erro no cálculo` : `= ${cached.result}`);
                     } else if (!StateManager.pendingCas[item.id]) {
                         ExpressionManager.setResult(item.id, 'Calculando...');
                         StateManager.pendingCas[item.id] = true;
@@ -691,7 +695,7 @@ function drawFrame() {
                             }
                             
                             StateManager.casSolutions[item.id] = { query: currentQuery, result: formattedRes, ast: null };
-                            ExpressionManager.setResult(item.id, `= ${formattedRes}`);
+                            ExpressionManager.setResult(item.id, formattedRes.includes('Erro') ? `- Erro no cálculo` : `= ${formattedRes}`);
                             scheduleFrame();
                         });
                     }

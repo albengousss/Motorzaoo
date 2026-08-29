@@ -1,0 +1,1 @@
+import { PrattParser } from './src/core/prattParser'; try { console.log(JSON.stringify(new PrattParser('(Determinant())-()').parseExpression())); } catch(e: any) { console.log('ERROR', e.message); }  
