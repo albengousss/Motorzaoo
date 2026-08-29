@@ -51,6 +51,13 @@ export class Tokenizer {
         // Esta linha reverte o erro caso o asterisco esteja a separar um identificador de um parêntesis!
         processed = processed.replace(/(\\?[a-zA-Z_][a-zA-Z0-9_\{\}]*)\*\(/g, '$1(');
 
+        // Tratamento especial de yx e xy (juntos ou separados) que falhariam no parser como identificador único
+        processed = processed.replace(/(^|[^a-zA-Z_])y\s*x(?![a-zA-Z_])/g, '$1y*x');
+        processed = processed.replace(/(^|[^a-zA-Z_])x\s*y(?![a-zA-Z_])/g, '$1x*y');
+        
+        // Multiplicação implícita entre x/y e funções (ex: x sin(y) -> x*sin(y))
+        processed = processed.replace(/(^|[^a-zA-Z_])([xy])\s+(sin|cos|tan|log|ln|exp|abs|sqrt)(?![a-zA-Z_])/g, '$1$2*$3');
+
         this.string = processed;
         this.cursor = 0;
     }
