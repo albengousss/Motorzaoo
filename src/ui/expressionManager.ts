@@ -142,13 +142,12 @@ export class ExpressionManager {
         block.id = blockId;
         block.className = 'flex border-b border-gray-200 bg-white transition-colors duration-200 relative group';
 
-        // --- ZONA DE CAPTURA E VISIBILIDADE ---
         const grabZone = document.createElement('div');
-        grabZone.style.cssText = 'width: 48px; background: #ffffff; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding-top: 14px; flex-shrink: 0; user-select: none; color: #5f6368; gap: 6px;';
+        grabZone.className = 'w-12 bg-white flex flex-col items-center justify-start pt-[14px] shrink-0 select-none text-gray-500 gap-1.5';
         
-                  const colorIndex = this.blockCounter % 5;
-          const colors = ['#c74440', '#2d70b3', '#388c46', '#6042a6', '#fa7e19'];
-          const blockColor = colors[colorIndex];
+        const colors = ['#c74440', '#2d70b3', '#388c46', '#6042a6', '#fa7e19'];
+        const colorIndex = Array.from(this.container.children).length % colors.length;
+        const blockColor = colors[colorIndex];
 
           const visibilityBtn = document.createElement('div');
           visibilityBtn.className = 'visibility-toggle';
@@ -187,14 +186,14 @@ export class ExpressionManager {
         mf.className = 'grow border-none outline-none text-lg bg-transparent';
         
         const resultSpan = document.createElement('div');
-        resultSpan.className = 'result-display';
-        resultSpan.className = 'result-display text-gray-600 text-sm font-semibold whitespace-nowrap overflow-hidden text-ellipsis max-w-[50%] shrink text-right mr-1 cursor-help select-text';
+        // Single className assignment — removed duplicate from previous version
+        resultSpan.className = 'result-display text-gray-500 text-sm font-semibold overflow-x-auto max-w-[50%] shrink text-right mr-1 cursor-help select-text';
 
         const delBtn = document.createElement('button');
-        delBtn.innerHTML = '<i data-lucide="x" class="w-5 h-5"></i>'; // Elegant 'x'
+        delBtn.innerHTML = '<i data-lucide="x" class="w-5 h-5"></i>';
         delBtn.className = 'bg-transparent border-none text-gray-400 cursor-pointer text-base py-2 px-3 shrink-0 ml-auto transition-all opacity-40 hover:opacity-100 hover:text-gray-800 outline-none';
-        delBtn.onmouseover = () => { delBtn.style.opacity = '1'; delBtn.style.color = '#333'; };
-        delBtn.onmouseout = () => { delBtn.style.opacity = '0.4'; delBtn.style.color = '#999'; };
+        // No more redundant onmouseover/out — Tailwind handles hover state
+
         
         topRow.appendChild(mf);
         topRow.appendChild(resultSpan);
@@ -426,7 +425,8 @@ export class ExpressionManager {
 
             const rightSide = assignmentMatch[2];
             
-            if (rightSide.includes('x') || rightSide.includes('y')) {
+            // Só inibe o slider se o lado direito contiver as variáveis independentes x ou y (como palavras isoladas)
+            if (/\b[xy]\b/.test(rightSide)) {
                 sliderRow.style.display = 'none';
                 return false;
             }

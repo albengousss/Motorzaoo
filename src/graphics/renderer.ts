@@ -82,13 +82,19 @@ export class Renderer {
 
     drawAxes(hoverX: boolean = false, hoverY: boolean = false) {
         const rangeX = Camera.xMax - Camera.xMin;
-        const rawStep = rangeX / 10; 
+        const rangeY = Camera.yMax - Camera.yMin;
+        // Usa a grelha do eixo que tiver intervalo maior, para manter labels legíveis
+        const rawStep = Math.max(rangeX, rangeY) / 10;
         const mag = Math.floor(Math.log10(rawStep));
         const magPow = Math.pow(10, mag);
         
         let step = magPow;
         if (rawStep > 5 * magPow) step = 5 * magPow;
         else if (rawStep > 2 * magPow) step = 2 * magPow;
+
+        // Usar Camera.width/height (dimensões LÓGICAS) — this.canvas.width é físico (DPR-scaled)
+        const W = Camera.width;
+        const H = Camera.height;
 
         this.ctx.font = '12px Arial';
         this.ctx.fillStyle = '#666';
@@ -97,11 +103,11 @@ export class Renderer {
 
         let zeroY = Camera.toPixelY(0);
         if (zeroY < 20) zeroY = 20; 
-        if (zeroY > this.canvas.height - 20) zeroY = this.canvas.height - 20;
+        if (zeroY > H - 20) zeroY = H - 20;
 
         let zeroX = Camera.toPixelX(0);
         if (zeroX < 20) zeroX = 20;
-        if (zeroX > this.canvas.width - 20) zeroX = this.canvas.width - 20;
+        if (zeroX > W - 20) zeroX = W - 20;
 
         const startX = Math.ceil(Camera.xMin / step) * step;
         for (let x = startX; x <= Camera.xMax; x += step) {
@@ -109,9 +115,8 @@ export class Renderer {
             const isAxis = Math.abs(x) < 1e-10;
             this.ctx.beginPath();
             this.ctx.moveTo(px, 0);
-            this.ctx.lineTo(px, this.canvas.height);
+            this.ctx.lineTo(px, H); // ← lógico, não físico
             
-            // Lógica Desmos: Se passar o mouse no Eixo Y real (onde x=0), ele fica azul!
             if (isAxis) {
                 this.ctx.strokeStyle = hoverY ? '#2d70b3' : '#000';
                 this.ctx.lineWidth = hoverY ? 3 : 2;
@@ -135,9 +140,8 @@ export class Renderer {
             const isAxis = Math.abs(y) < 1e-10;
             this.ctx.beginPath();
             this.ctx.moveTo(0, py);
-            this.ctx.lineTo(this.canvas.width, py);
+            this.ctx.lineTo(W, py); // ← lógico, não físico
             
-            // Lógica Desmos: Se passar o mouse no Eixo X real (onde y=0), ele fica azul!
             if (isAxis) {
                 this.ctx.strokeStyle = hoverX ? '#2d70b3' : '#000';
                 this.ctx.lineWidth = hoverX ? 3 : 2;
@@ -153,27 +157,31 @@ export class Renderer {
             }
         }
     }
+
     drawPoints(points: {x: number, y: number}[], color: string) {
         if (points.length === 0) return;
+        const W = Camera.width;
+        const H = Camera.height;
         
         points.forEach(p => {
             const px = Camera.toPixelX(p.x);
             const py = Camera.toPixelY(p.y);
             
-            // Segurança: Ignora se a bolinha estiver fora do monitor
-            if (px < -10 || px > this.canvas.width + 10 || py < -10 || py > this.canvas.height + 10) return;
+            // Usa dimensões lógicas (Camera) em vez de físicas (canvas.*) — fix DPR
+            if (px < -10 || px > W + 10 || py < -10 || py > H + 10) return;
 
             this.ctx.beginPath();
-            this.ctx.arc(px, py, 4.5, 0, Math.PI * 2); // Bolinha de raio 4.5
+            this.ctx.arc(px, py, 4.5, 0, Math.PI * 2);
             
-            this.ctx.fillStyle = '#e8e8e8'; // Preenchimento cinza claro padrão
+            this.ctx.fillStyle = '#e8e8e8';
             this.ctx.fill();
             
             this.ctx.lineWidth = 1.5;
-            this.ctx.strokeStyle = color; // A borda ganha a cor da linha!
+            this.ctx.strokeStyle = color;
             this.ctx.stroke();
         });
     }
+
     // Modificamos para aceitar a cor como parâmetro
     drawCurve(points: {x: number, y: number}[], color: string = '#2d70b3') {
         if (points.length === 0) return;

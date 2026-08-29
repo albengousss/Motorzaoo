@@ -98,7 +98,6 @@ export class MathEngine {
             }
             const mathNode = this.ce.box(ast);
             const resultNode = mathNode.N(); 
-            this.ce.popScope();
 
             if (typeof (resultNode as any).json === 'number') return (resultNode as any).json;
             if (typeof (resultNode as any).numericValue === 'number') return (resultNode as any).numericValue;
@@ -108,6 +107,8 @@ export class MathEngine {
             return NaN;
         } catch (error) {
             return NaN;
+        } finally {
+            try { this.ce.popScope(); } catch (_) {}
         }
     }
 
@@ -232,11 +233,28 @@ export class MathEngine {
                 if (a.min <= 0 && a.max >= 0) return { min: 0, max: Math.max(Math.pow(a.min, b.min), Math.pow(a.max, b.min)) };
                 return { min: Math.min(Math.pow(a.min, b.min), Math.pow(a.max, b.min)), max: Math.max(Math.pow(a.min, b.min), Math.pow(a.max, b.min)) };
             }
-            // simplificação de power 
             return { min: Math.min(Math.pow(a.min, b.min), Math.pow(a.max, b.min)), max: Math.max(Math.pow(a.min, b.max), Math.pow(a.max, b.max)) };
         },
-        intSin: (_a: any) => ({ min: -1, max: 1 }), // Simplificação segura para senoides rápidos
-        intCos: (_a: any) => ({ min: -1, max: 1 }),
+        intSin: (a: any) => {
+            if (a.max - a.min >= 2 * Math.PI) return { min: -1, max: 1 };
+            const minV = Math.sin(a.min), maxV = Math.sin(a.max);
+            let min = Math.min(minV, maxV), max = Math.max(minV, maxV);
+            const p1 = Math.ceil((a.min - Math.PI/2) / (2*Math.PI)) * 2*Math.PI + Math.PI/2;
+            if (p1 >= a.min && p1 <= a.max) max = 1;
+            const p2 = Math.ceil((a.min - 3*Math.PI/2) / (2*Math.PI)) * 2*Math.PI + 3*Math.PI/2;
+            if (p2 >= a.min && p2 <= a.max) min = -1;
+            return { min, max };
+        },
+        intCos: (a: any) => {
+            if (a.max - a.min >= 2 * Math.PI) return { min: -1, max: 1 };
+            const minV = Math.cos(a.min), maxV = Math.cos(a.max);
+            let min = Math.min(minV, maxV), max = Math.max(minV, maxV);
+            const p1 = Math.ceil((a.min) / (2*Math.PI)) * 2*Math.PI;
+            if (p1 >= a.min && p1 <= a.max) max = 1;
+            const p2 = Math.ceil((a.min - Math.PI) / (2*Math.PI)) * 2*Math.PI + Math.PI;
+            if (p2 >= a.min && p2 <= a.max) min = -1;
+            return { min, max };
+        },
         intAbs: (a: any) => ({ 
             min: (a.min <= 0 && a.max >= 0) ? 0 : Math.min(Math.abs(a.min), Math.abs(a.max)), 
             max: Math.max(Math.abs(a.min), Math.abs(a.max)) 

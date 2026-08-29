@@ -3,8 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Motor Gráfico Avançado</title>    <style>
-      /* MathLive Overrides - Must remain */
+    <title>motor-calc</title>
+    <style>
+      /* MathLive Overrides — must remain as CSS vars */
       @media (min-width: 769px) { math-field::part(virtual-keyboard-toggle) { display: none; } }
       @media (max-width: 768px) {
         math-virtual-keyboard { --keyboard-height: 35vh; --keycap-height: 2.2rem; --keycap-font-size: 1.2rem; --keyboard-background: #f1f3f4; }
@@ -12,53 +13,81 @@
       :root, math-field, body {
         --contains-highlight-background: transparent !important;
         --highlight-background: transparent !important;
-        --selection-background-color: rgba(180, 200, 255, 0.4) !important;
+        --selection-background-color: rgba(100, 160, 255, 0.3) !important;
         --placeholder-color: transparent !important;
         --keyboard-background: #f1f3f4;
       }
       math-field::part(container) { background-color: transparent !important; }
       math-field:focus-within { background-color: transparent !important; outline: none !important; }
       .ML__contains-highlight, .ML__highlight, .ML__selection, .ML__focused { background: transparent !important; background-color: transparent !important; }
-      math-field {
-        --placeholder-color: #a0a0a0 !important;
-        --placeholder-opacity: 0.5 !important;
-        --caret-color: #000 !important;
-      }
-      math-field::part(placeholder) { background: transparent !important; background-color: transparent !important; }
-      .ML__placeholder { background: transparent !important; background-color: transparent !important; }
+      math-field { --placeholder-color: #a0a0a0 !important; --placeholder-opacity: 0.5 !important; --caret-color: #202124 !important; }
+      math-field::part(placeholder), .ML__placeholder { background: transparent !important; }
+      /* Evita que o scroll da lista arraste a página no mobile */
+      #expressions-list { overscroll-behavior: contain; }
     </style>
-    <!-- KaTeX CSS e Script -->
+    <!-- KaTeX -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Tailwind via Vite plugin (processado em build) -->
     <link rel="stylesheet" href="/src/style.css">
+    <!-- Tailwind CDN como fallback para dev sem build step (remove em produção se quiser) -->
     <script src="https://cdn.tailwindcss.com"></script>
   </head>
-  <body class="flex flex-col-reverse md:flex-row h-screen overflow-hidden bg-white text-gray-800 font-sans">
+  <body class="flex flex-col-reverse md:flex-row h-screen overflow-hidden bg-white text-gray-800 font-sans antialiased">
     
-    <!-- Painel Esquerdo -->
-    <div id="sidebar" class="w-full md:w-[380px] md:min-w-[250px] md:resize-x bg-white border-t md:border-t-0 md:border-r border-gray-200 shadow-md flex flex-col shrink-0 p-0 overflow-y-auto overflow-x-hidden z-10 h-[40vh] md:h-auto">
-      <div id="sidebar-header" class="bg-white px-5 py-4 font-semibold text-blue-600 text-base border-b border-gray-200 flex flex-col items-center justify-center gap-2 shadow-sm touch-none">
-        <div id="drag-handle" class="w-10 h-1 bg-gray-300 rounded-full md:hidden mb-1 shadow-inner block"></div>
-        <div class="w-full flex justify-between items-center">
-          <span><span class="text-lg align-middle mr-2 font-extrabold text-blue-400">∑</span> motor<span class="font-light text-gray-600">-calc</span></span>
+    <!-- ═══════════════════════════════════════
+         SIDEBAR — Painel de Expressões
+    ══════════════════════════════════════════ -->
+    <div id="sidebar" class="w-full md:w-[380px] md:min-w-[240px] md:resize-x bg-white border-t md:border-t-0 md:border-r border-gray-200 shadow-lg flex flex-col shrink-0 overflow-hidden z-10 h-[42vh] md:h-auto">
+
+      <!-- HUD HEADER -->
+      <div id="sidebar-header" class="bg-white px-4 py-3 border-b border-gray-100 flex flex-col items-center gap-2 shadow-sm touch-none select-none shrink-0">
+        <!-- Drag handle — visível apenas no mobile -->
+        <div id="drag-handle" class="w-10 h-1 bg-gray-300 rounded-full block md:hidden mb-0.5 shadow-inner"></div>
+        <div class="w-full flex justify-between items-center gap-2">
+          <!-- Logo -->
+          <div class="flex items-center gap-1.5">
+            <span class="text-xl font-black text-blue-500 leading-none">∑</span>
+            <span class="text-base font-semibold text-gray-800 tracking-tight">motor<span class="font-light text-gray-400">-calc</span></span>
+          </div>
+          <!-- Botões de Ação -->
+          <div class="flex items-center gap-1">
+            <button id="reset-view-btn" title="Repor Vista (Home)" class="p-1.5 rounded-lg text-gray-400 hover:text-blue-500 hover:bg-blue-50 transition-all" onclick="window._resetView && window._resetView()">
+              <i data-lucide="home" class="w-4 h-4"></i>
+            </button>
+            <button id="clear-all-btn" title="Limpar Todas as Expressões" class="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all" onclick="window._clearAll && window._clearAll()">
+              <i data-lucide="trash-2" class="w-4 h-4"></i>
+            </button>
+          </div>
         </div>
       </div>
       
-      <div id="expressions-list" class="flex flex-col gap-0"></div>
+      <!-- LISTA DE EXPRESSÕES — scrollable -->
+      <div id="expressions-list" class="flex flex-col gap-0 overflow-y-auto flex-1 overscroll-contain"></div>
       
-      <button id="add-expr-btn" class="mx-4 my-3 p-3 cursor-pointer bg-white border border-gray-300 rounded-lg text-blue-600 font-medium text-sm transition-all hover:bg-gray-50 hover:shadow-sm">
-        + Adicionar Expressão
-      </button>
+      <!-- Botão Adicionar -->
+      <div class="px-3 py-2.5 border-t border-gray-100 shrink-0">
+        <button id="add-expr-btn" class="w-full flex items-center justify-center gap-2 p-2.5 cursor-pointer bg-white border border-dashed border-gray-300 rounded-lg text-blue-500 font-medium text-sm transition-all hover:bg-blue-50 hover:border-blue-300 hover:shadow-sm active:scale-[0.98]">
+          <i data-lucide="plus" class="w-4 h-4"></i>
+          Adicionar Expressão
+        </button>
+      </div>
 
-      <div id="sliders-container" class="mt-5 px-4 pb-4"></div>
+      <!-- Sliders Dinâmicos -->
+      <div id="sliders-container" class="px-3 pb-3 shrink-0"></div>
     </div>
 
-    <!-- Painel Direito: Gráfico -->
-    <div id="graph-container" class="grow relative">
+    <!-- ═══════════════════════════════════════
+         ÁREA DO GRÁFICO
+    ══════════════════════════════════════════ -->
+    <div id="graph-container" class="grow relative overflow-hidden">
       <canvas id="graphCanvas" class="block w-full h-full bg-white"></canvas>
+      <!-- Coordenadas do cursor (canto inferior direito) -->
+      <div id="cursor-coords" class="absolute bottom-3 right-4 text-xs text-gray-400 font-mono pointer-events-none hidden md:block"></div>
     </div>
+
     
     <script>
       // Configuração global para o Giac rodar na thread principal!
@@ -71,10 +100,13 @@
           printErr: function(t) { console.error('Giac Erro:', t); }
       };
       // Fallback polling caso onRuntimeInitialized não dispare
-      setInterval(() => {
+      const _giacPoll = setInterval(() => {
           if (!window.giacReady && window.Module && (typeof window.Module.cwrap === 'function' || typeof window.Module._caseval === 'function')) {
               window.giacReady = true;
               console.log("Giac (Main Thread) inicializado via polling!");
+              clearInterval(_giacPoll);
+          } else if (window.giacReady) {
+              clearInterval(_giacPoll);
           }
       }, 500);
     </script>

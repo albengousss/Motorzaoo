@@ -1,4 +1,5 @@
 import 'mathlive';
+import './style.css';
 import { PrattParser } from './core/prattParser';
 import { StateManager } from './core/stateManager';
 import { MathEngine } from './core/mathEngine';
@@ -23,25 +24,69 @@ const tooltip = document.createElement('div');
 tooltip.style.cssText = 'position: fixed; background: rgba(0, 0, 0, 0.75); color: white; padding: 4px 8px; border-radius: 4px; font-family: sans-serif; font-size: 13px; pointer-events: none; display: none; z-index: 2000; transform: translate(-50%, -100%); margin-top: -12px; font-weight: bold; letter-spacing: 0.5px; box-shadow: 0px 2px 4px rgba(0,0,0,0.2);';
 document.body.appendChild(tooltip);
 
-function drawFrame() {
-    const prefixGiac = (str: string): string => {
-        let res = str;
-        const vars = Object.keys(StateManager.giacDefinitions);
-        vars.sort((a,b) => b.length - a.length); // replace longer first
-        for (const v of vars) {
-            res = res.replace(new RegExp(`\\b${v}\\b`, 'g'), `usr_${v}`);
-        }
-        return res;
-    };
+// ─── CONSTANTES DO MÓDULO (fora do loop de render para não serem recriadas 60x/s) ───
 
-    renderer.resize();
+/** Conjunto de todos os comandos CAS suportados (criado uma única vez) */
+const casCommandsList = new Set([
+    'factor', 'ifactor', 'cfactor', 'cifactor', 'expand', 'simplify',
+    'polynomial', 'coefficients', 'degree', 'completesquare',
+    'numerator', 'denominator', 'commondenominator', 'partialfractions',
+    'substitute', 'leftside', 'rightside',
+    'groebnerlex', 'groebnerlexdeg', 'groebnerdegrevlex', 'eliminate',
+    'solve', 'csolve', 'solvecubic', 'solvequartic', 'plotsolve', 'root',
+    'nsolve', 'nsolutions', 'min', 'max',
+    'limit', 'limitabove', 'limitbelow',
+    'derivative', 'implicitderivative', 'nderivative',
+    'integral', 'integralsymbolic', 'integralbetween', 'nintegral',
+    'solveode', 'nsolveode',
+    'taylorpolynomial', 'laplace', 'inverselaplace',
+    'dimension', 'dot', 'cross', 'unitvector', 'unitperpendicularvector', 'perpendicularvector',
+    'transpose', 'matrixrank', 'reducedrowechelonform', 'invert', 'characteristicpolynomial', 'minimalpolynomial',
+    'eigenvalues', 'eigenvectors', 'jordandiagonalization', 'qrdecomposition', 'svd', 'ludecomposition',
+    'isprime', 'nextprime', 'previousprime', 'primefactors', 'factors',
+    'divisors', 'divisorslist', 'divisorssum',
+    'gcd', 'lcm', 'extendedgcd',
+    'div', 'mod', 'division', 'modularexponent', 'mixednumber', 'rationalize',
+    'binomialdist', 'pascal', 'hypergeometric', 'poisson', 'zipf', 'normal', 'cauchy', 'exponential', 'weibull', 'gamma', 'chisquared', 'tdistribution',
+    'determinant', 'applymatrix',
+    'samplesd', 'covariance', 'variance', 'samplevariance',
+    'mean', 'median', 'unique', 'frequency',
+    'fitpoly', 'fitpow', 'fitexp', 'fitsin', 'fitlog', 'normalize',
+    'setseed', 'randomuniform', 'randombetween', 'shuffle', 'randomelement', 'sample', 'randompolynomial',
+    'sequence', 'iterationlist', 'element', 'first', 'last', 'take', 'append', 'flatten', 'length',
+    'sum', 'product', 'rootlist',
+    'tocomplex', 'topoint', 'topolar', 'toexponential',
+    'intersect', 'radius', 'distance', 'angle', 'perpendicularbisector', 'applymatrix', 'reflect', 'rotate', 'shear', 'stretch', 'translate', 'infinitecone', 'surdtext', 'setviewdirection', 'setvisibleinview', 'attachcopytoview', 'setdecoration'
+]);
+
+/** Substitui variáveis definidas pelo utilizador com o prefixo usr_ para o Giac */
+function prefixGiac(str: string): string {
+    let res = str;
+    const vars = Object.keys(StateManager.giacDefinitions);
+    vars.sort((a, b) => b.length - a.length); // substitui as mais longas primeiro para evitar colisões
+    for (const v of vars) {
+        res = res.replace(new RegExp(`\\b${v}\\b`, 'g'), `usr_${v}`);
+    }
+    return res;
+}
+
+/** RAF debounce: evita múltiplos redraws no mesmo frame quando várias Promises terminam juntas */
+let _rafPending = false;
+function scheduleFrame() {
+    if (_rafPending) return;
+    _rafPending = true;
+    requestAnimationFrame(() => { _rafPending = false; drawFrame(); });
+}
+
+function drawFrame() {
     renderer.clear();
     renderer.drawAxes(hoverX, hoverY);
 
     renderMemory_points = [];
     renderMemory_curves = [];
 
-    // Clear function cache to remove deleted EDOs/functions
+    // Limpa apenas as funções compiladas de EDOs/CAS; funções do utilizador serão recompiladas
+    // somente quando as expressões mudarem (via isDirty).
     MathEngine.compiledFuncs = {};
 
     const rawData = ExpressionManager.getAllExpressions();
@@ -117,37 +162,6 @@ function drawFrame() {
         // Universal CAS command detector (e.g. Factor, Simplify, Substitute, etc.)
         const genericCasMatch = noSpaceStr.match(/^(?:([a-zA-Z_][a-zA-Z0-9_\{\}]*(?:\([a-zA-Z_]\))?)=)?([A-Za-z]+)\((.*)\)$/);
         
-        const casCommandsList = new Set([
-            'factor', 'ifactor', 'cfactor', 'cifactor', 'expand', 'simplify',
-            'polynomial', 'coefficients', 'degree', 'completesquare',
-            'numerator', 'denominator', 'commondenominator', 'partialfractions',
-            'substitute', 'leftside', 'rightside',
-            'groebnerlex', 'groebnerlexdeg', 'groebnerdegrevlex', 'eliminate',
-            'solve', 'csolve', 'solvecubic', 'solvequartic', 'plotsolve', 'root',
-            'nsolve', 'nsolutions', 'min', 'max',
-            'limit', 'limitabove', 'limitbelow',
-            'derivative', 'implicitderivative', 'nderivative',
-            'integral', 'integralsymbolic', 'integralbetween', 'nintegral',
-            'solveode', 'nsolveode',
-            'taylorpolynomial', 'laplace', 'inverselaplace',
-            'dimension', 'dot', 'cross', 'unitvector', 'unitperpendicularvector', 'perpendicularvector',
-            'transpose', 'matrixrank', 'reducedrowechelonform', 'invert', 'characteristicpolynomial', 'minimalpolynomial',
-            'eigenvalues', 'eigenvectors', 'jordandiagonalization', 'qrdecomposition', 'svd', 'ludecomposition',
-            'isprime', 'nextprime', 'previousprime', 'primefactors', 'factors',
-            'divisors', 'divisorslist', 'divisorssum',
-            'gcd', 'lcm', 'extendedgcd',
-            'div', 'mod', 'division', 'modularexponent', 'mixednumber', 'rationalize',
-            'binomialdist', 'pascal', 'hypergeometric', 'poisson', 'zipf', 'normal', 'cauchy', 'exponential', 'weibull', 'gamma', 'chisquared', 'tdistribution',
-            'determinant', 'applymatrix',
-            'samplesd', 'covariance', 'variance', 'samplevariance',
-            'mean', 'median', 'unique', 'frequency',
-            'fitpoly', 'fitpow', 'fitexp', 'fitsin', 'fitlog', 'normalize',
-            'setseed', 'randomuniform', 'randombetween', 'shuffle', 'randomelement', 'sample', 'randompolynomial',
-            'sequence', 'iterationlist', 'element', 'first', 'last', 'take', 'append', 'flatten', 'length',
-            'sum', 'product', 'rootlist',
-            'tocomplex', 'topoint', 'topolar', 'toexponential',
-            'intersect', 'radius', 'distance', 'angle', 'perpendicularbisector', 'applymatrix', 'reflect', 'rotate', 'shear', 'stretch', 'translate', 'infinitecone', 'surdtext', 'setviewdirection', 'setvisibleinview', 'attachcopytoview', 'setdecoration'
-        ]);
 
         if (campoMatch) {
             const innerEq = campoMatch[1];
@@ -257,7 +271,7 @@ function drawFrame() {
                                 StateManager.odeSolutions[item.id] = { query: currentQuery, name: 'Erro', expr: 'Parse falhou', ast: null, index: -1 };
                             }
                         }
-                        drawFrame();
+                        scheduleFrame();
                     });
                 }
             }
@@ -442,7 +456,7 @@ function drawFrame() {
                                   MathEngine.compiledFuncs[cleanName] = MathEngine.compile(resAst, extractVar);
                               }               
                         }
-                        drawFrame();
+                        scheduleFrame();
                     });
                 }
             }
@@ -671,7 +685,7 @@ function drawFrame() {
                             
                             StateManager.casSolutions[item.id] = { query: currentQuery, result: formattedRes, ast: null };
                             ExpressionManager.setResult(item.id, `= ${formattedRes}`);
-                            drawFrame();
+                            scheduleFrame();
                         });
                     }
                     return;
@@ -687,7 +701,10 @@ function drawFrame() {
             }
 
             validEquations.push({ id: item.id, ast, isImplicit, operator, isEdo: false, isDerivative: isDerivativePlot, derivVar: derivVarTarget, isHidden: !item.visible });
-        } catch (e) {}
+        } catch (e) {
+            // Em vez de engolir o erro silenciosamente, avisa o utilizador no ecrã
+            ExpressionManager.setResult(item.id, '⚠ Sintaxe Inválida');
+        }
     });
 
     // Run Garbage Collection for deleted sliders
@@ -740,12 +757,12 @@ function drawFrame() {
             const derivFunc = MathEngine.createDerivativeFunction(item.ast, item.derivVar || 'x');
             const f = (x: number) => derivFunc(x, 0, StateManager.values);
             
-            const pontos = [];
-            const steps = 300; const dx = (Camera.xMax - Camera.xMin) / steps;
-            for (let i = 0; i <= steps; i++) {
-                const x = Camera.xMin + i * dx;
-                pontos.push({ x, y: f(x) });
-            }
+            // Usa amostragem adaptativa em vez de um loop fixo de 300 pontos
+            const derivAst = item.ast;
+            const derivVar = item.derivVar || 'x';
+            const pontos = MathEngine.generatePointsAdaptive(derivAst, Camera.xMin, Camera.xMax, StateManager.values, derivVar)
+                .map(p => ({ x: p.x, y: f(p.x) }));
+
             renderer.drawCurve(pontos, color);
             explicitCurves.push({ f, color });
             renderMemory_curves.push({ f }); 
@@ -807,6 +824,41 @@ function drawFrame() {
 
 ExpressionManager.init(drawFrame);
 
+// ─── HANDLERS GLOBAIS DOS BOTÕES DO HUD ───────────────────────────────────────
+
+/** Repõe a vista para o estado padrão (zoom 1:1, centrado na origem) */
+(window as any)._resetView = () => {
+    Camera.reset();
+    renderer.resize();
+    drawFrame();
+};
+
+/** Limpa todas as expressões e reinicia o estado */
+(window as any)._clearAll = () => {
+    if (!confirm('Limpar todas as expressões?')) return;
+    const list = document.getElementById('expressions-list');
+    if (list) list.innerHTML = '';
+    ExpressionManager.blockCounter = 0;
+    StateManager.values = {};
+    StateManager.asts = {};
+    StateManager.odeSolutions = {};
+    StateManager.casSolutions = {};
+    StateManager.pendingOdes = {};
+    StateManager.pendingCas = {};
+    StateManager.giacDefinitions = {};
+    StateManager.dependents = {};
+    MathEngine.compiledFuncs = {};
+    ExpressionManager.addBlock();
+    drawFrame();
+};
+
+// Inicialização — resize inicial obrigatório antes do primeiro draw
+renderer.resize();
+drawFrame();
+
+// Inicializa ícones Lucide no documento
+setTimeout(() => { if ((window as any).lucide) (window as any).lucide.createIcons(); }, 100);
+
 // --- TECLADO VIRTUAL PERSONALIZADO MATHLIVE ---
 setTimeout(() => {
     if ((window as any).mathVirtualKeyboard) {
@@ -845,7 +897,7 @@ setTimeout(() => {
     }
 }, 500);
 
-window.addEventListener('resize', drawFrame);
+window.addEventListener('resize', () => { renderer.resize(); drawFrame(); });
 
 // --- CONTROLES DE INTERFACE DO RATO ---
 const canvasEl = document.getElementById('graphCanvas') as HTMLCanvasElement;
@@ -947,6 +999,14 @@ canvasEl.addEventListener('mousemove', (e) => {
     mouseX = e.clientX - rect.left;
     mouseY = e.clientY - rect.top;
     
+    // Atualiza as coordenadas em tempo real na interface
+    const coordsEl = document.getElementById('cursor-coords');
+    if (coordsEl) {
+        const mathX = Camera.toMathX(mouseX);
+        const mathY = Camera.toMathY(mouseY);
+        coordsEl.innerText = `${mathX.toFixed(3)}, ${mathY.toFixed(3)}`;
+    }
+
     if (isShiftDown) {
         const oldX = hoverX; const oldY = hoverY;
         updateHover();
