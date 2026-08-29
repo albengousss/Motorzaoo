@@ -551,7 +551,7 @@ function drawFrame() {
         }
 
         // 3. FUNÇÕES CUSTOMIZADAS E DERIVADAS SALVAS
-        const funcMatch = cleanStr.match(/^\\?([a-zA-Z_][a-zA-Z0-9_\{\}]*)\(([a-zA-Z])\)=(.+)$/);
+        const funcMatch = cleanStr.match(/^\\?([a-zA-Z_][a-zA-Z0-9_\{\}]*)\(([a-zA-Z_][a-zA-Z0-9_]*)\)=(.+)$/);
         if (funcMatch) {
             const funcName = funcMatch[1].replace(/[\{\}\\]/g, ''); 
             const paramName = funcMatch[2];

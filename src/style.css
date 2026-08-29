@@ -9,12 +9,14 @@
 }
 
 
+
 math-field::part(error) {
   background: transparent !important;
   color: inherit !important;
 }
 math-field {
-  --error-background: transparent;
-  --error-color: inherit;
-  --contains-highlight-background: transparent;
+    --error-background: transparent;
+    --error-color: inherit;
+    --contains-highlight-background: rgba(0, 0, 0, 0.02);
+    --contains-highlight-background-color: rgba(0, 0, 0, 0.02);
 }
