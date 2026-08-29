@@ -2,6 +2,9 @@ import 'mathlive';
 import './style.css';
 import { PrattParser } from './core/prattParser';
 import { StateManager } from './core/stateManager';
+
+let validEquations: {id: string, ast: any, isImplicit: boolean, operator: string, isEdo: boolean, isDerivative: boolean, derivVar?: string, isIvp?: boolean, name?: string, x0?: number, y0?: number, isHidden?: boolean, variable?: string, color?: string}[] = [];
+let dragDistance = 0;
 import { MathEngine } from './core/mathEngine';
 import { ImplicitEngine } from './core/implicitEngine';
 import { Renderer } from './graphics/renderer';
@@ -11,7 +14,7 @@ import { MathAnalyzer } from './core/analyzer';
 import { ODESolver } from './core/odeSolver';
 
 const renderer = new Renderer('graphCanvas');
-const colors = ['#2d70b3', '#c74440', '#388c46', '#6042a6', '#fa7e19'];
+const colors = ['#c74440', '#2d70b3', '#388c46', '#6042a6', '#fa7e19'];
 
 let isShiftDown = false;
 let mouseX = 0; let mouseY = 0;
@@ -97,7 +100,7 @@ function drawFrame() {
     MathEngine.compiledFuncs = {};
 
     const rawData = ExpressionManager.getAllExpressions();
-    const validEquations: {id: string, ast: any, isImplicit: boolean, operator: string, isEdo: boolean, isDerivative: boolean, derivVar?: string, isIvp?: boolean, name?: string, x0?: number, y0?: number, isHidden?: boolean, variable?: string}[] = [];
+    validEquations = [];
     const activeVars: string[] = [];
 
     rawData.forEach(item => {
@@ -126,7 +129,7 @@ function drawFrame() {
         cleanStr = cleanStr.replace(/([a-zA-Z_][a-zA-Z0-9_]*)_([0-9]+)/g, (match, p1, p2) => {
             if (['f', 'g', 'h', 'c', 'C', 'y', 'x'].includes(p1)) return match;
             return `${p1}[${parseInt(p2)-1}]`;
-        });
+        }).replace(/²/g, '^2').replace(/³/g, '^3');
         
         // Normalização de plicas (derivadas)
         cleanStr = cleanStr
@@ -142,7 +145,7 @@ function drawFrame() {
         cleanStr = cleanStr.replace(/(?:\\frac\{d\}\{d([a-zA-Z_])\}|d\/d([a-zA-Z_])|\(d\)\/\(d([a-zA-Z_])\))\s*\(([^)]+)\)/g, 'diff($4, $1$2$3)');
 
         // Versão sem espaços APENAS para os testes de Regex (EDO, IVP, Associações)
-        const noSpaceStr = cleanStr.replace(/\s+/g, '');
+        const noSpaceStr = cleanStr.replace(/\s+/g, '').replace(/²/g, '^2').replace(/³/g, '^3');
 
         // Parsing inicial para descobrir o tipo de comando
         let ast: any = null;
@@ -195,7 +198,7 @@ function drawFrame() {
                     ExpressionManager.setResult(item.id, `Erro EDO: ${cached.expr}`);
                 } else {
                     ExpressionManager.setResult(item.id, `= ${cached.name}(x) = ${cached.expr}`);
-                    validEquations.push({ id: item.id, ast: cached.ast, isImplicit: false, isEdo: false, name: cached.name, operator: '=', isDerivative: false, isHidden: !item.visible });
+                    validEquations.push({ color: item.color, id: item.id, ast: cached.ast, isImplicit: false, isEdo: false, name: cached.name, operator: '=', isDerivative: false, isHidden: !item.visible });
                     
                     // Registar para que f_1(3) funcione!
                     if (cached.name) {
@@ -308,7 +311,7 @@ function drawFrame() {
                 }
                 
                 if (cached.ast && (assignTarget || !cached.name)) {
-                    validEquations.push({ id: item.id, ast: cached.ast, isImplicit: false, isEdo: false, name: cached.name || '', operator: '=', isDerivative: false, isHidden: !item.visible, variable: cached.variable });
+                    validEquations.push({ color: item.color, id: item.id, ast: cached.ast, isImplicit: false, isEdo: false, name: cached.name || '', operator: '=', isDerivative: false, isHidden: !item.visible, variable: cached.variable });
                     
                     // Registar para que f_n(3) funcione!
                     if (cached.name) {
@@ -484,14 +487,24 @@ function drawFrame() {
                                         StateManager.casIndices[item.id] = idx!;
                                     }
                                     ExpressionManager.setResult(item.id, '');
-                                } else if (assignTarget && assignTarget.includes('(')) {
-                                    ExpressionManager.setResult(item.id, `= ${cleanResult}`);
                                 } else {
-                                    ExpressionManager.setResult(item.id, `= ${cleanResult}`);
+                                    if (assignTarget && assignTarget.includes('(')) {
+                                        ExpressionManager.setResult(item.id, `= ${cleanResult}`);
+                                    } else {
+                                        ExpressionManager.setResult(item.id, `= ${cleanResult}`);
+                                    }
+                                    
+                                    // Remove orfaned block if query morphed into a number/non-plotting result
+                                    if (spawnedId && document.getElementById(spawnedId)) {
+                                        document.getElementById(spawnedId)!.remove();
+                                        delete StateManager.casSpawnedBlocks[item.id];
+                                        delete StateManager.casIndices[item.id];
+                                        ExpressionManager.updateBlockNumbers();
+                                    }
                                 }
                               
                               if (resAst && fname && assignTarget) {
-                                  validEquations.push({ id: item.id, ast: resAst, isImplicit: false, isEdo: false, name: fname, operator: '=', isDerivative: false, isHidden: !item.visible, variable: extractVar });
+                                  validEquations.push({ color: item.color, id: item.id, ast: resAst, isImplicit: false, isEdo: false, name: fname, operator: '=', isDerivative: false, isHidden: !item.visible, variable: extractVar });
                                   
                                   // Registar para que f_n(3) funcione!
                                   const cleanName = fname.replace(/[\{\}\\]/g, '');
@@ -531,7 +544,7 @@ function drawFrame() {
             if (edoNameMatch === 'y') edoNameMatch = 'y'; 
             try {
                 const astEdo = new PrattParser(edoExpr).parseExpression();
-                validEquations.push({ id: item.id, ast: astEdo, isImplicit: false, isEdo: true, name: edoNameMatch, operator: '=', isDerivative: false, isHidden: !item.visible });
+                validEquations.push({ color: item.color, id: item.id, ast: astEdo, isImplicit: false, isEdo: true, name: edoNameMatch, operator: '=', isDerivative: false, isHidden: !item.visible });
                 ExpressionManager.setResult(item.id, `Campo Vetorial (${edoNameMatch}')`);
             } catch(e) {
                 ExpressionManager.setResult(item.id, `Erro EDO: ${(e as Error).message}`);
@@ -545,7 +558,7 @@ function drawFrame() {
             let edoName = ivpMatch[1].replace(/[\{\}\\]/g, '');
             const x0 = parseFloat(ivpMatch[2]);
             const y0 = parseFloat(ivpMatch[3]);
-            validEquations.push({ id: item.id, isImplicit: false, isEdo: false, isDerivative: false, isIvp: true, name: edoName, x0, y0, ast: null, operator: '=', isHidden: !item.visible });
+            validEquations.push({ color: item.color, id: item.id, isImplicit: false, isEdo: false, isDerivative: false, isIvp: true, name: edoName, x0, y0, ast: null, operator: '=', isHidden: !item.visible });
             ExpressionManager.setResult(item.id, `Curva de Solução (${edoName})`);
             return;
         }
@@ -567,7 +580,7 @@ function drawFrame() {
                     const ast = new PrattParser(expr).parseExpression();
                     MathEngine.compiledFuncs[funcName] = MathEngine.compile(ast, paramName);
                     // Empurra para plotar!
-                    validEquations.push({ id: item.id, ast, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
+                    validEquations.push({ color: item.color, id: item.id, ast, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
                     
                     // Envia para o Giac para poder ser integrada/derivada simbolicamente!
                     const giacDef = `usr_${funcName}(${paramName}):=${expr}`;
@@ -742,7 +755,7 @@ function drawFrame() {
                 ExpressionManager.setResult(item.id, '');
             }
 
-            validEquations.push({ id: item.id, ast, isImplicit, operator, isEdo: false, isDerivative: isDerivativePlot, derivVar: derivVarTarget, isHidden: !item.visible });
+            validEquations.push({ color: item.color, id: item.id, ast, isImplicit, operator, isEdo: false, isDerivative: isDerivativePlot, derivVar: derivVarTarget, isHidden: !item.visible });
         } catch (e) {
             // Em vez de engolir o erro silenciosamente, avisa o utilizador no ecrã
             ExpressionManager.setResult(item.id, '⚠ Sintaxe Inválida');
@@ -758,7 +771,7 @@ function drawFrame() {
     validEquations.forEach((item, index) => {
         if (item.isHidden) return;
         
-        const color = colors[index % colors.length];
+        const color = item.color || colors[index % colors.length];
 
         if (item.isEdo) {
             // Desenha o slope field
@@ -1011,14 +1024,24 @@ setTimeout(() => {
         (window as any).mathVirtualKeyboard.addEventListener('virtual-keyboard-toggle', () => {
             const vk = (window as any).mathVirtualKeyboard;
             if (vk.visible) {
-                // Teclado Abriu! Apenas adiciona padding para scroll
+                // Teclado Abriu!
                 if (window.innerWidth <= 768) {
-                    sidebarEl.style.paddingBottom = '45vh';
-                    setTimeout(() => {
-                        if (document.activeElement && document.activeElement.tagName.toLowerCase() === 'math-field') {
-                            document.activeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    const activeEl = document.activeElement as HTMLElement;
+                    if (activeEl && activeEl.tagName.toLowerCase() === 'math-field') {
+                        const block = activeEl.closest('.flex.border-b') as HTMLElement;
+                        if (block) {
+                            const blockBottom = block.offsetTop + block.offsetHeight;
+                            // Keyboard is approx 320px tall on mobile. We add some margin.
+                            let newHeight = 320 + blockBottom + 50; 
+                            const maxH = screen.availHeight * 0.85;
+                            if (newHeight > maxH) newHeight = maxH;
+                            sidebarEl.style.height = `${newHeight}px`;
+                            sidebarEl.style.paddingBottom = '340px'; 
+                            setTimeout(() => {
+                                activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }, 100);
                         }
-                    }, 100);
+                    }
                 }
             } else {
                 // Teclado Fechou!
@@ -1126,6 +1149,7 @@ function getClosestCurvePoint(pixelX: number, pixelY: number, maxDist: number = 
 canvasEl.addEventListener('mousedown', (e) => { 
     isDragging = true; 
     isTracing = false;
+    dragDistance = 0;
     lastX = e.clientX; 
     lastY = e.clientY; 
     
@@ -1151,6 +1175,25 @@ canvasEl.addEventListener('mousedown', (e) => {
         drawFrame();
     } else {
         tooltip.style.display = 'none'; 
+    }
+});
+
+canvasEl.addEventListener('click', (e) => {
+    if (dragDistance < 5 && !isTracing) {
+        const rect = canvasEl.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        
+        const mathX = Camera.xMin + (mx / Camera.width) * (Camera.xMax - Camera.xMin);
+        const mathY = Camera.yMax - (my / Camera.height) * (Camera.yMax - Camera.yMin);
+        
+        const activeSlopeFields = validEquations.filter(eq => eq.isEdo);
+        if (activeSlopeFields.length > 0) {
+            const edoName = activeSlopeFields[0].name;
+            const x0 = parseFloat(mathX.toFixed(2));
+            const y0 = parseFloat(mathY.toFixed(2));
+            ExpressionManager.addExpression(`${edoName}(${x0}) = ${y0}`);
+        }
     }
 });
 
@@ -1183,7 +1226,10 @@ canvasEl.addEventListener('mousemove', (e) => {
     }
 
     if (isDragging) {
-        Camera.pan(e.clientX - lastX, e.clientY - lastY);
+        dragDistance += Math.abs(e.clientX - lastX) + Math.abs(e.clientY - lastY);
+        const dx = e.clientX - lastX;
+        const dy = e.clientY - lastY;
+        Camera.pan(dx, dy);
         drawFrame();
     } else if (isTracing) {
         // Find closest point with a large maxDist to lock onto the curve

@@ -6,15 +6,34 @@ export class Camera {
 
     /** Calcula a proporção real da tela na primeira vez que abre */
     static resize(w: number, h: number) {
-        this.width = w; 
-        this.height = h;
         if (!this.isInitialized && w > 0 && h > 0) {
+            this.width = w;
+            this.height = h;
             const ratio = w / h;
-            this.yMin = -10; 
+            this.yMin = -10;
             this.yMax = 10;
             this.xMin = -10 * ratio;
             this.xMax = 10 * ratio;
             this.isInitialized = true;
+        } else if (this.isInitialized && w > 0 && h > 0 && this.width > 0 && this.height > 0) {
+            const mathWidth = this.xMax - this.xMin;
+            const mathHeight = this.yMax - this.yMin;
+            const xCenter = (this.xMax + this.xMin) / 2;
+            const yCenter = (this.yMax + this.yMin) / 2;
+            
+            const unitsPerPixelX = mathWidth / this.width;
+            const unitsPerPixelY = mathHeight / this.height;
+            
+            const newMathWidth = w * unitsPerPixelX;
+            const newMathHeight = h * unitsPerPixelY;
+            
+            this.xMin = xCenter - newMathWidth / 2;
+            this.xMax = xCenter + newMathWidth / 2;
+            this.yMin = yCenter - newMathHeight / 2;
+            this.yMax = yCenter + newMathHeight / 2;
+            
+            this.width = w;
+            this.height = h;
         }
     }
 

@@ -149,6 +149,7 @@ export class ExpressionManager {
         const colors = ['#c74440', '#2d70b3', '#388c46', '#6042a6', '#fa7e19'];
         const colorIndex = Array.from(this.container.children).length % colors.length;
         const blockColor = colors[colorIndex];
+        block.dataset.color = blockColor;
 
           const visibilityBtn = document.createElement('div');
           visibilityBtn.className = 'visibility-toggle';
@@ -391,16 +392,17 @@ export class ExpressionManager {
         }
     }
 
-    static getAllExpressions(): {id: string, rawAscii: string, visible: boolean}[] {
+    static getAllExpressions(): {id: string, rawAscii: string, visible: boolean, color: string}[] {
         const blocks = Array.from(this.container.children);
-        const exprs: {id: string, rawAscii: string, visible: boolean}[] = [];
+        const exprs: {id: string, rawAscii: string, visible: boolean, color: string}[] = [];
         blocks.forEach((block: any) => {
             const mf = block.querySelector('math-field');
             const visBtn = block.querySelector('.visibility-toggle');
             if (mf) {
                 const ascii = mf.getValue('ascii-math');
                 const visible = visBtn ? (visBtn as HTMLElement).dataset.visible === 'true' : true;
-                if (ascii) exprs.push({ id: block.id, rawAscii: ascii, visible });
+                const color = block.dataset.color || '#000000';
+                if (ascii) exprs.push({ id: block.id, rawAscii: ascii, visible, color });
             }
         });
         return exprs;
