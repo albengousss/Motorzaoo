@@ -465,7 +465,7 @@ function drawFrame() {
                                   }
                               }
 
-                                let spawnedId = StateManager.casSolutions[item.id]?.spawnedBlockId;
+                                let spawnedId = StateManager.casSpawnedBlocks[item.id];
                                 StateManager.casSolutions[item.id] = { query: currentQuery, result: cleanResult, ast: resAst, name: fname, variable: extractVar, index: idx, spawnedBlockId: spawnedId };
 
                                 if (fname && !assignTarget) {
@@ -475,7 +475,7 @@ function drawFrame() {
                                         ExpressionManager.updateExpression(spawnedId, expressionStr);
                                     } else {
                                         spawnedId = ExpressionManager.addExpression(expressionStr);
-                                        StateManager.casSolutions[item.id].spawnedBlockId = spawnedId;
+                                        StateManager.casSpawnedBlocks[item.id] = spawnedId;
                                     }
                                     ExpressionManager.setResult(item.id, '');
                                 } else if (assignTarget && assignTarget.includes('(')) {

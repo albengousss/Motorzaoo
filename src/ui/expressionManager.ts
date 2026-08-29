@@ -374,7 +374,7 @@ export class ExpressionManager {
         if (block) {
             const mf = block.querySelector('math-field');
             if (mf) {
-                (mf as any).setValue(asciiValue);
+                (mf as any).setValue(asciiValue, { suppressChangeNotifications: true });
             }
         }
         this.updateBlockNumbers();
@@ -386,7 +386,7 @@ export class ExpressionManager {
         if (block) {
             const mf = block.querySelector('math-field');
             if (mf) {
-                (mf as any).setValue(asciiValue);
+                (mf as any).setValue(asciiValue, { suppressChangeNotifications: true });
             }
         }
     }

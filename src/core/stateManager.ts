@@ -13,6 +13,7 @@ export class StateManager {
     
     static casSolutions: Record<string, { query: string, result: string, ast?: any, name?: string, variable?: string, index?: number, spawnedBlockId?: string }> = {};
     static pendingCas: Record<string, boolean> = {};
+    static casSpawnedBlocks: Record<string, string> = {};
     
     // Armazena as definições enviadas ao Giac para evitar spam de _caseval
     static giacDefinitions: Record<string, string> = {};
