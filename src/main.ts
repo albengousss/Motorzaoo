@@ -914,7 +914,20 @@ setTimeout(() => {
     }
 }, 500);
 
-window.addEventListener('resize', () => { renderer.resize(); drawFrame(); });
+    // Usa ResizeObserver no container para lidar com window resize E com md:resize-x da sidebar!
+    const graphContainer = document.getElementById('graph-container');
+    if (graphContainer) {
+        const resizeObserver = new ResizeObserver(() => {
+            renderer.resize();
+            drawFrame();
+        });
+        resizeObserver.observe(graphContainer);
+    } else {
+        window.addEventListener('resize', () => {
+            renderer.resize();
+            drawFrame();
+        });
+    }
 
 // --- CONTROLES DE INTERFACE DO RATO ---
 const canvasEl = document.getElementById('graphCanvas') as HTMLCanvasElement;
@@ -967,16 +980,9 @@ setTimeout(() => {
         (window as any).mathVirtualKeyboard.addEventListener('virtual-keyboard-toggle', () => {
             const vk = (window as any).mathVirtualKeyboard;
             if (vk.visible) {
-                // Teclado Abriu! Empurra a lista de expressões para cima para não ser tampada
+                // Teclado Abriu! Apenas adiciona padding para scroll
                 if (window.innerWidth <= 768) {
-                    sidebarEl.style.paddingBottom = '35vh';
-                    const currentHeight = sidebarEl.getBoundingClientRect().height;
-                    const minHeight = window.innerHeight * 0.6; // Força no mínimo 60% da tela
-                    if (currentHeight < minHeight) {
-                        sidebarEl.style.height = `${minHeight}px`;
-                        renderer.resize();
-                        drawFrame();
-                    }
+                    sidebarEl.style.paddingBottom = '45vh';
                     setTimeout(() => {
                         if (document.activeElement && document.activeElement.tagName.toLowerCase() === 'math-field') {
                             document.activeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });

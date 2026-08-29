@@ -7,3 +7,14 @@
   --color-surface-hover: #f1f3f4;
   --color-border: #dadce0;
 }
+
+
+math-field::part(error) {
+  background: transparent !important;
+  color: inherit !important;
+}
+math-field {
+  --error-background: transparent;
+  --error-color: inherit;
+  --contains-highlight-background: transparent;
+}
