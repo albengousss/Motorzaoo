@@ -122,6 +122,13 @@ function drawFrame() {
             .replace(/⋅/g, '*')
             .replace(/×/g, '*');
 
+        // Consertar letras espaçadas geradas quando o utilizador escreve manualmente no teclado
+        const spacedFuncs = ['s i n', 'c o s', 't a n', 's e c', 'c s c', 'c o s s e c', 'c o t', 'c o t a n', 'a r c s i n', 'a r c c o s', 'a r c t a n', 'l o g', 'l n', 'e x p'];
+        spacedFuncs.forEach(func => {
+            const regex = new RegExp(func.split('').join('\\s*'), 'g');
+            cleanStr = cleanStr.replace(regex, func.replace(/\s+/g, ''));
+        });
+
         // Indexação de matrizes e listas (MathLive subscript para Giac 0-indexed)
         cleanStr = cleanStr.replace(/([a-zA-Z_][a-zA-Z0-9_]*)_\(([0-9]+),([0-9]+)\)/g, (_match, p1, p2, p3) => {
             return `${p1}[${parseInt(p2)-1},${parseInt(p3)-1}]`;
@@ -803,7 +810,7 @@ function drawFrame() {
             // Usa amostragem adaptativa em vez de um loop fixo de 300 pontos
             const derivAst = item.ast;
             const derivVar = item.derivVar || 'x';
-            const pontos = MathEngine.generatePointsAdaptive(derivAst, Camera.xMin, Camera.xMax, StateManager.values, derivVar)
+            const pontos = MathEngine.generatePointsAdaptive(derivAst, Camera.xMin, Camera.xMax, StateManager.values, derivVar, canvasEl.width)
                 .map(p => ({ x: p.x, y: f(p.x) }));
 
             renderer.drawCurve(pontos, color);
@@ -825,7 +832,7 @@ function drawFrame() {
             const maxVal = MathEngine.evaluateAST(maxAst, StateManager.values);
 
             if (!isNaN(minVal) && !isNaN(maxVal)) {
-                const pontos = MathEngine.generatePointsAdaptive(funcAst, minVal, maxVal, StateManager.values);
+                const pontos = MathEngine.generatePointsAdaptive(funcAst, minVal, maxVal, StateManager.values, 'x', canvasEl.width);
                 let area = 0;
                 if (pontos.length > 1) {
                     for (let i = 0; i < pontos.length - 1; i++) {
@@ -840,7 +847,7 @@ function drawFrame() {
         } else {
             const fastF = MathEngine.compile(item.ast, item.variable || 'x');
             const f = (x: number) => fastF(x, 0, StateManager.values);
-            const pontos = MathEngine.generatePointsAdaptive(item.ast, Camera.xMin, Camera.xMax, StateManager.values, item.variable || 'x');
+            const pontos = MathEngine.generatePointsAdaptive(item.ast, Camera.xMin, Camera.xMax, StateManager.values, item.variable || 'x', canvasEl.width);
             
             renderer.drawCurve(pontos, color);
             explicitCurves.push({ f, color });

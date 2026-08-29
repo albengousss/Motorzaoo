@@ -136,6 +136,12 @@ export class MathEngine {
                 if (op === 'Sin') return `Math.sin(${toJS(node[1])})`;
                 if (op === 'Cos') return `Math.cos(${toJS(node[1])})`;
                 if (op === 'Tan') return `Math.tan(${toJS(node[1])})`;
+                if (op === 'Sec') return `(1 / Math.cos(${toJS(node[1])}))`;
+                if (op === 'Csc') return `(1 / Math.sin(${toJS(node[1])}))`;
+                if (op === 'Cot') return `(1 / Math.tan(${toJS(node[1])}))`;
+                if (op === 'Asin') return `Math.asin(${toJS(node[1])})`;
+                if (op === 'Acos') return `Math.acos(${toJS(node[1])})`;
+                if (op === 'Atan') return `Math.atan(${toJS(node[1])})`;
                 if (op === 'Log') return `Math.log(${toJS(node[1])})`;
                 if (op === 'Abs') return `Math.abs(${toJS(node[1])})`;
                 if (op === 'Exp') return `Math.exp(${toJS(node[1])})`;
@@ -262,51 +268,35 @@ export class MathEngine {
         intExp: (a: any) => ({ min: Math.exp(a.min), max: Math.exp(a.max) })
     };
 
-    static generatePointsAdaptive(ast: any, xMin: number, xMax: number, scope: Record<string, number> = {}, variable: string = 'x'): {x: number, y: number}[] {
+    static generatePointsAdaptive(ast: any, xMin: number, xMax: number, scope: Record<string, number> = {}, variable: string = 'x', screenWidth: number = 2000): {x: number, y: number}[] {
         const points: {x: number, y: number}[] = [];
-        const fastF = this.compile(ast, variable); 
-        const f = (x: number) => fastF(x, 0, scope); 
+        const fastF = this.compile(ast, variable);
+        const f = (x: number) => fastF(x, 0, scope);
 
-        const maxDepth = 7; 
-        const loss_goal = 0.05; 
-
-        const sample = (x1: number, y1: number, x2: number, y2: number, depth: number) => {
-            const xMid = (x1 + x2) / 2;
-            const yMid = f(xMid);
-
-            if (depth >= maxDepth || isNaN(y1) || isNaN(y2) || isNaN(yMid)) {
-                points.push({ x: xMid, y: yMid });
-                points.push({ x: x2, y: y2 });
-                return;
-            }
-
-            // Distância Euclidiana da coordenada interpolada à reta A-B
-            const num = Math.abs((x2 - x1) * (y1 - yMid) - (x1 - xMid) * (y2 - y1));
-            const den = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
-            const error = den === 0 ? 0 : (num / den);
-
-            if (error > loss_goal) {
-                sample(x1, y1, xMid, yMid, depth + 1);
-                sample(xMid, yMid, x2, y2, depth + 1);
-            } else {
-                points.push({ x: xMid, y: yMid });
-                points.push({ x: x2, y: y2 });
-            }
-        };
-
-        const steps = 50; 
+        // Amostragem por pixel (alta fidelidade) em vez de recursão que falha em escalas distorcidas
+        const steps = screenWidth > 0 ? Math.min(screenWidth * 1.5, 3000) : 1000;
         const dx = (xMax - xMin) / steps;
         
-        let currentX = xMin;
-        let currentY = f(currentX);
-        points.push({ x: currentX, y: currentY });
+        // Heurística para quebrar assíntotas verticais
+        const asymptoteThreshold = (xMax - xMin) * 2; 
 
-        for (let i = 0; i < steps; i++) {
-            const nextX = currentX + dx;
-            const nextY = f(nextX);
-            sample(currentX, currentY, nextX, nextY, 0);
-            currentX = nextX;
-            currentY = nextY;
+        let prevY = NaN;
+        for (let i = 0; i <= steps; i++) {
+            const x = xMin + i * dx;
+            let y = f(x);
+            
+            // Prevenir Inifity que estraga o WebGL/Canvas
+            if (y > 1e6) y = 1e6;
+            if (y < -1e6) y = -1e6;
+
+            if (!isNaN(y) && !isNaN(prevY)) {
+                if (Math.abs(y - prevY) > asymptoteThreshold && (y * prevY < 0)) {
+                    points.push({ x: x - dx/2, y: NaN }); // Levanta o pincel na assíntota
+                }
+            }
+            
+            points.push({ x, y });
+            prevY = y;
         }
         return points;
     }

@@ -154,8 +154,13 @@ export class PrattParser {
                 let name = rawName.toLowerCase();
                 if (name === 'ln') name = 'log';
                 if (name === 'tg') name = 'tan';
-                
-                if (['sin', 'cos', 'tan', 'log', 'exp', 'sqrt', 'abs'].includes(name)) {
+                if (name === 'cossec') name = 'csc';
+                if (name === 'cotan') name = 'cot';
+                if (name === 'arcsin') name = 'asin';
+                if (name === 'arccos') name = 'acos';
+                if (name === 'arctan') name = 'atan';
+
+                if (['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'asin', 'acos', 'atan', 'log', 'exp', 'sqrt', 'abs'].includes(name)) {
                     return [name.charAt(0).toUpperCase() + name.slice(1), args[0]];
                 }
                 return [rawName, ...args];
