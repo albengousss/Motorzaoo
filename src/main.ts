@@ -435,7 +435,16 @@ function drawFrame() {
                                   const nonPlottingCmds = ['determinant', 'dot', 'cross', 'length', 'dimension', 'matrixrank', 'lcm', 'gcd', 'nsolve', 'nsolutions', 'solutions', 'solve', 'limit', 'limitabove', 'limitbelow'];
                                   
                                   // Se for apenas um número ou uma lista/matriz, não precisamos transformar numa função plotável
-                                  const isJustNumber = !isNaN(Number(cleanResult));
+                                  let isJustNumber = false;
+            try {
+                const tempAst = new PrattParser(cleanResult).parseExpression();
+                const tempFunc = MathEngine.compile(tempAst, 'x');
+                const v1 = tempFunc(0, 0, StateManager.values);
+                const v2 = tempFunc(1, 0, StateManager.values);
+                if (!isNaN(v1) && v1 === v2) {
+                    isJustNumber = true;
+                }
+            } catch(e) {}
                                   const isListOrMatrix = cleanResult.trim().startsWith('[');
                                   
                                   if (!nonPlottingCmds.includes(cmdName) && !isJustNumber && !isListOrMatrix) {
@@ -1024,29 +1033,36 @@ setTimeout(() => {
         (window as any).mathVirtualKeyboard.addEventListener('virtual-keyboard-toggle', () => {
             const vk = (window as any).mathVirtualKeyboard;
             if (vk.visible) {
-                // Teclado Abriu!
                 if (window.innerWidth <= 768) {
-                    const activeEl = document.activeElement as HTMLElement;
-                    if (activeEl && activeEl.tagName.toLowerCase() === 'math-field') {
-                        const block = activeEl.closest('.flex.border-b') as HTMLElement;
-                        if (block) {
-                            const blockBottom = block.offsetTop + block.offsetHeight;
-                            // Keyboard is approx 320px tall on mobile. We add some margin.
-                            let newHeight = 320 + blockBottom + 50; 
-                            const maxH = screen.availHeight * 0.85;
-                            if (newHeight > maxH) newHeight = maxH;
-                            sidebarEl.style.height = `${newHeight}px`;
-                            sidebarEl.style.paddingBottom = '340px'; 
-                            setTimeout(() => {
-                                activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            }, 100);
-                        }
+                    const keyboardHeight = vk.boundingRect.height || 320;
+                    document.body.style.paddingBottom = `${keyboardHeight}px`;
+                    
+                    if (!sidebarEl.dataset.savedHeight) {
+                        sidebarEl.dataset.savedHeight = sidebarEl.getBoundingClientRect().height.toString();
                     }
+                    
+                    // Minimize sidebar to just show items, giving space to the graph
+                    sidebarEl.style.height = '140px';
+                    sidebarEl.style.paddingBottom = '0'; 
+                    
+                    setTimeout(() => {
+                        renderer.resize();
+                        drawFrame();
+                        const activeEl = document.activeElement as HTMLElement;
+                        if (activeEl && activeEl.tagName.toLowerCase() === 'math-field') {
+                            activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+                    }, 50);
                 }
             } else {
-                // Teclado Fechou!
-                sidebarEl.style.paddingBottom = '0';
+                document.body.style.paddingBottom = '0px';
+                if (window.innerWidth <= 768 && sidebarEl.dataset.savedHeight) {
+                    sidebarEl.style.height = `${sidebarEl.dataset.savedHeight}px`;
+                    sidebarEl.dataset.savedHeight = '';
+                }
+                
                 setTimeout(() => { renderer.resize(); drawFrame(); }, 50);
+                
                 if (document.activeElement && document.activeElement.tagName.toLowerCase() === 'math-field') {
                     (document.activeElement as HTMLElement).blur();
                 }
