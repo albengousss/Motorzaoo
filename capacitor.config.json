@@ -1,0 +1,6 @@
+{
+  "appId": "com.motorcalc.app",
+  "appName": "Motor-Calc",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}

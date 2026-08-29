@@ -26,13 +26,13 @@ jobs:
         java-version: '17'
 
     - name: Install dependencies
-      run: npm ci
+      run: npm install
 
     - name: Build Web App
       run: npm run build
 
     - name: Sync Capacitor
-      run: npx cap sync android
+      run: npx cap sync android --verbose
 
     - name: Build APK with Gradle
       working-directory: ./android
