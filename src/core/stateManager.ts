@@ -14,6 +14,7 @@ export class StateManager {
     static casSolutions: Record<string, { query: string, result: string, ast?: any, name?: string, variable?: string, index?: number, spawnedBlockId?: string }> = {};
     static pendingCas: Record<string, boolean> = {};
     static casSpawnedBlocks: Record<string, string> = {};
+    static casIndices: Record<string, number> = {};
     
     // Armazena as definições enviadas ao Giac para evitar spam de _caseval
     static giacDefinitions: Record<string, string> = {};
@@ -21,7 +22,7 @@ export class StateManager {
     // Gerenciamento Inteligente de Índices (reaproveitamento para ODEs e CAS)
     static getNextFuncIndex(): number {
         const usedOde = Object.values(this.odeSolutions).filter(o => o && o.name !== 'Erro').map(o => o.index);
-        const usedCas = Object.values(this.casSolutions).filter(c => c && c.index !== undefined).map(c => c.index!);
+        const usedCas = Object.values(this.casIndices);
         const used = new Set([...usedOde, ...usedCas]);
         let i = 1;
         while (used.has(i)) i++;
@@ -111,7 +112,7 @@ export class StateManager {
      * Recalcula uma variável específica usando o Compute Engine
      */
     private static recalculate(name: string) {
-        if (this.asts[name]) {
+        if (this.asts[name] !== undefined) {
             const val = MathEngine.evaluateAST(this.asts[name], this.values);
             if (!isNaN(val) && this.values[name] !== val) {
                 this.values[name] = val;

@@ -390,6 +390,11 @@ function drawFrame() {
                         if (args.length >= 2) giacCommand = `${args[0]} * ${args[1]}`;
                     }
                     else if (cmdName === 'nsolveode') giacCommand = `desolve(${giacArgs})`;
+
+                                const noSimplifyCmds = ['simplify', 'factor', 'expand', 'nsolve', 'nsolutions', 'solutions', 'solve', 'limit', 'limitabove', 'limitbelow', 'cross', 'dot', 'primefactors', 'matrixrank', 'qrdecomposition', 'laplace', 'applymatrix', 'nsolveode', 'desolve'];
+                                if (!noSimplifyCmds.includes(cmdName)) {
+                                    giacCommand = `simplify(${giacCommand})`;
+                                }
                     
                     if (assignTarget) {
                     
@@ -437,10 +442,10 @@ function drawFrame() {
                                       } else if (assignTarget) {
                                           fname = assignTarget.replace(/[\\{\\}\\]/g, '');
                                       } else {
-                                          idx = StateManager.casSolutions[item.id]?.index ?? StateManager.getNextFuncIndex();
+                                          idx = StateManager.casIndices[item.id] ?? StateManager.getNextFuncIndex();
                                           fname = `f_{${idx}}`;
                                           if (cmdName === 'integral' && cmdArgs.split(',').length <= 2) {
-                                              const cName = `C_{${idx}}`;
+                                              const cName = `C_${idx}`;
                                               if (!cleanResult.includes(cName)) {
                                                   cleanResult += ` + ${cName}`;
                                                   if (!StateManager.values.hasOwnProperty(cName)) {
@@ -476,6 +481,7 @@ function drawFrame() {
                                     } else {
                                         spawnedId = ExpressionManager.addExpression(expressionStr);
                                         StateManager.casSpawnedBlocks[item.id] = spawnedId;
+                                        StateManager.casIndices[item.id] = idx!;
                                     }
                                     ExpressionManager.setResult(item.id, '');
                                 } else if (assignTarget && assignTarget.includes('(')) {
