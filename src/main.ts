@@ -18,7 +18,12 @@ let mouseX = 0; let mouseY = 0;
 let hoverX = false; let hoverY = false;
 
 let renderMemory_points: {mathX: number, mathY: number}[] = [];
-let renderMemory_curves: {f: (x: number) => number}[] = [];
+let renderMemory_curves: {f: (x: number) => number, color: string}[] = [];
+let renderMemory_segments: {x1: number, y1: number, x2: number, y2: number, color: string}[] = [];
+let renderMemory_curve_points: {points: {x: number, y: number}[], color: string}[] = [];
+let globalTracePoint: { x: number, y: number, color: string } | null = null;
+let isTracing = false;
+
 
 const tooltip = document.createElement('div');
 tooltip.style.cssText = 'position: fixed; background: rgba(0, 0, 0, 0.75); color: white; padding: 4px 8px; border-radius: 4px; font-family: sans-serif; font-size: 13px; pointer-events: none; display: none; z-index: 2000; transform: translate(-50%, -100%); margin-top: -12px; font-weight: bold; letter-spacing: 0.5px; box-shadow: 0px 2px 4px rgba(0,0,0,0.2);';
@@ -84,6 +89,8 @@ function drawFrame() {
 
     renderMemory_points = [];
     renderMemory_curves = [];
+    renderMemory_segments = [];
+    renderMemory_curve_points = [];
 
     // Limpa apenas as funções compiladas de EDOs/CAS; funções do utilizador serão recompiladas
     // somente quando as expressões mudarem (via isDirty).
@@ -752,6 +759,7 @@ function drawFrame() {
                 const allPoints = reversed.concat(pointsFwd);
                 
                 renderer.drawCurve(allPoints, color);
+                renderMemory_curve_points.push({ points: allPoints, color });
             }
         } else if (item.isDerivative) {
             const derivFunc = MathEngine.createDerivativeFunction(item.ast, item.derivVar || 'x');
@@ -765,7 +773,7 @@ function drawFrame() {
 
             renderer.drawCurve(pontos, color);
             explicitCurves.push({ f, color });
-            renderMemory_curves.push({ f }); 
+            renderMemory_curves.push({ f, color }); 
 
         } else if (item.isImplicit) {
             const geometria = ImplicitEngine.generateImplicit(
@@ -774,6 +782,7 @@ function drawFrame() {
             );
             renderer.drawFills(geometria.fills, color);
             renderer.drawSegments(geometria.segments, color);
+            geometria.segments.forEach((seg: any) => renderMemory_segments.push({...seg, color}));
 
         } else if (Array.isArray(item.ast) && item.ast[0] === 'Integrate') {
             const funcAst = item.ast[1]; const minAst = item.ast[3]; const maxAst = item.ast[4];
@@ -800,7 +809,7 @@ function drawFrame() {
             
             renderer.drawCurve(pontos, color);
             explicitCurves.push({ f, color });
-            renderMemory_curves.push({ f }); 
+            renderMemory_curves.push({ f, color }); 
         }
     });
 
@@ -819,6 +828,10 @@ function drawFrame() {
             
             intersects.forEach(p => renderMemory_points.push({ mathX: p.x, mathY: p.y }));
         }
+    }
+
+    if (globalTracePoint) {
+        renderer.drawPoints([{x: globalTracePoint.x, y: globalTracePoint.y}], globalTracePoint.color);
     }
 }
 
@@ -991,15 +1004,121 @@ function updateHover() {
     }
 }
 
-canvasEl.addEventListener('mousedown', (e) => { isDragging = true; lastX = e.clientX; lastY = e.clientY; tooltip.style.display = 'none'; });
-window.addEventListener('mouseup', () => isDragging = false);
+
+function getClosestCurvePoint(pixelX: number, pixelY: number, maxDist: number = 15): { mathX: number, mathY: number, px: number, py: number, color: string, dist: number } | null {
+    let closest: any = null;
+    let minDist = maxDist;
+    const mathX = Camera.toMathX(pixelX);
+    
+
+    // 1. Explicit Curves
+    for (const curve of renderMemory_curves) {
+        const y = curve.f(mathX);
+        if (isNaN(y)) continue;
+        const py = Camera.toPixelY(y);
+        const dist = Math.abs(pixelY - py);
+        if (dist < minDist) {
+            minDist = dist;
+            closest = { mathX, mathY: y, px: pixelX, py, color: curve.color, dist };
+        }
+    }
+
+    // 2. Implicit Segments
+    for (const seg of renderMemory_segments) {
+        const px1 = Camera.toPixelX(seg.x1);
+        const py1 = Camera.toPixelY(seg.y1);
+        const px2 = Camera.toPixelX(seg.x2);
+        const py2 = Camera.toPixelY(seg.y2);
+        
+        const l2 = (px1 - px2)**2 + (py1 - py2)**2;
+        let t = 0;
+        if (l2 !== 0) t = Math.max(0, Math.min(1, ((pixelX - px1) * (px2 - px1) + (pixelY - py1) * (py2 - py1)) / l2));
+        
+        const projX = px1 + t * (px2 - px1);
+        const projY = py1 + t * (py2 - py1);
+        const dist = Math.hypot(pixelX - projX, pixelY - projY);
+        
+        if (dist < minDist) {
+            minDist = dist;
+            closest = { mathX: Camera.toMathX(projX), mathY: Camera.toMathY(projY), px: projX, py: projY, color: seg.color, dist };
+        }
+    }
+    
+    // 3. ODE / Parametric Curves
+    for (const cp of renderMemory_curve_points) {
+        for (let i = 0; i < cp.points.length - 1; i++) {
+            const p1 = cp.points[i];
+            const p2 = cp.points[i+1];
+            if (isNaN(p1.y) || isNaN(p2.y)) continue;
+            
+            const px1 = Camera.toPixelX(p1.x);
+            const py1 = Camera.toPixelY(p1.y);
+            const px2 = Camera.toPixelX(p2.x);
+            const py2 = Camera.toPixelY(p2.y);
+            
+            const l2 = (px1 - px2)**2 + (py1 - py2)**2;
+            let t = 0;
+            if (l2 !== 0) t = Math.max(0, Math.min(1, ((pixelX - px1) * (px2 - px1) + (pixelY - py1) * (py2 - py1)) / l2));
+            
+            const projX = px1 + t * (px2 - px1);
+            const projY = py1 + t * (py2 - py1);
+            const dist = Math.hypot(pixelX - projX, pixelY - projY);
+            
+            if (dist < minDist) {
+                minDist = dist;
+                closest = { mathX: Camera.toMathX(projX), mathY: Camera.toMathY(projY), px: projX, py: projY, color: cp.color, dist };
+            }
+        }
+    }
+    return closest;
+}
+
+canvasEl.addEventListener('mousedown', (e) => { 
+    isDragging = true; 
+    isTracing = false;
+    lastX = e.clientX; 
+    lastY = e.clientY; 
+    
+    const rect = canvasEl.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    
+    const closest = getClosestCurvePoint(mx, my, 15);
+    if (closest) {
+        isTracing = true;
+        isDragging = false;
+        
+        const formatCoord = (val: number) => parseFloat(val.toFixed(4)).toString();
+        tooltip.innerText = `(${formatCoord(closest.mathX)}, ${formatCoord(closest.mathY)})`;
+        tooltip.style.display = 'block';
+        tooltip.style.left = (rect.left + closest.px) + 'px';
+        tooltip.style.top = (rect.top + closest.py - 10) + 'px';
+        tooltip.style.backgroundColor = closest.color;
+        tooltip.style.color = '#fff';
+        document.body.style.cursor = 'crosshair';
+        
+        globalTracePoint = { x: closest.mathX, y: closest.mathY, color: closest.color };
+        drawFrame();
+    } else {
+        tooltip.style.display = 'none'; 
+    }
+});
+
+window.addEventListener('mouseup', () => { 
+    isDragging = false; 
+    isTracing = false;
+    if (globalTracePoint) {
+        globalTracePoint = null;
+        tooltip.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+        drawFrame();
+    }
+});
 
 canvasEl.addEventListener('mousemove', (e) => {
     const rect = canvasEl.getBoundingClientRect();
     mouseX = e.clientX - rect.left;
     mouseY = e.clientY - rect.top;
     
-    // Atualiza as coordenadas em tempo real na interface
     const coordsEl = document.getElementById('cursor-coords');
     if (coordsEl) {
         const mathX = Camera.toMathX(mouseX);
@@ -1016,10 +1135,26 @@ canvasEl.addEventListener('mousemove', (e) => {
     if (isDragging) {
         Camera.pan(e.clientX - lastX, e.clientY - lastY);
         drawFrame();
+    } else if (isTracing) {
+        // Find closest point with a large maxDist to lock onto the curve
+        const closest = getClosestCurvePoint(mouseX, mouseY, 2000);
+        if (closest) {
+            const formatCoord = (val: number) => parseFloat(val.toFixed(4)).toString();
+            tooltip.innerText = `(${formatCoord(closest.mathX)}, ${formatCoord(closest.mathY)})`;
+            tooltip.style.display = 'block';
+            tooltip.style.left = (rect.left + closest.px) + 'px';
+            tooltip.style.top = (rect.top + closest.py - 10) + 'px';
+            tooltip.style.backgroundColor = closest.color;
+            tooltip.style.color = '#fff';
+            document.body.style.cursor = 'crosshair';
+            
+            globalTracePoint = { x: closest.mathX, y: closest.mathY, color: closest.color };
+            drawFrame();
+        }
     } else {
         let foundCollision = false;
         let snapPixelX = 0; let snapPixelY = 0;
-        let labelText = "";
+        let labelText = '';
 
         const formatCoord = (val: number) => parseFloat(val.toFixed(4)).toString();
 
@@ -1037,18 +1172,11 @@ canvasEl.addEventListener('mousemove', (e) => {
         }
 
         if (!foundCollision) {
-            const mathMouseX = Camera.toMathX(mouseX);
-            for (const curve of renderMemory_curves) {
-                const mathY = curve.f(mathMouseX);
-                if (isNaN(mathY)) continue;
-
-                const py = Camera.toPixelY(mathY);
-                if (Math.abs(mouseY - py) < 15) {
-                    foundCollision = true;
-                    snapPixelX = mouseX; snapPixelY = py; 
-                    labelText = `(${formatCoord(mathMouseX)}, ${formatCoord(mathY)})`;
-                    break;
-                }
+            const closest = getClosestCurvePoint(mouseX, mouseY, 15);
+            if (closest) {
+                foundCollision = true;
+                snapPixelX = closest.px; snapPixelY = closest.py;
+                labelText = `(${formatCoord(closest.mathX)}, ${formatCoord(closest.mathY)})`;
             }
         }
 
@@ -1057,6 +1185,7 @@ canvasEl.addEventListener('mousemove', (e) => {
             tooltip.style.display = 'block';
             tooltip.style.left = (rect.left + snapPixelX) + 'px';
             tooltip.style.top = (rect.top + snapPixelY - 10) + 'px';
+            tooltip.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
             document.body.style.cursor = 'crosshair';
         } else {
             tooltip.style.display = 'none';
@@ -1065,6 +1194,7 @@ canvasEl.addEventListener('mousemove', (e) => {
     }
     lastX = e.clientX; lastY = e.clientY;
 });
+
 
 canvasEl.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
 
@@ -1090,11 +1220,35 @@ canvasEl.addEventListener('touchstart', (e) => {
     e.preventDefault(); // Impede scroll natural na tela
     if (e.touches.length === 1) {
         isDragging = true;
+        isTracing = false;
         lastX = e.touches[0].clientX;
         lastY = e.touches[0].clientY;
-        tooltip.style.display = 'none';
+        
+        const rect = canvasEl.getBoundingClientRect();
+        const mx = lastX - rect.left;
+        const my = lastY - rect.top;
+        
+        const closest = getClosestCurvePoint(mx, my, 25);
+        if (closest) {
+            isTracing = true;
+            isDragging = false;
+            
+            const formatCoord = (val: number) => parseFloat(val.toFixed(4)).toString();
+            tooltip.innerText = `(${formatCoord(closest.mathX)}, ${formatCoord(closest.mathY)})`;
+            tooltip.style.display = 'block';
+            tooltip.style.left = (rect.left + closest.px) + 'px';
+            tooltip.style.top = (rect.top + closest.py - 10) + 'px';
+            tooltip.style.backgroundColor = closest.color;
+            tooltip.style.color = '#fff';
+            
+            globalTracePoint = { x: closest.mathX, y: closest.mathY, color: closest.color };
+            drawFrame();
+        } else {
+            tooltip.style.display = 'none';
+        }
     } else if (e.touches.length === 2) {
         isDragging = false;
+        isTracing = false;
         initialPinchDistance = Math.hypot(
             e.touches[0].clientX - e.touches[1].clientX,
             e.touches[0].clientY - e.touches[1].clientY
@@ -1105,6 +1259,26 @@ canvasEl.addEventListener('touchstart', (e) => {
 canvasEl.addEventListener('touchmove', (e) => {
     e.preventDefault();
     const rect = canvasEl.getBoundingClientRect();
+    if (isTracing && e.touches.length === 1) {
+        const mx = e.touches[0].clientX - rect.left;
+        const my = e.touches[0].clientY - rect.top;
+        
+        const closest = getClosestCurvePoint(mx, my, 2000);
+        if (closest) {
+            const formatCoord = (val: number) => parseFloat(val.toFixed(4)).toString();
+            tooltip.innerText = `(${formatCoord(closest.mathX)}, ${formatCoord(closest.mathY)})`;
+            tooltip.style.display = 'block';
+            tooltip.style.left = (rect.left + closest.px) + 'px';
+            tooltip.style.top = (rect.top + closest.py - 10) + 'px';
+            tooltip.style.backgroundColor = closest.color;
+            tooltip.style.color = '#fff';
+            
+            globalTracePoint = { x: closest.mathX, y: closest.mathY, color: closest.color };
+            drawFrame();
+        }
+        return;
+    }
+
     if (e.touches.length === 1 && isDragging) {
         Camera.pan(e.touches[0].clientX - lastX, e.touches[0].clientY - lastY);
         lastX = e.touches[0].clientX;
@@ -1128,5 +1302,14 @@ canvasEl.addEventListener('touchmove', (e) => {
 
 canvasEl.addEventListener('touchend', (e) => {
     if (e.touches.length < 2) initialPinchDistance = -1;
-    if (e.touches.length === 0) isDragging = false;
+    if (e.touches.length === 0) {
+        isDragging = false;
+        isTracing = false;
+        if (globalTracePoint) {
+            globalTracePoint = null;
+            tooltip.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+            drawFrame();
+        }
+        tooltip.style.display = 'none';
+    }
 });
