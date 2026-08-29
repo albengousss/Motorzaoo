@@ -949,10 +949,17 @@ window.addEventListener('touchmove', (e) => {
     if (newHeight > maxH) newHeight = maxH;
     
     sidebarEl.style.height = `${newHeight}px`;
+    renderer.resize();
     drawFrame();
 }, {passive: false});
 
-window.addEventListener('touchend', () => isDraggingSidebar = false);
+window.addEventListener('touchend', () => {
+    if (isDraggingSidebar) {
+        isDraggingSidebar = false;
+        renderer.resize();
+        drawFrame();
+    }
+});
 
 // Garante que o MathLive perca o foco quando o teclado virtual é escondido e ajusta a tela estilo Desmos
 setTimeout(() => {
@@ -967,6 +974,7 @@ setTimeout(() => {
                     const minHeight = window.innerHeight * 0.6; // Força no mínimo 60% da tela
                     if (currentHeight < minHeight) {
                         sidebarEl.style.height = `${minHeight}px`;
+                        renderer.resize();
                         drawFrame();
                     }
                     setTimeout(() => {
@@ -978,6 +986,7 @@ setTimeout(() => {
             } else {
                 // Teclado Fechou!
                 sidebarEl.style.paddingBottom = '0';
+                setTimeout(() => { renderer.resize(); drawFrame(); }, 50);
                 if (document.activeElement && document.activeElement.tagName.toLowerCase() === 'math-field') {
                     (document.activeElement as HTMLElement).blur();
                 }
