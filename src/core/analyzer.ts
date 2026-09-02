@@ -84,16 +84,24 @@ export class MathAnalyzer {
             const currY = f(currX);
             const currDy = df(currX);
 
-            // 2. Caçador de Raízes (Mudança de sinal no Y contínuo)
-            if (isFinite(prevY) && isFinite(currY) && prevY * currY <= 0) {
+            // Se o segmento for identicamente zero, não gera raízes infinitas
+            if (Math.abs(prevY) < 1e-9 && Math.abs(currY) < 1e-9) {
+                prevX = currX;
+                prevY = currY;
+                prevDy = currDy;
+                continue;
+            }
+
+            // 2. Caçador de Raízes (Mudança estrita de sinal no Y contínuo)
+            if (isFinite(prevY) && isFinite(currY) && (prevY * currY < 0 || (prevY === 0 && currY !== 0) || (currY === 0 && prevY !== 0))) {
                 const rootX = this.bisection(f, prevX, currX);
                 if (rootX !== null) {
                     points.push({ x: rootX, y: 0, type: 'root' });
                 }
             }
 
-            // 3. Caçador de Extremos (Mudança de sinal na Derivada)
-            if (isFinite(prevDy) && isFinite(currDy) && prevDy * currDy <= 0) {
+            // 3. Caçador de Extremos (Mudança de sinal na Derivada, ignorando retas)
+            if (Math.abs(prevDy) > 1e-7 && Math.abs(currDy) > 1e-7 && isFinite(prevDy) && isFinite(currDy) && prevDy * currDy < 0) {
                 // Evita assíntotas verticais onde a derivada explode
                 if (Math.abs(currY) < 1e5 && Math.abs(prevY) < 1e5) {
                     const extX = this.bisection(df, prevX, currX, 1e-5);
@@ -136,7 +144,14 @@ export class MathAnalyzer {
             const currX = xMin + i * dx;
             const currY = h_func(currX);
 
-            if (isFinite(prevY) && isFinite(currY) && prevY * currY <= 0) {
+            // Se as duas curvas forem idênticas ou colineares neste intervalo, pula
+            if (Math.abs(prevY) < 1e-7 && Math.abs(currY) < 1e-7) {
+                prevX = currX;
+                prevY = currY;
+                continue;
+            }
+
+            if (isFinite(prevY) && isFinite(currY) && prevY * currY < 0) {
                 const rootX = this.bisection(h_func, prevX, currX);
                 if (rootX !== null) {
                     const yVal = f(rootX);
@@ -150,7 +165,10 @@ export class MathAnalyzer {
             prevY = currY;
         }
 
-        return this.filterDuplicates(points);
+        const filtered = this.filterDuplicates(points);
+        // Se houver mais de 20 interseções, as curvas coincidem no domínio (não são pontos discretos)
+        if (filtered.length > 20) return [];
+        return filtered;
     }
 
     private static filterDuplicates(points: NotablePoint[]): NotablePoint[] {

@@ -464,18 +464,9 @@ function drawFrame() {
 
             const cached = StateManager.casSolutions[item.id];
             if (cached && cached.query === currentQuery) {
-                if (cached.name && cached.variable && !cached.result.startsWith('Erro')) {
-                    if (!assignTarget) {
-                        // If it spawned a block, don't show inline and don't push to validEquations!
-                        ExpressionManager.setResult(item.id, '');
-                    } else {
-                        ExpressionManager.setResult(item.id, `= ${cached.result}`);
-                    }
-                } else {
-                    ExpressionManager.setResult(item.id, cached.result.includes('Erro') ? `- Erro no cálculo` : `= ${cached.result}`);
-                }
+                ExpressionManager.setResult(item.id, cached.result.includes('Erro') ? `- Erro no cálculo` : `= ${cached.result}`);
                 
-                if (cached.ast && (assignTarget || !cached.name)) {
+                if (cached.ast) {
                     validEquations.push({ color: item.color, id: item.id, ast: cached.ast, isImplicit: false, isEdo: false, name: cached.name || '', operator: '=', isDerivative: false, isHidden: !item.visible, variable: cached.variable });
                     
                     // Registar para que f_n(3) funcione!
@@ -621,16 +612,6 @@ function drawFrame() {
                                       } else {
                                           idx = StateManager.casIndices[item.id] ?? StateManager.getNextFuncIndex();
                                           fname = `f_{${idx}}`;
-                                          if (cmdName === 'integral' && cmdArgs.split(',').length <= 2) {
-                                              const cName = `C_${idx}`;
-                                              if (!cleanResult.includes(cName)) {
-                                                  cleanResult += ` + ${cName}`;
-                                                  if (!StateManager.values.hasOwnProperty(cName)) {
-                                                      StateManager.values[cName] = 0;
-                                                      ExpressionManager.addExpression(`${cName} = 0`);
-                                                  }
-                                              }
-                                          }
                                       }
                                   }
                               } catch(e) {}
@@ -649,13 +630,7 @@ function drawFrame() {
 
                               StateManager.casSolutions[item.id] = { query: currentQuery, result: cleanResult, ast: resAst, name: fname, variable: extractVar, index: idx };
         
-                              if (fname && !assignTarget) {
-                                  const cleanFnName = fname.replace(/[\{\}\\]/g, '');
-                                  ExpressionManager.setResult(item.id, `= ${cleanFnName}(${extractVar}) = ${cleanResult}`);
-                                  StateManager.casIndices[item.id] = idx!;
-                              } else {
-                                  ExpressionManager.setResult(item.id, `= ${cleanResult}`);
-                              }
+                              ExpressionManager.setResult(item.id, `= ${cleanResult}`);
 
                               // Cleanup orphaned blocks from previous app versions (legacy)
                               const spawnedId = StateManager.casSpawnedBlocks[item.id];
