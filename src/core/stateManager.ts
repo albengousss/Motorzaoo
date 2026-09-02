@@ -20,7 +20,7 @@ export class StateManager {
     static giacDefinitions: Record<string, string> = {};
     
     // Registro de funções mono e multivariáveis do usuário (ex: f(x,y), f(x,y,z,a,b))
-    static userFunctions: Record<string, { params: string[], expr: string, ast: any }> = {};
+    static userFunctions: Record<string, { params: string[], expr: string, ast: any, blockId?: string }> = {};
     
     // Gerenciamento Inteligente de Índices (reaproveitamento para ODEs e CAS)
     static getNextFuncIndex(): number {

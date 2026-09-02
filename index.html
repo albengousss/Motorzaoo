@@ -112,7 +112,27 @@
           </div>
         </div>
       </div>
-    </div>
+    <script>
+      // Configuração global para o motor Giac WebAssembly
+      window.Module = {
+          onRuntimeInitialized: function() {
+              console.log("[Giac] Motor inicializado via onRuntimeInitialized!");
+              window.giacReady = true;
+          },
+          print: function(t) { console.log('[Giac]', t); },
+          printErr: function(t) { console.warn('[Giac Erro]', t); }
+      };
+      const _giacPoll = setInterval(() => {
+          if (!window.giacReady && window.Module && (typeof window.Module.cwrap === 'function' || typeof window.Module._caseval === 'function')) {
+              window.giacReady = true;
+              console.log("[Giac] Motor inicializado via polling!");
+              clearInterval(_giacPoll);
+          } else if (window.giacReady) {
+              clearInterval(_giacPoll);
+          }
+      }, 300);
+    </script>
+    <script src="/giacwasm.js"></script>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

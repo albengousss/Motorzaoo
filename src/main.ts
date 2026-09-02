@@ -774,95 +774,104 @@ function drawFrame() {
             const expr = funcMatch[3].trim();
             const isMultiVar = paramNames.length > 1;
 
-            try {
-                const derivMatch = !isMultiVar ? expr.match(/^(?:\\frac\{d\}\{d([a-zA-Z])\}|d\/d([a-zA-Z])|\(d\)\/\(d([a-zA-Z])\))\s*(.+)$/) : null;
-                if (derivMatch) {
-                    const derivVar = derivMatch[1] || derivMatch[2] || derivMatch[3];
-                    const derivExpr = derivMatch[4];
-                    const ast = new PrattParser(derivExpr).parseExpression();
-                    MathEngine.compiledFuncs[funcName] = MathEngine.createDerivativeFunction(ast, derivVar);
-                    MathEngine.userFunctions[funcName] = { params: paramNames, expr, ast };
-                    StateManager.userFunctions[funcName] = { params: paramNames, expr, ast };
-                    validEquations.push({ color: item.color, id: item.id, ast, isImplicit: false, operator: '=', isEdo: false, isDerivative: true, derivVar, isHidden: !item.visible, variable: paramNames[0] });
-                    ExpressionManager.setResult(item.id, `Derivada ${funcName}(${paramNames[0]})`);
-                } else {
-                    const ast = new PrattParser(expr).parseExpression();
-                    MathEngine.userFunctions[funcName] = { params: paramNames, expr, ast };
-                    StateManager.userFunctions[funcName] = { params: paramNames, expr, ast };
-                    
-                    if (isMultiVar) {
-                        // Função multivariável (ex: f(x, y) = x^2*y + y^2/x ou f(x, y, z, a, b))
-                        MathEngine.compiledFuncs[funcName] = MathEngine.compileMultivariable(ast, paramNames);
-                        
-                        // Envia definição multivariável ao Giac para permitir int(f(x, y, z), y) e diff(f(x, y), x)
-                        const giacDef = `usr_${funcName}(${paramNames.join(',')}):=${expr}`;
-                        if (StateManager.giacDefinitions[funcName] !== giacDef) {
-                            StateManager.giacDefinitions[funcName] = giacDef;
-                            StateManager.casSolutions = {};
-                            MathEngine.askGiac(giacDef);
-                        }
+            // Se for uma função já existente e o usuário está escrevendo f(x, y) = 0 (ou f(x, y) = constante)
+            // ou se está em outro bloco de expressão, isso NÃO é uma definição, mas sim uma EQUAÇÃO A PLOTAR!
+            const existingFunc = MathEngine.userFunctions[funcName];
+            const isRhsConstant = !isNaN(Number(expr)) || expr === '0';
+            const isDifferentBlock = !!(existingFunc && existingFunc.blockId && existingFunc.blockId !== item.id);
+            const isPlotEquation = !!(existingFunc && (isRhsConstant || isDifferentBlock));
 
-                        ExpressionManager.setResult(item.id, `Função ${funcName}(${paramNames.join(', ')}) guardada`);
+            if (!isPlotEquation) {
+                try {
+                    const derivMatch = !isMultiVar ? expr.match(/^(?:\\frac\{d\}\{d([a-zA-Z])\}|d\/d([a-zA-Z])|\(d\)\/\(d([a-zA-Z])\))\s*(.+)$/) : null;
+                    if (derivMatch) {
+                        const derivVar = derivMatch[1] || derivMatch[2] || derivMatch[3];
+                        const derivExpr = derivMatch[4];
+                        const ast = new PrattParser(derivExpr).parseExpression();
+                        MathEngine.compiledFuncs[funcName] = MathEngine.createDerivativeFunction(ast, derivVar);
+                        MathEngine.userFunctions[funcName] = { params: paramNames, expr, ast, blockId: item.id };
+                        StateManager.userFunctions[funcName] = { params: paramNames, expr, ast, blockId: item.id };
+                        validEquations.push({ color: item.color, id: item.id, ast, isImplicit: false, operator: '=', isEdo: false, isDerivative: true, derivVar, isHidden: !item.visible, variable: paramNames[0] });
+                        ExpressionManager.setResult(item.id, `Derivada ${funcName}(${paramNames[0]})`);
                     } else {
-                        // Função monovariável (ex: f(x) = x^2)
-                        const paramName = paramNames[0];
-                        // Se o lado direito for comando simbólico Giac (ex: integral, derivada simbólica, limit, factor):
-                        if (MathEngine.isGiacCommand(ast)) {
-                            const giacQuery = MathEngine.formatForGiac(ast);
-                            const cached = StateManager.casSolutions[item.id];
-                            if (cached && cached.query === giacQuery) {
-                                try {
-                                    const solvedAst = new PrattParser(cached.result).parseExpression();
-                                    MathEngine.compiledFuncs[funcName] = MathEngine.compile(solvedAst, paramName);
-                                    validEquations.push({ color: item.color, id: item.id, ast: solvedAst, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
-                                    ExpressionManager.setResult(item.id, `= ${cached.result}`);
-                                } catch(err) {
+                        const ast = new PrattParser(expr).parseExpression();
+                        MathEngine.userFunctions[funcName] = { params: paramNames, expr, ast, blockId: item.id };
+                        StateManager.userFunctions[funcName] = { params: paramNames, expr, ast, blockId: item.id };
+                        
+                        if (isMultiVar) {
+                            // Função multivariável (ex: f(x, y) = x^2*y + y^2/x ou f(x, y, z, a, b))
+                            MathEngine.compiledFuncs[funcName] = MathEngine.compileMultivariable(ast, paramNames);
+                            
+                            // Envia definição multivariável ao Giac para permitir int(f(x, y, z), y) e diff(f(x, y), x)
+                            const giacDef = `usr_${funcName}(${paramNames.join(',')}):=${expr}`;
+                            if (StateManager.giacDefinitions[funcName] !== giacDef) {
+                                StateManager.giacDefinitions[funcName] = giacDef;
+                                StateManager.casSolutions = {};
+                                MathEngine.askGiac(giacDef);
+                            }
+
+                            ExpressionManager.setResult(item.id, `Função ${funcName}(${paramNames.join(', ')}) guardada`);
+                        } else {
+                            // Função monovariável (ex: f(x) = x^2)
+                            const paramName = paramNames[0];
+                            // Se o lado direito for comando simbólico Giac (ex: integral, derivada simbólica, limit, factor):
+                            if (MathEngine.isGiacCommand(ast)) {
+                                const giacQuery = MathEngine.formatForGiac(ast);
+                                const cached = StateManager.casSolutions[item.id];
+                                if (cached && cached.query === giacQuery) {
+                                    try {
+                                        const solvedAst = new PrattParser(cached.result).parseExpression();
+                                        MathEngine.compiledFuncs[funcName] = MathEngine.compile(solvedAst, paramName);
+                                        validEquations.push({ color: item.color, id: item.id, ast: solvedAst, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
+                                        ExpressionManager.setResult(item.id, `= ${cached.result}`);
+                                    } catch(err) {
+                                        MathEngine.compiledFuncs[funcName] = MathEngine.compile(ast, paramName);
+                                        validEquations.push({ color: item.color, id: item.id, ast, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
+                                        ExpressionManager.setResult(item.id, `= ${cached.result}`);
+                                    }
+                                } else {
+                                    ExpressionManager.setResult(item.id, 'Calculando...');
+                                    MathEngine.askGiac(giacQuery).then(res => {
+                                        const cleanRes = res.replace(/"/g, '').trim();
+                                        StateManager.casSolutions[item.id] = { query: giacQuery, result: cleanRes };
+                                        scheduleFrame();
+                                    });
                                     MathEngine.compiledFuncs[funcName] = MathEngine.compile(ast, paramName);
                                     validEquations.push({ color: item.color, id: item.id, ast, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
-                                    ExpressionManager.setResult(item.id, `= ${cached.result}`);
                                 }
                             } else {
-                                ExpressionManager.setResult(item.id, 'Calculando...');
-                                MathEngine.askGiac(giacQuery).then(res => {
-                                    const cleanRes = res.replace(/"/g, '').trim();
-                                    StateManager.casSolutions[item.id] = { query: giacQuery, result: cleanRes };
-                                    scheduleFrame();
-                                });
                                 MathEngine.compiledFuncs[funcName] = MathEngine.compile(ast, paramName);
+                                // Empurra para plotar no gráfico!
                                 validEquations.push({ color: item.color, id: item.id, ast, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
-                            }
-                        } else {
-                            MathEngine.compiledFuncs[funcName] = MathEngine.compile(ast, paramName);
-                            // Empurra para plotar no gráfico!
-                            validEquations.push({ color: item.color, id: item.id, ast, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
-                            
-                            // Verifica se depende de variáveis adicionais (sliders)
-                            const freeVars = getFreeVariables(ast, [paramName]);
-                            if (freeVars.length > 0) {
-                                const unbound = freeVars.filter(v => StateManager.values[v] === undefined && MathEngine.compiledFuncs[v] === undefined);
-                                if (unbound.length > 0) {
-                                    ExpressionManager.setResult(item.id, `Defina o slider para: ${unbound.join(', ')}`);
+                                
+                                // Verifica se depende de variáveis adicionais (sliders)
+                                const freeVars = getFreeVariables(ast, [paramName]);
+                                if (freeVars.length > 0) {
+                                    const unbound = freeVars.filter(v => StateManager.values[v] === undefined && MathEngine.compiledFuncs[v] === undefined);
+                                    if (unbound.length > 0) {
+                                        ExpressionManager.setResult(item.id, `Defina o slider para: ${unbound.join(', ')}`);
+                                    } else {
+                                        ExpressionManager.setResult(item.id, `Função ${funcName}(${paramName}) salva`);
+                                    }
                                 } else {
                                     ExpressionManager.setResult(item.id, `Função ${funcName}(${paramName}) salva`);
                                 }
-                            } else {
-                                ExpressionManager.setResult(item.id, `Função ${funcName}(${paramName}) salva`);
-                            }
-                            
-                            // Envia para o Giac para poder ser integrada/derivada simbolicamente!
-                            const giacDef = `usr_${funcName}(${paramName}):=${expr}`;
-                            if (StateManager.giacDefinitions[funcName] !== giacDef) {
-                                StateManager.giacDefinitions[funcName] = giacDef;
-                                StateManager.casSolutions = {}; // INVALIDE CACHE
-                                MathEngine.askGiac(giacDef);
+                                
+                                // Envia para o Giac para poder ser integrada/derivada simbolicamente!
+                                const giacDef = `usr_${funcName}(${paramName}):=${expr}`;
+                                if (StateManager.giacDefinitions[funcName] !== giacDef) {
+                                    StateManager.giacDefinitions[funcName] = giacDef;
+                                    StateManager.casSolutions = {}; // INVALIDE CACHE
+                                    MathEngine.askGiac(giacDef);
+                                }
                             }
                         }
                     }
+                } catch(e) {
+                    ExpressionManager.setResult(item.id, `Erro: ${(e as Error).message}`);
                 }
-            } catch(e) {
-                ExpressionManager.setResult(item.id, `Erro: ${(e as Error).message}`);
+                return; 
             }
-            return; 
         }
 
         // 3.5. CURVAS POLARES: r = f(theta) ou r = f(t)

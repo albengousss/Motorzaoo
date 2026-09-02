@@ -35,29 +35,73 @@ export class MathEngine {
     }
 
     /**
-     * O Método Mágico Assíncrono: Comunica-se com o Giac Web Worker sem travar a thread principal!
+     * O Método Mágico Assíncrono: Avaliação ultra-rápida e resiliente via Giac WebAssembly!
      */
     static async askGiac(expression: string): Promise<string> {
-        this.initGiacWorker();
-        if (!this.giacWorker) {
-            return '(Worker Giac indisponível)';
+        const executeOnModule = (m: any): string => {
+            try {
+                if (typeof m.cwrap === 'function') {
+                    const evaluateGiac = m.cwrap('caseval', 'string', ['string']);
+                    return evaluateGiac(expression);
+                } else if (typeof m._caseval === 'function') {
+                    const ptr = m.allocate(m.intArrayFromString(expression), 'i8', 0);
+                    const resPtr = m._caseval(ptr);
+                    const res = m.UTF8ToString(resPtr);
+                    m._free(ptr);
+                    return res;
+                }
+                return 'Erro: Funções de avaliação não encontradas';
+            } catch (err: any) {
+                return `Erro: ${err?.message || String(err)}`;
+            }
+        };
+
+        // 1. Execução direta e instantânea na thread principal se o Module estiver pronto
+        const m = (typeof window !== 'undefined' ? (window as any).Module : null);
+        if (m && (typeof m.cwrap === 'function' || typeof m._caseval === 'function')) {
+            return executeOnModule(m);
         }
 
-        const id = 'giac_' + (++this.reqCounter) + '_' + Date.now();
+        // 2. Se o Worker estiver pronto, tenta executar nele com timeout curto de fallback
+        this.initGiacWorker();
+        if (this.giacWorker && this.isGiacReady) {
+            const id = 'giac_' + (++this.reqCounter) + '_' + Date.now();
+            return new Promise((resolve) => {
+                const timer = setTimeout(() => {
+                    if (this.giacCallbacks[id]) {
+                        delete this.giacCallbacks[id];
+                        const fallbackM = (typeof window !== 'undefined' ? (window as any).Module : null);
+                        if (fallbackM && (typeof fallbackM.cwrap === 'function' || typeof fallbackM._caseval === 'function')) {
+                            resolve(executeOnModule(fallbackM));
+                        } else {
+                            resolve('(A carregar motor matemático... aguarde)');
+                        }
+                    }
+                }, 2000);
+
+                this.giacCallbacks[id] = (res) => {
+                    clearTimeout(timer);
+                    resolve(res);
+                };
+
+                this.giacWorker!.postMessage({ id, query: expression });
+            });
+        }
+
+        // 3. Polling rápido enquanto o Giac carrega (resolve assim que inicializar)
         return new Promise((resolve) => {
-            const timer = setTimeout(() => {
-                if (this.giacCallbacks[id]) {
-                    delete this.giacCallbacks[id];
-                    resolve('(Cálculo interrompido: limite de tempo atingido)');
+            let attempts = 0;
+            const poll = setInterval(() => {
+                attempts++;
+                const mod = (typeof window !== 'undefined' ? (window as any).Module : null);
+                if (mod && (typeof mod.cwrap === 'function' || typeof mod._caseval === 'function')) {
+                    clearInterval(poll);
+                    resolve(executeOnModule(mod));
+                } else if (attempts > 50) { // 10 segundos
+                    clearInterval(poll);
+                    resolve('(A carregar motor matemático... aguarde)');
                 }
-            }, 8000);
-
-            this.giacCallbacks[id] = (res) => {
-                clearTimeout(timer);
-                resolve(res);
-            };
-
-            this.giacWorker!.postMessage({ id, query: expression });
+            }, 200);
         });
     }
     
@@ -116,7 +160,7 @@ export class MathEngine {
 
     // Dicionário na RAM para guardar funções criadas pelo usuário (ex: f(x) = x^2, f(x,y))
     static compiledFuncs: Record<string, any> = {};
-    static userFunctions: Record<string, { params: string[], expr: string, ast: any }> = {};
+    static userFunctions: Record<string, { params: string[], expr: string, ast: any, blockId?: string }> = {};
 
     static evaluateAST(ast: any, scope: Record<string, number> = {}): number {
         try {
