@@ -232,6 +232,9 @@ export class ExpressionManager {
         sliderRow.style.cssText = 'display: none; gap: 8px; align-items: center; padding: 8px 12px; background: #fafafa; border-top: 1px dashed #eee;';
         
         sliderRow.innerHTML = `
+            <button class="play-btn" style="background: none; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background-color: #f0f4f9; color: #2d70b3; transition: all 0.2s;" title="Animar Slider">
+                <i data-lucide="play" class="w-3.5 h-3.5 fill-current"></i>
+            </button>
             <input type="text" class="min-val" value="-10" style="width: 45px; padding: 2px; text-align: center; border: 1px solid #ccc; border-radius: 3px; font-size: 12px;">
             <input type="range" class="slider-input" min="-10" max="10" step="0.1" value="1" style="flex-grow: 1; cursor: pointer;">
             <input type="text" class="max-val" value="10" style="width: 45px; padding: 2px; text-align: center; border: 1px solid #ccc; border-radius: 3px; font-size: 12px;">
@@ -297,8 +300,71 @@ export class ExpressionManager {
         minInput.addEventListener('change', updateLimits);
         maxInput.addEventListener('change', updateLimits);
 
+        // --- ANIMAÇÃO DE SLIDERS (PLAY / PAUSE) ---
+        const playBtn = sliderRow.querySelector('.play-btn') as HTMLButtonElement;
+        let isPlaying = false;
+        let animRafId: number | null = null;
+        let animDirection = 1;
+
+        const stopAnimation = () => {
+            if (animRafId !== null) {
+                cancelAnimationFrame(animRafId);
+                animRafId = null;
+            }
+            isPlaying = false;
+            if (playBtn) {
+                playBtn.innerHTML = '<i data-lucide="play" class="w-3.5 h-3.5 fill-current"></i>';
+                if ((window as any).lucide) (window as any).lucide.createIcons({ root: playBtn });
+            }
+        };
+
+        const animStep = () => {
+            if (!isPlaying) return;
+            const min = parseFloat(sliderInput.min) || -10;
+            const max = parseFloat(sliderInput.max) || 10;
+            const range = max - min;
+            const stepDelta = (range / 300) * animDirection;
+            let current = parseFloat(sliderInput.value) + stepDelta;
+
+            if (current >= max) {
+                current = max;
+                animDirection = -1;
+            } else if (current <= min) {
+                current = min;
+                animDirection = 1;
+            }
+
+            sliderInput.value = current.toFixed(2);
+            
+            const ascii = (mf as any).getValue('ascii-math');
+            const match = ascii.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*=/);
+            if (match) {
+                const varName = match[1];
+                const roundedVal = parseFloat(current.toFixed(2));
+                (mf as any).setValue(`${varName} = ${roundedVal}`);
+                StateManager.updateSlider(varName, roundedVal);
+                this.onUpdateCallback();
+            }
+
+            animRafId = requestAnimationFrame(animStep);
+        };
+
+        if (playBtn) {
+            playBtn.onclick = () => {
+                if (isPlaying) {
+                    stopAnimation();
+                } else {
+                    isPlaying = true;
+                    playBtn.innerHTML = '<i data-lucide="pause" class="w-3.5 h-3.5 fill-current"></i>';
+                    if ((window as any).lucide) (window as any).lucide.createIcons({ root: playBtn });
+                    animRafId = requestAnimationFrame(animStep);
+                }
+            };
+        }
+
         // --- EVENTOS BÁSICOS ---
         delBtn.onclick = () => {
+            stopAnimation();
             block.remove();
             this.updateBlockNumbers();
             this.onUpdateCallback();
@@ -322,6 +388,7 @@ export class ExpressionManager {
         });
 
         sliderInput.addEventListener('input', () => {
+            if (isPlaying) stopAnimation();
             const ascii = (mf as any).getValue('ascii-math');
             const match = ascii.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*=/);
             if (match) {

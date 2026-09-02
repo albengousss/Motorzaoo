@@ -3,7 +3,7 @@ import './style.css';
 import { PrattParser } from './core/prattParser';
 import { StateManager } from './core/stateManager';
 
-let validEquations: {id: string, ast: any, isImplicit: boolean, operator: string, isEdo: boolean, isDerivative: boolean, derivVar?: string, isIvp?: boolean, isPoint?: boolean, pointX?: number, pointY?: number, pointLabel?: string, name?: string, x0?: number, y0?: number, isHidden?: boolean, variable?: string, color?: string}[] = [];
+let validEquations: {id: string, ast: any, isImplicit: boolean, operator: string, isEdo: boolean, isDerivative: boolean, derivVar?: string, isIvp?: boolean, isPoint?: boolean, pointX?: number, pointY?: number, pointLabel?: string, isParametric?: boolean, astX?: any, astY?: any, tMin?: number, tMax?: number, paramVar?: string, condition?: (x: number, y: number, scope: any, t?: number) => boolean, name?: string, x0?: number, y0?: number, isHidden?: boolean, variable?: string, color?: string}[] = [];
 let dragDistance = 0;
 import { MathEngine } from './core/mathEngine';
 import { ImplicitEngine } from './core/implicitEngine';
@@ -78,6 +78,100 @@ function prefixGiac(str: string): string {
     return res;
 }
 
+/** Interpreta condições de domínio do tipo {x >= 0} ou {-2 <= x <= 2} ou {0 <= t <= 2pi} */
+function parseDomainCondition(condRaw: string): { condition: (x: number, y: number, scope: any, t?: number) => boolean, tBounds?: { tMin: number, tMax: number } } | null {
+    let cleanCond = condRaw.trim()
+        .replace(/\\le/g, '<=')
+        .replace(/\\ge/g, '>=')
+        .replace(/\\leq/g, '<=')
+        .replace(/\\geq/g, '>=')
+        .replace(/\\pi/g, 'pi')
+        .replace(/π/g, 'pi');
+
+    // 1. Desigualdade dupla: lower <= var <= upper (ex: -2 <= x <= 2, 0 <= t <= 2pi)
+    const doubleMatch = cleanCond.match(/^(.+?)\s*(<=|<)\s*([a-zA-Z_])\s*(<=|<)\s*(.+)$/);
+    if (doubleMatch) {
+        const lowerStr = doubleMatch[1];
+        const op1 = doubleMatch[2];
+        const targetVar = doubleMatch[3];
+        const op2 = doubleMatch[4];
+        const upperStr = doubleMatch[5];
+
+        let lowerAst: any = null;
+        let upperAst: any = null;
+        try {
+            lowerAst = new PrattParser(lowerStr).parseExpression();
+            upperAst = new PrattParser(upperStr).parseExpression();
+        } catch(e) {}
+
+        if (lowerAst && upperAst) {
+            const lowerF = MathEngine.compile(lowerAst);
+            const upperF = MathEngine.compile(upperAst);
+
+            let tBounds: { tMin: number, tMax: number } | undefined = undefined;
+            if (targetVar === 't' || targetVar === 'theta') {
+                const minVal = lowerF(0, 0, StateManager.values);
+                const maxVal = upperF(0, 0, StateManager.values);
+                if (isFinite(minVal) && isFinite(maxVal)) {
+                    tBounds = { tMin: minVal, tMax: maxVal };
+                }
+            }
+
+            const condition = (x: number, y: number, scope: any, t?: number) => {
+                const targetVal = targetVar === 'x' ? x : (targetVar === 'y' ? y : ((targetVar === 't' || targetVar === 'theta') ? (t ?? 0) : (scope[targetVar] ?? 0)));
+                const lVal = lowerF(0, 0, scope);
+                const uVal = upperF(0, 0, scope);
+                const ok1 = op1 === '<=' ? lVal <= targetVal : lVal < targetVal;
+                const ok2 = op2 === '<=' ? targetVal <= uVal : targetVal < uVal;
+                return ok1 && ok2;
+            };
+
+            return { condition, tBounds };
+        }
+    }
+
+    // 2. Desigualdade simples: var >= bound ou var <= bound (ex: x >= 0, t <= 5)
+    const singleMatch = cleanCond.match(/^([a-zA-Z_])\s*(<=|>=|<|>|==|=)\s*(.+)$/);
+    if (singleMatch) {
+        const targetVar = singleMatch[1];
+        const op = singleMatch[2];
+        const boundStr = singleMatch[3];
+
+        let boundAst: any = null;
+        try {
+            boundAst = new PrattParser(boundStr).parseExpression();
+        } catch(e) {}
+
+        if (boundAst) {
+            const boundF = MathEngine.compile(boundAst);
+
+            let tBounds: { tMin: number, tMax: number } | undefined = undefined;
+            if (targetVar === 't' || targetVar === 'theta') {
+                const val = boundF(0, 0, StateManager.values);
+                if (isFinite(val)) {
+                    if (op === '>=' || op === '>') tBounds = { tMin: val, tMax: 10 };
+                    else if (op === '<=' || op === '<') tBounds = { tMin: -10, tMax: val };
+                }
+            }
+
+            const condition = (x: number, y: number, scope: any, t?: number) => {
+                const targetVal = targetVar === 'x' ? x : (targetVar === 'y' ? y : ((targetVar === 't' || targetVar === 'theta') ? (t ?? 0) : (scope[targetVar] ?? 0)));
+                const bVal = boundF(0, 0, scope);
+                if (op === '>=') return targetVal >= bVal;
+                if (op === '>') return targetVal > bVal;
+                if (op === '<=') return targetVal <= bVal;
+                if (op === '<') return targetVal < bVal;
+                if (op === '==' || op === '=') return Math.abs(targetVal - bVal) < 1e-4;
+                return true;
+            };
+
+            return { condition, tBounds };
+        }
+    }
+
+    return null;
+}
+
 /** RAF debounce: evita múltiplos redraws no mesmo frame quando várias Promises terminam juntas */
 let _rafPending = false;
 function scheduleFrame() {
@@ -150,6 +244,22 @@ function drawFrame() {
 
         // Convert d/dx(expr) to diff(expr, x)
         cleanStr = cleanStr.replace(/(?:\\frac\{d\}\{d([a-zA-Z_])\}|d\/d([a-zA-Z_])|\(d\)\/\(d([a-zA-Z_])\))\s*\(([^)]+)\)/g, 'diff($4, $1$2$3)');
+
+        // Extração de restrições de domínio entre chaves: ex: y = x^2 {x >= 0} ou {0 <= t <= 2pi}
+        let conditionFn: ((x: number, y: number, scope: any, t?: number) => boolean) | undefined = undefined;
+        let explicitTBounds: { tMin: number, tMax: number } | undefined = undefined;
+        const isMatrixDef = cleanStr.includes('{{') || cleanStr.includes('[[');
+        if (!isMatrixDef) {
+            const domainMatch = cleanStr.match(/(.+?)\s*\{([^}]+)\}\s*$/);
+            if (domainMatch) {
+                const parsedCond = parseDomainCondition(domainMatch[2]);
+                if (parsedCond) {
+                    conditionFn = parsedCond.condition;
+                    explicitTBounds = parsedCond.tBounds;
+                    cleanStr = domainMatch[1].trim();
+                }
+            }
+        }
 
         // Versão sem espaços APENAS para os testes de Regex (EDO, IVP, Associações)
         const noSpaceStr = cleanStr.replace(/\s+/g, '').replace(/²/g, '^2').replace(/³/g, '^3');
@@ -589,6 +699,42 @@ function drawFrame() {
             return; 
         }
 
+        // 3.5. CURVAS POLARES: r = f(theta) ou r = f(t)
+        const polarMatch = cleanStr.match(/^\s*r\s*=\s*(.+)$/);
+        if (polarMatch) {
+            let rExpr = polarMatch[1].trim();
+            rExpr = rExpr.replace(/\\theta/g, 'theta').replace(/θ/g, 'theta');
+            const thetaVar = rExpr.includes('theta') ? 'theta' : 't';
+            try {
+                const astR = new PrattParser(rExpr).parseExpression();
+                const astX = ["Multiply", astR, ["Cos", thetaVar]];
+                const astY = ["Multiply", astR, ["Sin", thetaVar]];
+
+                const tMin = explicitTBounds?.tMin ?? 0;
+                const tMax = explicitTBounds?.tMax ?? (2 * Math.PI);
+
+                validEquations.push({
+                    color: item.color,
+                    id: item.id,
+                    ast: astR,
+                    isImplicit: false,
+                    isEdo: false,
+                    isDerivative: false,
+                    isParametric: true,
+                    astX,
+                    astY,
+                    tMin,
+                    tMax,
+                    paramVar: thetaVar,
+                    condition: conditionFn,
+                    operator: '=',
+                    isHidden: !item.visible
+                });
+                ExpressionManager.setResult(item.id, 'Curva Polar (r = f(θ))');
+                return;
+            } catch(e) {}
+        }
+
         // 4. SLIDERS GLOBAIS E DEFINIÇÃO DE MATRIZES
         const assignmentMatch = noSpaceStr.match(/^\\?([a-zA-Z_][a-zA-Z0-9_]*)=(.+)$/);
         if (assignmentMatch) {
@@ -734,11 +880,17 @@ function drawFrame() {
 
             const ast = new PrattParser(expressaoPlot).parseExpression();
 
-            // Suporte para plotagem de pontos individuais: ex: (1, 2) ou (a, b)
+            // Suporte para plotagem de pontos individuais ou curvas paramétricas: (x(t), y(t))
             if (ast && ast[0] === 'Point') {
-                const evalX = MathEngine.compile(ast[1])(0, 0, StateManager.values);
-                const evalY = MathEngine.compile(ast[2])(0, 0, StateManager.values);
-                if (isFinite(evalX) && isFinite(evalY)) {
+                const varsX = StateManager.extractVariables(ast[1]);
+                const varsY = StateManager.extractVariables(ast[2]);
+                const isParametric = varsX.includes('t') || varsY.includes('t');
+
+                if (isParametric) {
+                    const hasTrig = JSON.stringify(ast).toLowerCase().includes('sin') || JSON.stringify(ast).toLowerCase().includes('cos');
+                    const tMin = explicitTBounds?.tMin ?? (hasTrig ? 0 : -10);
+                    const tMax = explicitTBounds?.tMax ?? (hasTrig ? 2 * Math.PI : 10);
+
                     validEquations.push({
                         color: item.color,
                         id: item.id,
@@ -746,15 +898,40 @@ function drawFrame() {
                         isImplicit: false,
                         isEdo: false,
                         isDerivative: false,
-                        isPoint: true,
-                        pointX: evalX,
-                        pointY: evalY,
-                        pointLabel: `(${parseFloat(evalX.toFixed(3))}, ${parseFloat(evalY.toFixed(3))})`,
+                        isParametric: true,
+                        astX: ast[1],
+                        astY: ast[2],
+                        tMin,
+                        tMax,
+                        paramVar: 't',
+                        condition: conditionFn,
                         operator: '=',
                         isHidden: !item.visible
                     });
-                    ExpressionManager.setResult(item.id, `= (${parseFloat(evalX.toFixed(3))}, ${parseFloat(evalY.toFixed(3))})`);
+                    ExpressionManager.setResult(item.id, `Curva Paramétrica (t ∈ [${parseFloat(tMin.toFixed(2))}, ${parseFloat(tMax.toFixed(2))}])`);
                     return;
+                } else {
+                    const evalX = MathEngine.compile(ast[1])(0, 0, StateManager.values);
+                    const evalY = MathEngine.compile(ast[2])(0, 0, StateManager.values);
+                    if (isFinite(evalX) && isFinite(evalY)) {
+                        validEquations.push({
+                            color: item.color,
+                            id: item.id,
+                            ast,
+                            isImplicit: false,
+                            isEdo: false,
+                            isDerivative: false,
+                            isPoint: true,
+                            pointX: evalX,
+                            pointY: evalY,
+                            pointLabel: `(${parseFloat(evalX.toFixed(3))}, ${parseFloat(evalY.toFixed(3))})`,
+                            operator: '=',
+                            condition: conditionFn,
+                            isHidden: !item.visible
+                        });
+                        ExpressionManager.setResult(item.id, `= (${parseFloat(evalX.toFixed(3))}, ${parseFloat(evalY.toFixed(3))})`);
+                        return;
+                    }
                 }
             }
 
@@ -805,7 +982,7 @@ function drawFrame() {
                 ExpressionManager.setResult(item.id, '');
             }
 
-            validEquations.push({ color: item.color, id: item.id, ast, isImplicit, operator, isEdo: false, isDerivative: isDerivativePlot, derivVar: derivVarTarget, isHidden: !item.visible });
+            validEquations.push({ color: item.color, id: item.id, ast, isImplicit, operator, isEdo: false, isDerivative: isDerivativePlot, derivVar: derivVarTarget, condition: conditionFn, isHidden: !item.visible });
         } catch (e) {
             // Em vez de engolir o erro silenciosamente, avisa o utilizador no ecrã
             ExpressionManager.setResult(item.id, '⚠ Sintaxe Inválida');
@@ -862,6 +1039,32 @@ function drawFrame() {
                 renderer.drawCurve(allPoints, color);
                 renderMemory_curve_points.push({ points: allPoints, color });
             }
+        } else if (item.isParametric) {
+            const paramVar = item.paramVar || 't';
+            const fastX = MathEngine.compile(item.astX, paramVar);
+            const fastY = MathEngine.compile(item.astY, paramVar);
+            const tMin = item.tMin ?? 0;
+            const tMax = item.tMax ?? (2 * Math.PI);
+            const steps = 800;
+            const dt = (tMax - tMin) / steps;
+            const pontos: { x: number, y: number }[] = [];
+
+            for (let i = 0; i <= steps; i++) {
+                const tVal = tMin + i * dt;
+                const px = fastX(tVal, 0, StateManager.values);
+                const py = fastY(tVal, 0, StateManager.values);
+                if (item.condition && !item.condition(px, py, StateManager.values, tVal)) {
+                    pontos.push({ x: px, y: NaN });
+                } else if (!isFinite(px) || !isFinite(py) || isNaN(px) || isNaN(py)) {
+                    pontos.push({ x: px, y: NaN });
+                } else {
+                    pontos.push({ x: px, y: py });
+                }
+            }
+
+            renderer.drawCurve(pontos, color);
+            renderMemory_curve_points.push({ points: pontos, color });
+
         } else if (item.isDerivative) {
             const derivFunc = MathEngine.createDerivativeFunction(item.ast, item.derivVar || 'x');
             const f = (x: number) => derivFunc(x, 0, StateManager.values);
@@ -905,8 +1108,12 @@ function drawFrame() {
             }
         } else {
             const fastF = MathEngine.compile(item.ast, item.variable || 'x');
-            const f = (x: number) => fastF(x, 0, StateManager.values);
-            const pontos = MathEngine.generatePointsAdaptive(item.ast, Camera.xMin, Camera.xMax, StateManager.values, item.variable || 'x', canvasEl.width);
+            const f = (x: number) => {
+                if (item.condition && !item.condition(x, 0, StateManager.values)) return NaN;
+                return fastF(x, 0, StateManager.values);
+            };
+            const pontos = MathEngine.generatePointsAdaptive(item.ast, Camera.xMin, Camera.xMax, StateManager.values, item.variable || 'x', canvasEl.width)
+                .map(p => ({ x: p.x, y: f(p.x) }));
             
             renderer.drawCurve(pontos, color);
             explicitCurves.push({ f, color });
