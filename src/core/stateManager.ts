@@ -19,6 +19,9 @@ export class StateManager {
     // Armazena as definições enviadas ao Giac para evitar spam de _caseval
     static giacDefinitions: Record<string, string> = {};
     
+    // Registro de funções mono e multivariáveis do usuário (ex: f(x,y), f(x,y,z,a,b))
+    static userFunctions: Record<string, { params: string[], expr: string, ast: any }> = {};
+    
     // Gerenciamento Inteligente de Índices (reaproveitamento para ODEs e CAS)
     static getNextFuncIndex(): number {
         const usedOde = Object.values(this.odeSolutions).filter(o => o && o.name !== 'Erro').map(o => o.index);

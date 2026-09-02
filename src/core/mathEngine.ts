@@ -105,32 +105,30 @@ export class MathEngine {
                 const target = this.formatForGiac(ast[3]);
                 return `limit(${expr}, ${variable}, ${target})`;
             }
-            
-            // Function call
+                     // Function call: se for função do utilizador registrada no Giac, prefixa com usr_
+            if (this.userFunctions[op]) {
+                return `usr_${op}(${ast.slice(1).map((x: any) => this.formatForGiac(x)).join(', ')})`;
+            }
             return `${op.toLowerCase()}(${ast.slice(1).map((x: any) => this.formatForGiac(x)).join(', ')})`;
         }
         return '';
     }
 
-    // Dicionário na RAM para guardar funções criadas pelo usuário (ex: f(x) = x^2)
+    // Dicionário na RAM para guardar funções criadas pelo usuário (ex: f(x) = x^2, f(x,y))
     static compiledFuncs: Record<string, any> = {};
+    static userFunctions: Record<string, { params: string[], expr: string, ast: any }> = {};
 
     static evaluateAST(ast: any, scope: Record<string, number> = {}): number {
         try {
             this.ce.pushScope();
-            for (const [varName, value] of Object.entries(scope)) {
-                this.ce.assign(varName, value);
-            }
-            const mathNode = this.ce.box(ast);
-            const resultNode = mathNode.N(); 
-
-            if (typeof (resultNode as any).json === 'number') return (resultNode as any).json;
-            if (typeof (resultNode as any).numericValue === 'number') return (resultNode as any).numericValue;
-            
-            const val = resultNode.valueOf();
-            if (typeof val === 'number') return val;
-            return NaN;
-        } catch (error) {
+            Object.entries(scope).forEach(([k, v]) => {
+                if (typeof v === 'number' && !isNaN(v)) {
+                    this.ce.assign(k, v);
+                }
+            });
+            const result = this.ce.box(ast).evaluate();
+            return Number((result as any).numericValue ?? (result as any).json ?? result.valueOf());
+        } catch (_) {
             return NaN;
         } finally {
             try { this.ce.popScope(); } catch (_) {}
@@ -154,7 +152,7 @@ export class MathEngine {
     static compile(ast: any, paramName: string = 'x', dependentVar: string = 'y'): (x: number, y: number, scope: Record<string, number>) => number {
         const cacheKey = JSON.stringify(ast) + '::' + paramName + '::' + dependentVar;
         if (MathEngine.compileCache[cacheKey]) {
-            return MathEngine.compileCache[cacheKey];
+            return MathEngine.compileCache[cacheKey] as any;
         }
 
         const toJS = (node: any): string => {
@@ -194,14 +192,19 @@ export class MathEngine {
                 if (op === 'Negate') return `(-${toJS(node[1])})`;
                 if (op === 'List') return `[${node.slice(1).map(toJS).join(', ')}]`;
                 
-                // Trata chamadas customizadas ou não reconhecidas (ex: f(x))
+                // Trata chamadas customizadas ou não reconhecidas (ex: f(x) ou f(x, y) ou f(2, 3, 1, 0, 2))
                 if (op === 'Call') {
-                    return `(funcs['${node[1]}'] ? funcs['${node[1]}'](${toJS(node[2])}, ${toJS(node[2])}, scope) : 0)`;
+                    const fnName = node[1];
+                    const args = node.slice(2).map(toJS);
+                    args.push('scope');
+                    return `(funcs['${fnName}'] ? funcs['${fnName}'](${args.join(', ')}) : 0)`;
                 }
                 
                 // Funções que são parseadas como ["nome", arg1, ...] 
-                // e que podem ser do utilizador
-                return `(funcs['${op}'] ? funcs['${op}'](${node.length > 1 ? toJS(node[1]) : 0}, ${node.length > 2 ? toJS(node[2]) : 0}, scope) : 0)`;
+                // e que podem ser do utilizador (ex: f(2, 3, 1, 0, 2))
+                const argsJS = node.slice(1).map(toJS);
+                argsJS.push('scope');
+                return `(funcs['${op}'] ? funcs['${op}'](${argsJS.join(', ')}) : 0)`;
             }
             return '0';
         };
@@ -213,6 +216,106 @@ export class MathEngine {
         const compiled = (x: number, y: number, scope: Record<string, number>) => rawFunc(x, y, scope, MathEngine.compiledFuncs);
         MathEngine.compileCache[cacheKey] = compiled;
         return compiled;
+    }
+
+    /**
+     * Compila uma função com número arbitrário de variáveis (ex: f(x, y), f(x, y, z, a, b))
+     */
+    static compileMultivariable(ast: any, paramNames: string[]): (...args: any[]) => number {
+        const cacheKey = JSON.stringify(ast) + '::multi::' + paramNames.join(',');
+        if (MathEngine.compileCache[cacheKey]) {
+            return MathEngine.compileCache[cacheKey] as any;
+        }
+
+        const toJS = (node: any): string => {
+            if (typeof node === 'number') return node.toString();
+            if (typeof node === 'string') {
+                const clean = node.trim();
+                if (clean === 'e') return 'Math.E';
+                if (clean === 'pi' || clean === '\\pi' || clean === 'π') return 'Math.PI';
+                const pIdx = paramNames.indexOf(clean);
+                if (pIdx !== -1) return `(args[${pIdx}] !== undefined ? args[${pIdx}] : 0)`;
+                return `(scope['${clean}'] !== undefined ? scope['${clean}'] : 0)`;
+            }
+            if (Array.isArray(node)) {
+                const op = node[0];
+                if (op === 'Add') return `(${toJS(node[1])} + ${toJS(node[2])})`;
+                if (op === 'Subtract') return `(${toJS(node[1])} - ${toJS(node[2])})`;
+                if (op === 'Multiply') return `(${toJS(node[1])} * ${toJS(node[2])})`;
+                if (op === 'Divide') return `(${toJS(node[1])} / (${toJS(node[2])} === 0 ? 1e-9 : ${toJS(node[2])}))`;
+                if (op === 'Power') return `funcs.realPow(${toJS(node[1])}, ${toJS(node[2])})`;
+                if (op === 'Negate') return `(-(${toJS(node[1])}))`;
+                if (op === 'Sin') return `Math.sin(${toJS(node[1])})`;
+                if (op === 'Cos') return `Math.cos(${toJS(node[1])})`;
+                if (op === 'Tan') return `Math.tan(${toJS(node[1])})`;
+                if (op === 'Sqrt') return `Math.sqrt(${toJS(node[1])})`;
+                if (op === 'Abs') return `Math.abs(${toJS(node[1])})`;
+                if (op === 'Exp') return `Math.exp(${toJS(node[1])})`;
+                if (op === 'Log') return `Math.log(${toJS(node[1])})`;
+                
+                const args = node.slice(1).map(toJS);
+                args.push('scope');
+                return `(funcs['${op}'] ? funcs['${op}'](${args.join(', ')}) : 0)`;
+            }
+            return '0';
+        };
+
+        const body = `
+            return function(...args) {
+                let scope = {};
+                if (args.length > 0 && typeof args[args.length - 1] === 'object' && args[args.length - 1] !== null) {
+                    scope = args.pop();
+                }
+                return ${toJS(ast)};
+            };
+        `;
+
+        try {
+            MathEngine.compiledFuncs['realPow'] = MathEngine.realPow;
+            const rawFunc = new Function('funcs', body)(MathEngine.compiledFuncs);
+            (MathEngine.compileCache as any)[cacheKey] = rawFunc;
+            return rawFunc;
+        } catch(e) {
+            console.error('[compileMultivariable] Erro:', e);
+            return () => 0;
+        }
+    }
+
+    /**
+     * Substitui parâmetros numa árvore AST (ex: { x: 'x', y: 'y' })
+     */
+    static substituteAST(ast: any, mapping: Record<string, any>): any {
+        if (typeof ast === 'string') {
+            return mapping[ast] !== undefined ? mapping[ast] : ast;
+        }
+        if (typeof ast === 'number') return ast;
+        if (Array.isArray(ast)) {
+            const op = ast[0];
+            return [op, ...ast.slice(1).map(child => this.substituteAST(child, mapping))];
+        }
+        return ast;
+    }
+
+    /**
+     * Expande chamadas a funções de utilizador (ex: f(x, y)) de volta para a sua expressão analítica
+     * permitindo que o WebGL renderize curvas implícitas f(x, y) = 0 diretamente na GPU.
+     */
+    static expandUserFunctions(ast: any): any {
+        if (typeof ast === 'string' || typeof ast === 'number') return ast;
+        if (Array.isArray(ast)) {
+            const op = ast[0];
+            const def = MathEngine.userFunctions[op];
+            if (def) {
+                const mapping: Record<string, any> = {};
+                for (let i = 0; i < def.params.length; i++) {
+                    const p = def.params[i];
+                    mapping[p] = this.expandUserFunctions(ast[i + 1] ?? p);
+                }
+                return this.substituteAST(def.ast, mapping);
+            }
+            return [op, ...ast.slice(1).map(child => this.expandUserFunctions(child))];
+        }
+        return ast;
     }
 
     static createDerivativeFunction(ast: any, derivVar: string): (x: number, y: number, scope: Record<string, number>) => number {
