@@ -3,7 +3,7 @@ import './style.css';
 import { PrattParser } from './core/prattParser';
 import { StateManager } from './core/stateManager';
 
-let validEquations: {id: string, ast: any, isImplicit: boolean, operator: string, isEdo: boolean, isDerivative: boolean, derivVar?: string, isIvp?: boolean, isPoint?: boolean, pointX?: number, pointY?: number, pointLabel?: string, isParametric?: boolean, astX?: any, astY?: any, tMin?: number, tMax?: number, paramVar?: string, condition?: (x: number, y: number, scope: any, t?: number) => boolean, name?: string, x0?: number, y0?: number, isHidden?: boolean, variable?: string, color?: string}[] = [];
+let validEquations: {id: string, ast: any, isImplicit: boolean, operator: string, isEdo: boolean, isDerivative: boolean, derivVar?: string, isIvp?: boolean, isPoint?: boolean, pointX?: number, pointY?: number, pointLabel?: string, isParametric?: boolean, astX?: any, astY?: any, tMin?: number, tMax?: number, paramVar?: string, depVar?: string, indepVar?: string, condition?: (x: number, y: number, scope: any, t?: number) => boolean, name?: string, x0?: number, y0?: number, isHidden?: boolean, variable?: string, color?: string}[] = [];
 let dragDistance = 0;
 import { MathEngine } from './core/mathEngine';
 import { Renderer } from './graphics/renderer';
@@ -20,6 +20,31 @@ const colors = ['#c74440', '#2d70b3', '#388c46', '#6042a6', '#fa7e19'];
 function resizeAll() {
     renderer.resize();
     glRenderer.resize();
+}
+
+function getFreeVariables(ast: any, boundVars: string[] = []): string[] {
+    const vars = new Set<string>();
+    const standardNames = new Set(['pi', 'e', ...boundVars]);
+
+    function walk(node: any) {
+        if (typeof node === 'string') {
+            const clean = node.trim();
+            if (!standardNames.has(clean) && isNaN(Number(clean))) {
+                vars.add(clean);
+            }
+        } else if (Array.isArray(node)) {
+            const op = node[0];
+            const isBuiltin = ['Add', 'Subtract', 'Multiply', 'Divide', 'Power', 'Negate', 'Sin', 'Cos', 'Tan', 'Sqrt', 'Abs', 'Exp', 'Log', 'Integrate', 'Point', 'Limit'].includes(op);
+            if (!isBuiltin && typeof op === 'string' && !standardNames.has(op)) {
+                vars.add(op);
+            }
+            for (let i = 1; i < node.length; i++) {
+                walk(node[i]);
+            }
+        }
+    }
+    walk(ast);
+    return Array.from(vars);
 }
 
 let isShiftDown = false;
@@ -230,6 +255,10 @@ function drawFrame() {
             cleanStr = cleanStr.replace(regex, func.replace(/\s+/g, ''));
         });
 
+        // Normalização de nomes de funções com subscrito (ex: f_{jose}(x), f_(1)(x), f_1(x))
+        cleanStr = cleanStr.replace(/([a-zA-Z_][a-zA-Z0-9_]*)_[\{\(]([a-zA-Z0-9_]+)[\}\)]\s*(?=\()/g, '$1_$2');
+        cleanStr = cleanStr.replace(/([a-zA-Z_][a-zA-Z0-9_]*)_([a-zA-Z0-9_]+)\s*(?=\()/g, '$1_$2');
+
         // Indexação de matrizes e listas (MathLive subscript para Giac 0-indexed)
         cleanStr = cleanStr.replace(/([a-zA-Z_][a-zA-Z0-9_]*)_\(([0-9]+),([0-9]+)\)/g, (_match, p1, p2, p3) => {
             return `${p1}[${parseInt(p2)-1},${parseInt(p3)-1}]`;
@@ -279,11 +308,34 @@ function drawFrame() {
 
         if (ast && MathEngine.isGiacCommand(ast)) {
             const giacQuery = MathEngine.formatForGiac(ast);
-            ExpressionManager.setResult(item.id, 'Calculando...');
-            MathEngine.askGiac(giacQuery).then(res => {
-                const cleanResult = res.replace(/"/g, '');
-                ExpressionManager.setResult(item.id, `= ${cleanResult}`);
-            });
+            const cached = StateManager.casSolutions[item.id];
+            if (cached && cached.query === giacQuery) {
+                ExpressionManager.setResult(item.id, `= ${cached.result}`);
+                try {
+                    const solvedAst = new PrattParser(cached.result).parseExpression();
+                    const free = getFreeVariables(solvedAst, []);
+                    if (free.includes('x') || (!isNaN(Number(cached.result)) && isFinite(Number(cached.result)))) {
+                        validEquations.push({ 
+                            color: item.color, 
+                            id: item.id, 
+                            ast: solvedAst, 
+                            isImplicit: false, 
+                            operator: '=', 
+                            isEdo: false, 
+                            isDerivative: false, 
+                            isHidden: !item.visible, 
+                            variable: 'x' 
+                        });
+                    }
+                } catch(e) {}
+            } else {
+                ExpressionManager.setResult(item.id, 'Calculando...');
+                MathEngine.askGiac(giacQuery).then(res => {
+                    const cleanResult = res.replace(/"/g, '').trim();
+                    StateManager.casSolutions[item.id] = { query: giacQuery, result: cleanResult };
+                    scheduleFrame();
+                });
+            }
             return;
         }
 
@@ -628,35 +680,75 @@ function drawFrame() {
             }
             return; // Interrompe para não renderizar o gráfico disto
         } else {
-            // Detecção fallback (legado)
+            // Detecção Universal de Equações Diferenciais Ordinárias (EDOs)
             const eqIndex = noSpaceStr.indexOf('=');
             if (eqIndex > 0) {
                 const leftSide = noSpaceStr.substring(0, eqIndex);
-                const rightSideClean = cleanStr.substring(cleanStr.indexOf('=') + 1);
-                
-                if (leftSide.endsWith("'")) {
+                const rightSideClean = cleanStr.substring(cleanStr.indexOf('=') + 1).trim();
+
+                // 1. Plicas: y' = ..., y'(x) = ..., y'(t) = ..., x'(t) = ..., v' = ...
+                const primeMatch = leftSide.match(/^([a-zA-Z_][a-zA-Z0-9_]*)'(?:\(([a-zA-Z_][a-zA-Z0-9_]*)\))?$/);
+                if (primeMatch) {
                     isEdo = true;
-                    edoNameMatch = leftSide.substring(0, leftSide.length - 1).replace(/[\{\}\\]/g, '');
+                    edoNameMatch = primeMatch[1];
+                    const indep = primeMatch[2] || (edoNameMatch === 'x' ? 't' : 'x');
                     edoExpr = rightSideClean;
-                } else if (leftSide.startsWith("d") && leftSide.endsWith("/dx")) {
+                    (item as any)._indepVar = indep;
+                }
+                // 2. Leibniz simples: dy/dx, dy/dt, dx/dt, dv/dt, etc.
+                else if (leftSide.match(/^d([a-zA-Z_][a-zA-Z0-9_]*)\/d([a-zA-Z_][a-zA-Z0-9_]*)$/)) {
+                    const m = leftSide.match(/^d([a-zA-Z_][a-zA-Z0-9_]*)\/d([a-zA-Z_][a-zA-Z0-9_]*)$/)!;
                     isEdo = true;
-                    edoNameMatch = leftSide.substring(1, leftSide.length - 3).replace(/[\{\}\(\)\\]/g, '');
+                    edoNameMatch = m[1];
                     edoExpr = rightSideClean;
-                } else if (leftSide.match(/^\\frac\{d([a-zA-Z_][a-zA-Z0-9_\{\}]*)\}\{dx\}$/)) {
+                    (item as any)._indepVar = m[2];
+                }
+                // 3. Leibniz LaTeX: \frac{dy}{dx}, \frac{dy}{dt}, \frac{d(y)}{dt}
+                else if (leftSide.match(/^\\frac\{d\(?([a-zA-Z_][a-zA-Z0-9_]*)\)?\}\{d\(?([a-zA-Z_][a-zA-Z0-9_]*)\)?\}$/)) {
+                    const m = leftSide.match(/^\\frac\{d\(?([a-zA-Z_][a-zA-Z0-9_]*)\)?\}\{d\(?([a-zA-Z_][a-zA-Z0-9_]*)\)?\}$/)!;
                     isEdo = true;
-                    const m = leftSide.match(/^\\frac\{d([a-zA-Z_][a-zA-Z0-9_\{\}]*)\}\{dx\}$/);
-                    if (m) edoNameMatch = m[1].replace(/[\{\}\\]/g, '');
+                    edoNameMatch = m[1];
                     edoExpr = rightSideClean;
+                    (item as any)._indepVar = m[2];
+                }
+                // 4. Notação diff(y, x) = ... ou diff(y, t) = ...
+                else if (leftSide.match(/^diff\(([a-zA-Z_][a-zA-Z0-9_]*),([a-zA-Z_][a-zA-Z0-9_]*)\)$/)) {
+                    const m = leftSide.match(/^diff\(([a-zA-Z_][a-zA-Z0-9_]*),([a-zA-Z_][a-zA-Z0-9_]*)\)$/)!;
+                    isEdo = true;
+                    edoNameMatch = m[1];
+                    edoExpr = rightSideClean;
+                    (item as any)._indepVar = m[2];
                 }
             }
         }
 
         if (isEdo) {
-            if (edoNameMatch === 'y') edoNameMatch = 'y'; 
+            const depVar = edoNameMatch || 'y';
+            const indepVar = (item as any)._indepVar || (depVar === 'x' ? 't' : 'x');
             try {
                 const astEdo = new PrattParser(edoExpr).parseExpression();
-                validEquations.push({ color: item.color, id: item.id, ast: astEdo, isImplicit: false, isEdo: true, name: edoNameMatch, operator: '=', isDerivative: false, isHidden: !item.visible });
-                ExpressionManager.setResult(item.id, `Campo Vetorial (${edoNameMatch}')`);
+                validEquations.push({ 
+                    color: item.color, 
+                    id: item.id, 
+                    ast: astEdo, 
+                    isImplicit: false, 
+                    isEdo: true, 
+                    name: depVar, 
+                    depVar,
+                    indepVar,
+                    operator: '=', 
+                    isDerivative: false, 
+                    isHidden: !item.visible 
+                });
+
+                // Verifica se há parâmetros livres na EDO (ex: k em dy/dt = -k*y)
+                const freeParams = getFreeVariables(astEdo, [depVar, indepVar]);
+                if (freeParams.length > 0) {
+                    const paramDetails = freeParams.map(p => `${p}=${StateManager.values[p] ?? '?'}`).join(', ');
+                    ExpressionManager.setResult(item.id, `Campo (${depVar}' em ${indepVar} | ${paramDetails})`);
+                } else {
+                    ExpressionManager.setResult(item.id, `Campo Vetorial (${depVar}' em ${indepVar})`);
+                }
             } catch(e) {
                 ExpressionManager.setResult(item.id, `Erro EDO: ${(e as Error).message}`);
             }
@@ -664,45 +756,89 @@ function drawFrame() {
         }
 
         // 2.5. PROBLEMA DE VALOR INICIAL (IVP)
-        const ivpMatch = noSpaceStr.match(/^([a-zA-Z_][a-zA-Z0-9_\{\}]*)\(([\d\.\-]+)\)=([\d\.\-]+)$/);
+        const ivpMatch = cleanStr.match(/^([a-zA-Z_][a-zA-Z0-9_\{\}]*)\s*\(([\d\.\-]+)\)\s*=\s*([\d\.\-]+)$/);
         if (ivpMatch) {
             let edoName = ivpMatch[1].replace(/[\{\}\\]/g, '');
             const x0 = parseFloat(ivpMatch[2]);
             const y0 = parseFloat(ivpMatch[3]);
             validEquations.push({ color: item.color, id: item.id, isImplicit: false, isEdo: false, isDerivative: false, isIvp: true, name: edoName, x0, y0, ast: null, operator: '=', isHidden: !item.visible });
-            ExpressionManager.setResult(item.id, `Curva de Solução (${edoName})`);
+            ExpressionManager.setResult(item.id, `Curva de Solução (${edoName}(${x0}) = ${y0})`);
             return;
         }
 
         // 3. FUNÇÕES CUSTOMIZADAS E DERIVADAS SALVAS
-        const funcMatch = cleanStr.match(/^\\?([a-zA-Z_][a-zA-Z0-9_\{\}]*)\(([a-zA-Z_][a-zA-Z0-9_]*)\)=(.+)$/);
+        const funcMatch = cleanStr.match(/^\\?([a-zA-Z_][a-zA-Z0-9_\{\}]*)\s*\(([a-zA-Z_][a-zA-Z0-9_]*)\)\s*=\s*(.+)$/);
         if (funcMatch) {
             const funcName = funcMatch[1].replace(/[\{\}\\]/g, ''); 
-            const paramName = funcMatch[2];
-            const expr = funcMatch[3];
+            const paramName = funcMatch[2].replace(/[\{\}\\]/g, '');
+            const expr = funcMatch[3].trim();
             try {
-                const derivMatch = expr.match(/^(?:\\frac\{d\}\{d([a-zA-Z])\}|d\/d([a-zA-Z])|\(d\)\/\(d([a-zA-Z])\))(.+)$/);
+                const derivMatch = expr.match(/^(?:\\frac\{d\}\{d([a-zA-Z])\}|d\/d([a-zA-Z])|\(d\)\/\(d([a-zA-Z])\))\s*(.+)$/);
                 if (derivMatch) {
                     const derivVar = derivMatch[1] || derivMatch[2] || derivMatch[3];
                     const derivExpr = derivMatch[4];
                     const ast = new PrattParser(derivExpr).parseExpression();
                     MathEngine.compiledFuncs[funcName] = MathEngine.createDerivativeFunction(ast, derivVar);
+                    validEquations.push({ color: item.color, id: item.id, ast, isImplicit: false, operator: '=', isEdo: false, isDerivative: true, derivVar, isHidden: !item.visible, variable: paramName });
+                    ExpressionManager.setResult(item.id, `Derivada ${funcName}(${paramName})`);
                 } else {
                     const ast = new PrattParser(expr).parseExpression();
-                    MathEngine.compiledFuncs[funcName] = MathEngine.compile(ast, paramName);
-                    // Empurra para plotar!
-                    validEquations.push({ color: item.color, id: item.id, ast, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
                     
-                    // Envia para o Giac para poder ser integrada/derivada simbolicamente!
-                    const giacDef = `usr_${funcName}(${paramName}):=${expr}`;
-                    if (StateManager.giacDefinitions[funcName] !== giacDef) {
-                        StateManager.giacDefinitions[funcName] = giacDef;
-                        StateManager.casSolutions = {}; // INVALIDE CACHE
-                        MathEngine.askGiac(giacDef);
+                    // Se o lado direito for comando simbólico Giac (ex: integral, derivada simbólica, limit, factor):
+                    if (MathEngine.isGiacCommand(ast)) {
+                        const giacQuery = MathEngine.formatForGiac(ast);
+                        const cached = StateManager.casSolutions[item.id];
+                        if (cached && cached.query === giacQuery) {
+                            try {
+                                const solvedAst = new PrattParser(cached.result).parseExpression();
+                                MathEngine.compiledFuncs[funcName] = MathEngine.compile(solvedAst, paramName);
+                                validEquations.push({ color: item.color, id: item.id, ast: solvedAst, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
+                                ExpressionManager.setResult(item.id, `= ${cached.result}`);
+                            } catch(err) {
+                                MathEngine.compiledFuncs[funcName] = MathEngine.compile(ast, paramName);
+                                validEquations.push({ color: item.color, id: item.id, ast, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
+                                ExpressionManager.setResult(item.id, `= ${cached.result}`);
+                            }
+                        } else {
+                            ExpressionManager.setResult(item.id, 'Calculando...');
+                            MathEngine.askGiac(giacQuery).then(res => {
+                                const cleanRes = res.replace(/"/g, '').trim();
+                                StateManager.casSolutions[item.id] = { query: giacQuery, result: cleanRes };
+                                scheduleFrame();
+                            });
+                            MathEngine.compiledFuncs[funcName] = MathEngine.compile(ast, paramName);
+                            validEquations.push({ color: item.color, id: item.id, ast, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
+                        }
+                    } else {
+                        MathEngine.compiledFuncs[funcName] = MathEngine.compile(ast, paramName);
+                        // Empurra para plotar!
+                        validEquations.push({ color: item.color, id: item.id, ast, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
+                        
+                        // Verifica se depende de variáveis adicionais (sliders)
+                        const freeVars = getFreeVariables(ast, [paramName]);
+                        if (freeVars.length > 0) {
+                            const unbound = freeVars.filter(v => StateManager.values[v] === undefined && MathEngine.compiledFuncs[v] === undefined);
+                            if (unbound.length > 0) {
+                                ExpressionManager.setResult(item.id, `Defina o slider para: ${unbound.join(', ')}`);
+                            } else {
+                                ExpressionManager.setResult(item.id, `Função ${funcName}(${paramName}) salva`);
+                            }
+                        } else {
+                            ExpressionManager.setResult(item.id, `Função ${funcName}(${paramName}) salva`);
+                        }
+                        
+                        // Envia para o Giac para poder ser integrada/derivada simbolicamente!
+                        const giacDef = `usr_${funcName}(${paramName}):=${expr}`;
+                        if (StateManager.giacDefinitions[funcName] !== giacDef) {
+                            StateManager.giacDefinitions[funcName] = giacDef;
+                            StateManager.casSolutions = {}; // INVALIDE CACHE
+                            MathEngine.askGiac(giacDef);
+                        }
                     }
                 }
-                ExpressionManager.setResult(item.id, 'Função guardada');
-            } catch(e) {}
+            } catch(e) {
+                ExpressionManager.setResult(item.id, `Erro: ${(e as Error).message}`);
+            }
             return; 
         }
 
@@ -1012,15 +1148,18 @@ function drawFrame() {
             renderMemory_points.push({ mathX: item.pointX, mathY: item.pointY });
         } else if (item.isEdo) {
             // Desenha o slope field
-            const compiledEdo = MathEngine.compile(item.ast, 'x', item.name); 
+            const indep = item.indepVar || 'x';
+            const dep = item.depVar || item.name || 'y';
+            const compiledEdo = MathEngine.compile(item.ast, indep, dep); 
             renderer.drawSlopeField(compiledEdo, StateManager.values, color);
             // Armazena a EDO
-            MathEngine.compiledFuncs[item.name + "_edo"] = compiledEdo;
+            MathEngine.compiledFuncs[dep + "_edo"] = compiledEdo;
+            if (item.name) MathEngine.compiledFuncs[item.name + "_edo"] = compiledEdo;
 
         } else if (item.isIvp) {
             // Pinta a curva da solução da EDO
             const ivpItem = item as any;
-            const compiledEdo = MathEngine.compiledFuncs[ivpItem.name + "_edo"];
+            const compiledEdo = MathEngine.compiledFuncs[ivpItem.name + "_edo"] || MathEngine.compiledFuncs["y_edo"];
             if (compiledEdo) {
                 // FWD
                 const tMax = Camera.xMax;

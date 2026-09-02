@@ -69,27 +69,67 @@ export class PrattParser {
         }
         
         // INTEGRAL E LIMITE
-        if (token.type === TokenTypes.INTEGRAL || token.value === 'int' || token.value === '\\int') {
+        if (token.type === TokenTypes.INTEGRAL || token.value === 'int' || token.value === '\\int' || token.value === 'integrate') {
             const list: any[] = ["Integrate"];
-            let lower = null;
-            let upper = null;
+            let lower: any = null;
+            let upper: any = null;
+
+            // Formato funcional: int(expr, var, [lower, upper]) ou integrate(...)
+            if (this.lookahead && this.lookahead.type === TokenTypes.PARENTHESIS_LEFT) {
+                this.eat(TokenTypes.PARENTHESIS_LEFT);
+                const expr = this.parseExpression(0);
+                let diffVar = "x";
+                if (this.lookahead && this.lookahead.type === TokenTypes.COMMA) {
+                    this.eat(TokenTypes.COMMA);
+                    const varNode = this.parseExpression(0);
+                    if (typeof varNode === 'string') diffVar = varNode.replace(/[\{\}\\]/g, '');
+                    else if (typeof varNode === 'number') diffVar = varNode.toString();
+                }
+                if (this.lookahead && this.lookahead.type === TokenTypes.COMMA) {
+                    this.eat(TokenTypes.COMMA);
+                    lower = this.parseExpression(0);
+                }
+                if (this.lookahead && this.lookahead.type === TokenTypes.COMMA) {
+                    this.eat(TokenTypes.COMMA);
+                    upper = this.parseExpression(0);
+                }
+                this.eat(TokenTypes.PARENTHESIS_RIGHT);
+                list.push(expr);
+                list.push(diffVar);
+                if (lower !== null && upper !== null) {
+                    list.push(lower);
+                    list.push(upper);
+                }
+                return list;
+            }
             
             // Aceita limites em qualquer ordem (ex: \int_0^2 ou \int^2_0)
             for (let i = 0; i < 2; i++) {
                 if (this.lookahead && this.lookahead.type === TokenTypes.UNDERSCORE) {
                     this.eat(TokenTypes.UNDERSCORE);
-                    lower = this.parseExpression(10);
+                    lower = this.parseExpression(30);
                 } else if (this.lookahead && this.lookahead.type === TokenTypes.EXPONENTIATION) {
                     this.eat(TokenTypes.EXPONENTIATION);
-                    upper = this.parseExpression(10);
+                    upper = this.parseExpression(30);
                 }
+            }
+
+            // Descarta multiplicação implícita residual entre o limite superior e o integrando (ex: \int_0^2 x -> 2*x)
+            if (this.lookahead && this.lookahead.type === TokenTypes.MULTIPLICATION) {
+                this.eat(TokenTypes.MULTIPLICATION);
             }
             
             const expr = this.parseExpression(0);
             
-            // Consumir o diferencial opcional ex: 'dy', 'dx'
+            // Consumir o diferencial opcional ex: 'dx', 'dt', 'dy'
             let diffVar = "x";
-            if (this.lookahead && this.lookahead.type === TokenTypes.IDENTIFIER && this.lookahead.value.startsWith('d')) {
+            if (this.lookahead && this.lookahead.type === TokenTypes.DIFFERENTIAL) {
+                this.eat(TokenTypes.DIFFERENTIAL);
+                if (this.lookahead && this.lookahead.type === TokenTypes.IDENTIFIER) {
+                    diffVar = this.lookahead.value.replace(/[\{\}\\]/g, '');
+                    this.eat(TokenTypes.IDENTIFIER);
+                }
+            } else if (this.lookahead && this.lookahead.type === TokenTypes.IDENTIFIER && this.lookahead.value.startsWith('d') && this.lookahead.value.length > 1) {
                 diffVar = this.lookahead.value.substring(1).replace(/[\{\}\\]/g, '');
                 this.eat(TokenTypes.IDENTIFIER);
             }
