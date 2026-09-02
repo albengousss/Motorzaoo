@@ -2,37 +2,62 @@ import { ComputeEngine } from '@cortex-js/compute-engine';
 
 export class MathEngine {
     private static ce = new ComputeEngine();
+    private static giacWorker: Worker | null = null;
+    private static giacCallbacks: Record<string, (result: string) => void> = {};
+    private static reqCounter = 0;
+    static isGiacReady = false;
 
-    /**
-     * O Método Mágico Assíncrono: Pede ao Oráculo para resolver integrais, derivadas e limites!
-     */
-    static async askGiac(expression: string): Promise<string> {
-        console.log("GIAC QUERY:", expression);
-        return new Promise((resolve) => {
-            const m = (window as any).Module;
-            if (!(window as any).giacReady || !m) {
-                resolve('(A carregar motor matemático... aguarde)');
-                return;
-            }
+    private static initGiacWorker() {
+        if (typeof window === 'undefined') return;
+        if (this.giacWorker) return;
 
-            try {
-                let res = '';
-                if (typeof m.cwrap === 'function') {
-                    const evaluateGiac = m.cwrap('caseval', 'string', ['string']);
-                    res = evaluateGiac(expression);
-                } else if (typeof m._caseval === 'function') {
-                    const ptr = m.allocate(m.intArrayFromString(expression), 'i8', 0);
-                    const resPtr = m._caseval(ptr);
-                    res = m.UTF8ToString(resPtr);
-                    m._free(ptr);
-                } else {
-                    resolve('(Erro: Funções de avaliação não encontradas)');
+        try {
+            this.giacWorker = new Worker('/giacWorker.js');
+            this.giacWorker.onmessage = (e) => {
+                const data = e.data;
+                if (!data) return;
+                if (data.type === 'READY') {
+                    console.log('[MathEngine] Giac Worker pronto!');
+                    this.isGiacReady = true;
                     return;
                 }
+                if (data.id && this.giacCallbacks[data.id]) {
+                    this.giacCallbacks[data.id](data.result || data.error || '');
+                    delete this.giacCallbacks[data.id];
+                }
+            };
+            this.giacWorker.onerror = (err) => {
+                console.error('[MathEngine] Erro no Giac Worker:', err);
+            };
+        } catch (e) {
+            console.error('[MathEngine] Falha ao instanciar Giac Worker:', e);
+        }
+    }
+
+    /**
+     * O Método Mágico Assíncrono: Comunica-se com o Giac Web Worker sem travar a thread principal!
+     */
+    static async askGiac(expression: string): Promise<string> {
+        this.initGiacWorker();
+        if (!this.giacWorker) {
+            return '(Worker Giac indisponível)';
+        }
+
+        const id = 'giac_' + (++this.reqCounter) + '_' + Date.now();
+        return new Promise((resolve) => {
+            const timer = setTimeout(() => {
+                if (this.giacCallbacks[id]) {
+                    delete this.giacCallbacks[id];
+                    resolve('(Cálculo interrompido: limite de tempo atingido)');
+                }
+            }, 8000);
+
+            this.giacCallbacks[id] = (res) => {
+                clearTimeout(timer);
                 resolve(res);
-            } catch (e: any) {
-                resolve(`(Erro: ${e.message})`);
-            }
+            };
+
+            this.giacWorker!.postMessage({ id, query: expression });
         });
     }
     

@@ -68,8 +68,9 @@
     <!-- ═══════════════════════════════════════
          ÁREA DO GRÁFICO
     ══════════════════════════════════════════ -->
-    <div id="graph-container" class="grow relative overflow-hidden">
-      <canvas id="graphCanvas" class="block w-full h-full bg-white"></canvas>
+    <div id="graph-container" class="grow relative overflow-hidden bg-white">
+      <canvas id="webglCanvas" class="block w-full h-full absolute inset-0 pointer-events-none"></canvas>
+      <canvas id="graphCanvas" class="block w-full h-full relative bg-transparent"></canvas>
       
       <!-- Botoes flutuantes -->
       <div class="absolute top-4 right-4 flex flex-col gap-2 z-20">
@@ -87,30 +88,6 @@
       <!-- Coordenadas do cursor -->
       <div id="cursor-coords" class="absolute bottom-3 right-4 text-xs text-gray-500 font-mono pointer-events-none hidden md:block bg-white/80 px-2 py-1 rounded backdrop-blur-sm shadow-sm border border-gray-100"></div>
     </div>
-
-    
-    <script>
-      // Configuração global para o Giac rodar na thread principal!
-      window.Module = {
-          onRuntimeInitialized: function() {
-              console.log("Giac (Main Thread) inicializado via onRuntimeInitialized!");
-              window.giacReady = true;
-          },
-          print: function(t) { console.log('Giac:', t); },
-          printErr: function(t) { console.error('Giac Erro:', t); }
-      };
-      // Fallback polling caso onRuntimeInitialized não dispare
-      const _giacPoll = setInterval(() => {
-          if (!window.giacReady && window.Module && (typeof window.Module.cwrap === 'function' || typeof window.Module._caseval === 'function')) {
-              window.giacReady = true;
-              console.log("Giac (Main Thread) inicializado via polling!");
-              clearInterval(_giacPoll);
-          } else if (window.giacReady) {
-              clearInterval(_giacPoll);
-          }
-      }, 500);
-    </script>
-    <script src="/giacwasm.js" onerror="console.error('Falha ao carregar giacwasm.js da pasta public. Use o CDN.')"></script>
     <!-- Settings Modal -->
     <div id="settings-modal" class="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 hidden flex-col items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col border border-gray-100">

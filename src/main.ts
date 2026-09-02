@@ -6,15 +6,21 @@ import { StateManager } from './core/stateManager';
 let validEquations: {id: string, ast: any, isImplicit: boolean, operator: string, isEdo: boolean, isDerivative: boolean, derivVar?: string, isIvp?: boolean, isPoint?: boolean, pointX?: number, pointY?: number, pointLabel?: string, isParametric?: boolean, astX?: any, astY?: any, tMin?: number, tMax?: number, paramVar?: string, condition?: (x: number, y: number, scope: any, t?: number) => boolean, name?: string, x0?: number, y0?: number, isHidden?: boolean, variable?: string, color?: string}[] = [];
 let dragDistance = 0;
 import { MathEngine } from './core/mathEngine';
-import { ImplicitEngine } from './core/implicitEngine';
 import { Renderer } from './graphics/renderer';
+import { GLRenderer } from './graphics/glRenderer';
 import { Camera } from './graphics/camera';
 import { ExpressionManager } from './ui/expressionManager';
 import { MathAnalyzer } from './core/analyzer'; 
 import { ODESolver } from './core/odeSolver';
 
 const renderer = new Renderer('graphCanvas');
+const glRenderer = new GLRenderer('webglCanvas');
 const colors = ['#c74440', '#2d70b3', '#388c46', '#6042a6', '#fa7e19'];
+
+function resizeAll() {
+    renderer.resize();
+    glRenderer.resize();
+}
 
 let isShiftDown = false;
 let mouseX = 0; let mouseY = 0;
@@ -181,6 +187,7 @@ function scheduleFrame() {
 }
 
 function drawFrame() {
+    glRenderer.clear();
     renderer.clear();
     renderer.drawAxes(hoverX, hoverY);
 
@@ -1080,13 +1087,7 @@ function drawFrame() {
             renderMemory_curves.push({ f, color }); 
 
         } else if (item.isImplicit) {
-            const geometria = ImplicitEngine.generateImplicit(
-                item.id, item.ast, item.operator, StateManager.values, 
-                Camera.xMin, Camera.xMax, Camera.yMin, Camera.yMax
-            );
-            renderer.drawFills(geometria.fills, color);
-            renderer.drawSegments(geometria.segments, color);
-            geometria.segments.forEach((seg: any) => renderMemory_segments.push({...seg, color}));
+            glRenderer.drawImplicit(item.ast, item.operator, StateManager.values, color);
 
         } else if (Array.isArray(item.ast) && item.ast[0] === 'Integrate') {
             const funcAst = item.ast[1]; const minAst = item.ast[3]; const maxAst = item.ast[4];
@@ -1175,7 +1176,7 @@ ExpressionManager.init(drawFrame);
 
 (window as any)._resetView = () => {
     Camera.reset();
-    renderer.resize();
+    resizeAll();
     drawFrame();
 };
 
@@ -1199,7 +1200,7 @@ ExpressionManager.init(drawFrame);
 };
 
 // Inicialização — resize inicial obrigatório antes do primeiro draw
-renderer.resize();
+resizeAll();
 drawFrame();
 
 // Inicializa ícones Lucide no documento
@@ -1243,13 +1244,13 @@ setTimeout(() => {
     const graphContainer = document.getElementById('graph-container');
     if (graphContainer) {
         const resizeObserver = new ResizeObserver(() => {
-            renderer.resize();
+            resizeAll();
             drawFrame();
         });
         resizeObserver.observe(graphContainer);
     } else {
         window.addEventListener('resize', () => {
-            renderer.resize();
+            resizeAll();
             drawFrame();
         });
     }
@@ -1287,14 +1288,14 @@ window.addEventListener('touchmove', (e) => {
     if (newHeight > maxH) newHeight = maxH;
     
     sidebarEl.style.height = `${newHeight}px`;
-    renderer.resize();
+    resizeAll();
     drawFrame();
 }, {passive: false});
 
 window.addEventListener('touchend', () => {
     if (isDraggingSidebar) {
         isDraggingSidebar = false;
-        renderer.resize();
+        resizeAll();
         drawFrame();
     }
 });
@@ -1318,7 +1319,7 @@ setTimeout(() => {
                     sidebarEl.style.paddingBottom = '0'; 
                     
                     setTimeout(() => {
-                        renderer.resize();
+                        resizeAll();
                         drawFrame();
                         const activeEl = document.activeElement as HTMLElement;
                         if (activeEl && activeEl.tagName.toLowerCase() === 'math-field') {
@@ -1333,7 +1334,7 @@ setTimeout(() => {
                     sidebarEl.dataset.savedHeight = '';
                 }
                 
-                setTimeout(() => { renderer.resize(); drawFrame(); }, 50);
+                setTimeout(() => { resizeAll(); drawFrame(); }, 50);
                 
                 if (document.activeElement && document.activeElement.tagName.toLowerCase() === 'math-field') {
                     (document.activeElement as HTMLElement).blur();
