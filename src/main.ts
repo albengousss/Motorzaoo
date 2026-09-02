@@ -281,6 +281,27 @@ function drawFrame() {
         // Convert d/dx(expr) to diff(expr, x)
         cleanStr = cleanStr.replace(/(?:\\frac\{d\}\{d([a-zA-Z_])\}|d\/d([a-zA-Z_])|\(d\)\/\(d([a-zA-Z_])\))\s*\(([^)]+)\)/g, 'diff($4, $1$2$3)');
 
+        // Normalização universal de diferenciais e integrais (LaTeX e MathLive)
+        cleanStr = cleanStr
+            .replace(/\\mathrm\{d\}/gi, ' d ')
+            .replace(/\\text\{d\}/gi, ' d ')
+            .replace(/\\differentialD/gi, ' d ')
+            .replace(/\\,/g, ' ');
+
+        // 1. Integral definida: \int_0^2 x dx ou \int_{0}^{2} x dx ou \int^2_0 x dx
+        cleanStr = cleanStr.replace(/\\?int(?:_(?:\{([^}]+)\}|([a-zA-Z0-9.]+))\^(?:\{([^}]+)\}|([a-zA-Z0-9.]+))|\^(?:\{([^}]+)\}|([a-zA-Z0-9.]+))_(?:\{([^}]+)\}|([a-zA-Z0-9.]+)))\s*(.+?)\s*d\s*([a-zA-Z_])\s*$/i,
+            (_m, l1, l2, u1, u2, u3, u4, l3, l4, expr, v) => {
+                const lower = l1 ?? l2 ?? l3 ?? l4;
+                const upper = u1 ?? u2 ?? u3 ?? u4;
+                return `integrate(${expr.trim()}, ${v}, ${lower}, ${upper})`;
+            }
+        );
+
+        // 2. Integral indefinida: \int y dy ou \int ydy ou int t dy ou \int h dy
+        cleanStr = cleanStr.replace(/\\?int\s*(.+?)\s*d\s*([a-zA-Z_])\s*$/i,
+            (_m, expr, v) => `integrate(${expr.trim()}, ${v})`
+        );
+
         // Extração de restrições de domínio entre chaves: ex: y = x^2 {x >= 0} ou {0 <= t <= 2pi}
         let conditionFn: ((x: number, y: number, scope: any, t?: number) => boolean) | undefined = undefined;
         let explicitTBounds: { tMin: number, tMax: number } | undefined = undefined;
@@ -495,9 +516,19 @@ function drawFrame() {
                         extractVar = argsList[1].replace(/[\{\}\\]/g, '');
                     }
 
+                    // Expande funções de usuário nos argumentos (ex: Derivative(f(x, y), x) -> diff(2xy + y^2, x))
+                    let expandedArgs = cmdArgs;
+                    try {
+                        let dummyAst = new PrattParser(`[${cmdArgs}]`).parseExpression();
+                        dummyAst = MathEngine.expandUserFunctions(dummyAst);
+                        if (Array.isArray(dummyAst) && dummyAst[0] === 'List') {
+                            expandedArgs = dummyAst.slice(1).map((a: any) => MathEngine.formatForGiac(a)).join(', ');
+                        }
+                    } catch (_) {}
+
                     // Mapeia comandos GeoGebra para Giac nativo!
                     // Converte sintaxe de matriz GeoGebra {{1,2},{3,4}} para sintaxe Giac [[1,2],[3,4]]
-                    const giacArgs = prefixGiac(cmdArgs.replace(/\{/g, '[').replace(/\}/g, ']'));
+                    const giacArgs = prefixGiac(expandedArgs.replace(/\{/g, '[').replace(/\}/g, ']'));
 
                     let giacCommand = `${cmdName}(${giacArgs})`;
                     
@@ -1089,6 +1120,14 @@ function drawFrame() {
             // MODO CALCULADORA (Sem gráficos)
             const isPlot = expressaoPlot.includes('x') || expressaoPlot.includes('y');
             if (!isPlot && !isImplicit && !isDerivativePlot && !isExplicitY) {
+                // Tenta PRIMEIRO a avaliação numérica direta local (ex: f(0, 2), 2 + 3, sin(pi/4), f(2, 3, 1, 0, 2))
+                const evalFunc = MathEngine.compile(ast);
+                const val = evalFunc(0, 0, StateManager.values);
+                if (!isNaN(val)) {
+                    ExpressionManager.setResult(item.id, '= ' + parseFloat(val.toFixed(4)).toString());
+                    return;
+                }
+
                 const giacVars = Object.keys(StateManager.giacDefinitions);
                 const hasGiacVar = giacVars.some(v => new RegExp(`\\b${v}\\b`).test(expressaoPlot)) && !StateManager.values.hasOwnProperty(expressaoPlot);
                 const isMatrixArithmetic = expressaoPlot.includes('{') || expressaoPlot.includes('[');
@@ -1124,10 +1163,7 @@ function drawFrame() {
                     return;
                 }
                 
-                const evalFunc = MathEngine.compile(ast);
-                const val = evalFunc(0, 0, StateManager.values);
-                if (!isNaN(val)) ExpressionManager.setResult(item.id, '= ' + parseFloat(val.toFixed(4)).toString());
-                else ExpressionManager.setResult(item.id, '');
+                ExpressionManager.setResult(item.id, '');
                 return; 
             } else {
                 ExpressionManager.setResult(item.id, '');
