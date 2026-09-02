@@ -112,7 +112,26 @@ export class MathEngine {
         }
     }
 
+    static realPow(base: number, exp: number): number {
+        if (base >= 0) return Math.pow(base, exp);
+        // Raiz cúbica ou potências com denominador ímpar para bases negativas
+        if (Math.abs(exp - 1/3) < 1e-4) return -Math.cbrt(-base);
+        const inv = 1 / exp;
+        const roundInv = Math.round(inv);
+        if (Math.abs(inv - roundInv) < 1e-4 && roundInv % 2 !== 0) {
+            return -Math.pow(-base, exp);
+        }
+        return Math.pow(base, exp);
+    }
+
+    private static compileCache: Record<string, (x: number, y: number, scope: Record<string, number>) => number> = {};
+
     static compile(ast: any, paramName: string = 'x', dependentVar: string = 'y'): (x: number, y: number, scope: Record<string, number>) => number {
+        const cacheKey = JSON.stringify(ast) + '::' + paramName + '::' + dependentVar;
+        if (MathEngine.compileCache[cacheKey]) {
+            return MathEngine.compileCache[cacheKey];
+        }
+
         const toJS = (node: any): string => {
             if (typeof node === 'number') return node.toString();
             if (typeof node === 'string') {
@@ -132,7 +151,8 @@ export class MathEngine {
                 if (op === 'Subtract') return `(${toJS(node[1])} - ${toJS(node[2])})`;
                 if (op === 'Multiply') return `(${toJS(node[1])} * ${toJS(node[2])})`;
                 if (op === 'Divide') return `(${toJS(node[1])} / ${toJS(node[2])})`;
-                if (op === 'Power') return `Math.pow(${toJS(node[1])}, ${toJS(node[2])})`;
+                if (op === 'Power') return `funcs.realPow(${toJS(node[1])}, ${toJS(node[2])})`;
+                if (op === 'Cbrt') return `Math.cbrt(${toJS(node[1])})`;
                 if (op === 'Sin') return `Math.sin(${toJS(node[1])})`;
                 if (op === 'Cos') return `Math.cos(${toJS(node[1])})`;
                 if (op === 'Tan') return `Math.tan(${toJS(node[1])})`;
@@ -164,8 +184,10 @@ export class MathEngine {
         const jsCode = toJS(ast);
         const rawFunc = new Function('x', 'y', 'scope', 'funcs', `return ${jsCode};`);
         
-        // CORREÇÃO CRÍTICA: Chamamos a classe MathEngine diretamente para não perder o escopo!
-        return (x: number, y: number, scope: Record<string, number>) => rawFunc(x, y, scope, MathEngine.compiledFuncs);
+        MathEngine.compiledFuncs['realPow'] = MathEngine.realPow;
+        const compiled = (x: number, y: number, scope: Record<string, number>) => rawFunc(x, y, scope, MathEngine.compiledFuncs);
+        MathEngine.compileCache[cacheKey] = compiled;
+        return compiled;
     }
 
     static createDerivativeFunction(ast: any, derivVar: string): (x: number, y: number, scope: Record<string, number>) => number {
@@ -206,10 +228,15 @@ export class MathEngine {
                 if (op === 'Power') return `funcs.intPow(${L}, ${R})`;
                 if (op === 'Sin') return `funcs.intSin(${L})`;
                 if (op === 'Cos') return `funcs.intCos(${L})`;
+                if (op === 'Tan') return `funcs.intDiv(funcs.intSin(${L}), funcs.intCos(${L}))`;
+                if (op === 'Sqrt') return `funcs.intSqrt(${L})`;
+                if (op === 'Log') return `funcs.intLog(${L})`;
+                if (op === 'Atan') return `funcs.intAtan(${L})`;
+                if (op === 'Asin') return `funcs.intAsin(${L})`;
+                if (op === 'Acos') return `funcs.intAcos(${L})`;
                 if (op === 'Negate') return `funcs.intNeg(${L})`;
                 if (op === 'Abs') return `funcs.intAbs(${L})`;
                 if (op === 'Exp') return `funcs.intExp(${L})`;
-                // Por agora apenas operações core
             }
             return '{min: 0, max: 0}';
         };
@@ -261,6 +288,26 @@ export class MathEngine {
             if (p2 >= a.min && p2 <= a.max) min = -1;
             return { min, max };
         },
+        intSqrt: (a: any) => ({
+            min: Math.sqrt(Math.max(0, a.min)),
+            max: Math.sqrt(Math.max(0, a.max))
+        }),
+        intLog: (a: any) => ({
+            min: a.min > 0 ? Math.log(a.min) : -Infinity,
+            max: a.max > 0 ? Math.log(a.max) : -Infinity
+        }),
+        intAtan: (a: any) => ({
+            min: Math.atan(a.min),
+            max: Math.atan(a.max)
+        }),
+        intAsin: (a: any) => ({
+            min: Math.asin(Math.max(-1, Math.min(1, a.min))),
+            max: Math.asin(Math.max(-1, Math.min(1, a.max)))
+        }),
+        intAcos: (a: any) => ({
+            min: Math.acos(Math.max(-1, Math.min(1, a.max))),
+            max: Math.acos(Math.max(-1, Math.min(1, a.min)))
+        }),
         intAbs: (a: any) => ({ 
             min: (a.min <= 0 && a.max >= 0) ? 0 : Math.min(Math.abs(a.min), Math.abs(a.max)), 
             max: Math.max(Math.abs(a.min), Math.abs(a.max)) 

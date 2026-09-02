@@ -38,6 +38,12 @@ export class PrattParser {
         
         if (token.type === TokenTypes.PARENTHESIS_LEFT) {
             const expr = this.parseExpression(0);
+            if (this.lookahead && this.lookahead.type === TokenTypes.COMMA) {
+                this.eat(TokenTypes.COMMA);
+                const yExpr = this.parseExpression(0);
+                this.eat(TokenTypes.PARENTHESIS_RIGHT);
+                return ["Point", expr, yExpr];
+            }
             this.eat(TokenTypes.PARENTHESIS_RIGHT);
             return expr;
         }
@@ -160,7 +166,7 @@ export class PrattParser {
                 if (name === 'arccos') name = 'acos';
                 if (name === 'arctan') name = 'atan';
 
-                if (['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'asin', 'acos', 'atan', 'log', 'exp', 'sqrt', 'abs'].includes(name)) {
+                if (['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'asin', 'acos', 'atan', 'log', 'exp', 'sqrt', 'cbrt', 'abs'].includes(name)) {
                     return [name.charAt(0).toUpperCase() + name.slice(1), args[0]];
                 }
                 return [rawName, ...args];

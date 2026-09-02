@@ -1,1 +1,164 @@
-export interface NotablePoint { x: number; y: number; type: 'root' | 'intercept' | 'extremum' | 'intersect'; }export class MathAnalyzer {    /**     * O MILAGRE DA BISSEï¿½ï¿½O: Encontra o zero exato da funï¿½ï¿½o cortando a distï¿½ncia pela metade.     * Chega ï¿½ precisï¿½o microscï¿½pica (1e-7) em pouquï¿½ssimas iteraï¿½ï¿½es.     */    private static bisection(f: (x: number) => number, a: number, b: number, tol = 1e-7): number | null {        let fa = f(a), fb = f(b);        if (fa * fb > 0) return null; // Se nï¿½o hï¿½ mudanï¿½a de sinal, nï¿½o hï¿½ raiz aqui        let mid = a;        for (let i = 0; i < 60; i++) {            mid = (a + b) / 2;            const fmid = f(mid);            if (Math.abs(fmid) < tol || (b - a) / 2 < tol) return mid;                        if (fa * fmid < 0) { b = mid; fb = fmid; }             else { a = mid; fa = fmid; }        }        return mid;    }    /**     * Caï¿½a Raï¿½zes (corta eixo X), Extremos (picos e vales) e Interseï¿½ï¿½es com eixo Y     */    static getNotablePoints(f: (x: number) => number, xMin: number, xMax: number): NotablePoint[] {        const points: NotablePoint[] = [];        const steps = 150; // Resoluï¿½ï¿½o do radar (intervalos)        const dx = (xMax - xMin) / steps;        const h = 1e-5; // Microscï¿½pio para a derivada        // Derivada Numï¿½rica (Diferenï¿½as Finitas Centrais) - Calcula a inclinaï¿½ï¿½o da reta        const df = (x: number) => (f(x + h) - f(x - h)) / (2 * h);        let prevX = xMin;        let prevY = f(prevX);        let prevDy = df(prevX);        // 1. Interseï¿½ï¿½o com o Eixo Y (Apenas avaliamos x = 0)        if (xMin <= 0 && xMax >= 0) {            const yInt = f(0);            if (!isNaN(yInt) && isFinite(yInt)) points.push({ x: 0, y: yInt, type: 'intercept' });        }        // Radar de Varredura        for (let i = 1; i <= steps; i++) {            const currX = xMin + i * dx;            const currY = f(currX);            const currDy = df(currX);            // 2. Caï¿½ador de Raï¿½zes (Mudanï¿½a de sinal no Y)            if (prevY * currY <= 0) {                const rootX = this.bisection(f, prevX, currX);                if (rootX !== null) points.push({ x: rootX, y: 0, type: 'root' });            }            // 3. Caï¿½ador de Extremos (Mudanï¿½a de sinal na Derivada/Inclinaï¿½ï¿½o)            if (prevDy * currDy <= 0) {                const extX = this.bisection(df, prevX, currX);                if (extX !== null) {                    const extY = f(extX);                    if (!isNaN(extY) && isFinite(extY)) points.push({ x: extX, y: extY, type: 'extremum' });                }            }            prevX = currX;            prevY = currY;            prevDy = currDy;        }        return this.filterDuplicates(points);    }    /**     * Caï¿½a as colisï¿½es entre DUAS funï¿½ï¿½es diferentes subtraindo uma da outra!     */    static getIntersections(f: (x: number) => number, g: (x: number) => number, xMin: number, xMax: number): NotablePoint[] {        const h_func = (x: number) => f(x) - g(x); // A distï¿½ncia entre as duas vira uma nova funï¿½ï¿½o        const points: NotablePoint[] = [];        const steps = 150;        const dx = (xMax - xMin) / steps;        let prevX = xMin;        let prevY = h_func(prevX);        for (let i = 1; i <= steps; i++) {            const currX = xMin + i * dx;            const currY = h_func(currX);            // Se a distï¿½ncia zerou, elas se cruzaram!            if (prevY * currY <= 0) {                const rootX = this.bisection(h_func, prevX, currX);                if (rootX !== null) {                    const yVal = f(rootX);                     if (!isNaN(yVal) && isFinite(yVal)) points.push({ x: rootX, y: yVal, type: 'intersect' });                }            }            prevX = currX;            prevY = currY;        }        return this.filterDuplicates(points);    }    // Filtra pontos milimetricamente iguais para nï¿½o sobrepor desenhos    private static filterDuplicates(points: NotablePoint[]): NotablePoint[] {        const unique: NotablePoint[] = [];        for (const p of points) {            const isDup = unique.some(u => Math.abs(u.x - p.x) < 1e-4 && Math.abs(u.y - p.y) < 1e-4);            if (!isDup) unique.push(p);        }        return unique;    }}
+export interface NotablePoint {
+    x: number;
+    y: number;
+    type: 'root' | 'intercept' | 'extremum' | 'intersect';
+}
+
+export class MathAnalyzer {
+    /**
+     * Algoritmo de Bisseção Robusto com Checagem de Continuidade:
+     * Encontra o zero da função cortando o intervalo pela metade,
+     * garantindo que descontinuidades verticais (assíntotas) não sejam marcadas como raízes.
+     */
+    private static bisection(f: (x: number) => number, a: number, b: number, tol = 1e-7): number | null {
+        let fa = f(a);
+        let fb = f(b);
+
+        if (!isFinite(fa) || !isFinite(fb) || isNaN(fa) || isNaN(fb)) return null;
+        if (fa * fb > 0) return null; // Sem mudança de sinal
+
+        // Teste de descontinuidade / salto de assíntota vertical
+        if (Math.abs(fa - fb) > 1e4 && Math.abs(b - a) < 1e-2) return null;
+
+        let mid = a;
+        for (let i = 0; i < 50; i++) {
+            mid = (a + b) / 2;
+            const fmid = f(mid);
+
+            if (!isFinite(fmid) || isNaN(fmid)) return null;
+
+            if (Math.abs(fmid) < tol || (b - a) / 2 < tol) {
+                // Checagem crucial de resíduo: para ser uma raiz legítima, |f(mid)| DEVE estar perto de 0!
+                // Em assíntotas verticais (ex: 1/x), (b-a)/2 < tol converge para 0, mas f(mid) é gigantesco!
+                if (Math.abs(fmid) < 1e-3) {
+                    return mid;
+                }
+                return null;
+            }
+
+            if (fa * fmid < 0) {
+                b = mid;
+                fb = fmid;
+            } else {
+                a = mid;
+                fa = fmid;
+            }
+        }
+
+        const finalVal = f(mid);
+        return isFinite(finalVal) && Math.abs(finalVal) < 1e-3 ? mid : null;
+    }
+
+    /**
+     * Caça Raízes (corte com eixo X), Extremos (máximos e mínimos) e Interseções com o Eixo Y.
+     */
+    static getNotablePoints(f: (x: number) => number, xMin: number, xMax: number): NotablePoint[] {
+        const points: NotablePoint[] = [];
+        const steps = 150;
+        const dx = (xMax - xMin) / steps;
+        const h = 1e-5;
+
+        // Derivada numérica (Diferenças Finitas Centrais)
+        const df = (x: number) => {
+            const y1 = f(x + h);
+            const y0 = f(x - h);
+            if (!isFinite(y1) || !isFinite(y0)) return NaN;
+            return (y1 - y0) / (2 * h);
+        };
+
+        // 1. Interseção com o Eixo Y (x = 0)
+        if (xMin <= 0 && xMax >= 0) {
+            const yInt = f(0);
+            if (isFinite(yInt) && !isNaN(yInt)) {
+                points.push({ x: 0, y: yInt, type: 'intercept' });
+            }
+        }
+
+        let prevX = xMin;
+        let prevY = f(prevX);
+        let prevDy = df(prevX);
+
+        // Varredura
+        for (let i = 1; i <= steps; i++) {
+            const currX = xMin + i * dx;
+            const currY = f(currX);
+            const currDy = df(currX);
+
+            // 2. Caçador de Raízes (Mudança de sinal no Y contínuo)
+            if (isFinite(prevY) && isFinite(currY) && prevY * currY <= 0) {
+                const rootX = this.bisection(f, prevX, currX);
+                if (rootX !== null) {
+                    points.push({ x: rootX, y: 0, type: 'root' });
+                }
+            }
+
+            // 3. Caçador de Extremos (Mudança de sinal na Derivada)
+            if (isFinite(prevDy) && isFinite(currDy) && prevDy * currDy <= 0) {
+                // Evita assíntotas verticais onde a derivada explode
+                if (Math.abs(currY) < 1e5 && Math.abs(prevY) < 1e5) {
+                    const extX = this.bisection(df, prevX, currX, 1e-5);
+                    if (extX !== null) {
+                        const extY = f(extX);
+                        if (isFinite(extY) && !isNaN(extY) && Math.abs(extY) < 1e6) {
+                            points.push({ x: extX, y: extY, type: 'extremum' });
+                        }
+                    }
+                }
+            }
+
+            prevX = currX;
+            prevY = currY;
+            prevDy = currDy;
+        }
+
+        return this.filterDuplicates(points);
+    }
+
+    /**
+     * Encontra interseções entre duas funções f e g: h(x) = f(x) - g(x) = 0
+     */
+    static getIntersections(f: (x: number) => number, g: (x: number) => number, xMin: number, xMax: number): NotablePoint[] {
+        const h_func = (x: number) => {
+            const fx = f(x);
+            const gx = g(x);
+            if (!isFinite(fx) || !isFinite(gx)) return NaN;
+            return fx - gx;
+        };
+
+        const points: NotablePoint[] = [];
+        const steps = 150;
+        const dx = (xMax - xMin) / steps;
+
+        let prevX = xMin;
+        let prevY = h_func(prevX);
+
+        for (let i = 1; i <= steps; i++) {
+            const currX = xMin + i * dx;
+            const currY = h_func(currX);
+
+            if (isFinite(prevY) && isFinite(currY) && prevY * currY <= 0) {
+                const rootX = this.bisection(h_func, prevX, currX);
+                if (rootX !== null) {
+                    const yVal = f(rootX);
+                    if (isFinite(yVal) && !isNaN(yVal)) {
+                        points.push({ x: rootX, y: yVal, type: 'intersect' });
+                    }
+                }
+            }
+
+            prevX = currX;
+            prevY = currY;
+        }
+
+        return this.filterDuplicates(points);
+    }
+
+    private static filterDuplicates(points: NotablePoint[]): NotablePoint[] {
+        const unique: NotablePoint[] = [];
+        for (const p of points) {
+            const isDup = unique.some(u => Math.abs(u.x - p.x) < 1e-4 && Math.abs(u.y - p.y) < 1e-4);
+            if (!isDup) unique.push(p);
+        }
+        return unique;
+    }
+}

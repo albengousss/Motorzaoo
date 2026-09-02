@@ -85,14 +85,20 @@ export class Renderer {
     drawAxes(hoverX: boolean = false, hoverY: boolean = false) {
         const rangeX = Camera.xMax - Camera.xMin;
         const rangeY = Camera.yMax - Camera.yMin;
-        // Usa a grelha do eixo que tiver intervalo maior, para manter labels legíveis
-        const rawStep = Math.max(rangeX, rangeY) / 10;
-        const mag = Math.floor(Math.log10(rawStep));
-        const magPow = Math.pow(10, mag);
-        
-        let step = magPow;
-        if (rawStep > 5 * magPow) step = 5 * magPow;
-        else if (rawStep > 2 * magPow) step = 2 * magPow;
+
+        // Calcula a escala de cada eixo independentemente para manter marcações perfeitas em qualquer proporção
+        const calcStep = (range: number) => {
+            const rawStep = range / 10;
+            const mag = Math.floor(Math.log10(rawStep));
+            const magPow = Math.pow(10, mag);
+            let step = magPow;
+            if (rawStep > 5 * magPow) step = 5 * magPow;
+            else if (rawStep > 2 * magPow) step = 2 * magPow;
+            return step;
+        };
+
+        const stepX = calcStep(rangeX);
+        const stepY = calcStep(rangeY);
 
         // Usar Camera.width/height (dimensões LÓGICAS) — this.canvas.width é físico (DPR-scaled)
         const W = Camera.width;
@@ -111,8 +117,9 @@ export class Renderer {
         if (zeroX < 20) zeroX = 20;
         if (zeroX > W - 20) zeroX = W - 20;
 
-        const startX = Math.ceil(Camera.xMin / step) * step;
-        for (let x = startX; x <= Camera.xMax; x += step) {
+        // Eixo X e grades verticais
+        const startX = Math.ceil(Camera.xMin / stepX) * stepX;
+        for (let x = startX; x <= Camera.xMax; x += stepX) {
             const px = Camera.toPixelX(x);
             const isAxis = Math.abs(x) < 1e-10;
             if ((isAxis && this.showAxes) || (!isAxis && this.showGrid)) {
@@ -136,10 +143,11 @@ export class Renderer {
             }
         }
 
+        // Eixo Y e grades horizontais
         this.ctx.textAlign = 'right';
         this.ctx.textBaseline = 'middle';
-        const startY = Math.ceil(Camera.yMin / step) * step;
-        for (let y = startY; y <= Camera.yMax; y += step) {
+        const startY = Math.ceil(Camera.yMin / stepY) * stepY;
+        for (let y = startY; y <= Camera.yMax; y += stepY) {
             const py = Camera.toPixelY(y);
             const isAxis = Math.abs(y) < 1e-10;
             if ((isAxis && this.showAxes) || (!isAxis && this.showGrid)) {
@@ -161,6 +169,28 @@ export class Renderer {
                     this.ctx.fillText(numStr, zeroX - 5, py);
                 }
             }
+        }
+    }
+
+    drawDiscretePoint(x: number, y: number, color: string, label?: string) {
+        const px = Camera.toPixelX(x);
+        const py = Camera.toPixelY(y);
+        if (px < -20 || px > Camera.width + 20 || py < -20 || py > Camera.height + 20) return;
+
+        this.ctx.beginPath();
+        this.ctx.arc(px, py, 5.5, 0, Math.PI * 2);
+        this.ctx.fillStyle = color;
+        this.ctx.fill();
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeStyle = '#ffffff';
+        this.ctx.stroke();
+
+        if (label) {
+            this.ctx.font = 'bold 12px sans-serif';
+            this.ctx.fillStyle = '#333';
+            this.ctx.textAlign = 'left';
+            this.ctx.textBaseline = 'bottom';
+            this.ctx.fillText(label, px + 8, py - 4);
         }
     }
 

@@ -3,7 +3,7 @@ import './style.css';
 import { PrattParser } from './core/prattParser';
 import { StateManager } from './core/stateManager';
 
-let validEquations: {id: string, ast: any, isImplicit: boolean, operator: string, isEdo: boolean, isDerivative: boolean, derivVar?: string, isIvp?: boolean, name?: string, x0?: number, y0?: number, isHidden?: boolean, variable?: string, color?: string}[] = [];
+let validEquations: {id: string, ast: any, isImplicit: boolean, operator: string, isEdo: boolean, isDerivative: boolean, derivVar?: string, isIvp?: boolean, isPoint?: boolean, pointX?: number, pointY?: number, pointLabel?: string, name?: string, x0?: number, y0?: number, isHidden?: boolean, variable?: string, color?: string}[] = [];
 let dragDistance = 0;
 import { MathEngine } from './core/mathEngine';
 import { ImplicitEngine } from './core/implicitEngine';
@@ -97,7 +97,7 @@ function drawFrame() {
 
     // Limpa apenas as funções compiladas de EDOs/CAS; funções do utilizador serão recompiladas
     // somente quando as expressões mudarem (via isDirty).
-    MathEngine.compiledFuncs = {};
+    MathEngine.compiledFuncs = { realPow: MathEngine.realPow };
 
     const rawData = ExpressionManager.getAllExpressions();
     validEquations = [];
@@ -639,22 +639,53 @@ function drawFrame() {
                 return; // Encerra o processamento, pois não queremos renderizar gráfico disto
             }
 
-            if (!['x', 'y', 'e', 'pi'].includes(varName) && !rightSide.includes('x') && !rightSide.includes('y') && !genericCasMatch) {
-                activeVars.push(varName);
+            if (!['x', 'y', 'e', 'pi'].includes(varName) && !genericCasMatch) {
+                // Suporte para declaração de ponto A = (x, y)
+                let pointAst: any = null;
                 try {
-                    const parser = new PrattParser(rightSideClean);
-                    StateManager.defineVariable(varName, parser.parseExpression());
-                    ExpressionManager.processBlockState(item.id, ascii, StateManager.values);
-                    ExpressionManager.setResult(item.id, ''); 
-                    
-                    // Envia variável para o Giac!
-                    const giacDef = `usr_${varName}:=${rightSideClean}`;
-                    if (StateManager.giacDefinitions[varName] !== giacDef) {
-                        StateManager.giacDefinitions[varName] = giacDef;
-                        MathEngine.askGiac(giacDef);
-                    }
+                    pointAst = new PrattParser(rightSideClean).parseExpression();
                 } catch (e) {}
-                return; 
+
+                if (pointAst && pointAst[0] === 'Point') {
+                    const evalX = MathEngine.compile(pointAst[1])(0, 0, StateManager.values);
+                    const evalY = MathEngine.compile(pointAst[2])(0, 0, StateManager.values);
+                    if (isFinite(evalX) && isFinite(evalY)) {
+                        validEquations.push({
+                            color: item.color,
+                            id: item.id,
+                            ast: pointAst,
+                            isImplicit: false,
+                            isEdo: false,
+                            isDerivative: false,
+                            isPoint: true,
+                            pointX: evalX,
+                            pointY: evalY,
+                            pointLabel: `${varName}(${parseFloat(evalX.toFixed(3))}, ${parseFloat(evalY.toFixed(3))})`,
+                            operator: '=',
+                            isHidden: !item.visible
+                        });
+                        ExpressionManager.setResult(item.id, `= (${parseFloat(evalX.toFixed(3))}, ${parseFloat(evalY.toFixed(3))})`);
+                        return;
+                    }
+                }
+
+                if (!rightSide.includes('x') && !rightSide.includes('y')) {
+                    activeVars.push(varName);
+                    try {
+                        const parser = new PrattParser(rightSideClean);
+                        StateManager.defineVariable(varName, parser.parseExpression());
+                        ExpressionManager.processBlockState(item.id, ascii, StateManager.values);
+                        ExpressionManager.setResult(item.id, ''); 
+                        
+                        // Envia variável para o Giac!
+                        const giacDef = `usr_${varName}:=${rightSideClean}`;
+                        if (StateManager.giacDefinitions[varName] !== giacDef) {
+                            StateManager.giacDefinitions[varName] = giacDef;
+                            MathEngine.askGiac(giacDef);
+                        }
+                    } catch (e) {}
+                    return; 
+                }
             }
         }
 
@@ -668,8 +699,9 @@ function drawFrame() {
             
             let isExplicitY = false;
             
-            if (expressaoPlot.startsWith('y=')) {
-                expressaoPlot = expressaoPlot.substring(2);
+            const yExplicitMatch = cleanStr.match(/^\s*y\s*=\s*(.+)$/);
+            if (yExplicitMatch) {
+                expressaoPlot = yExplicitMatch[1].trim();
                 isExplicitY = true;
             } else {
                 // Captura gráficos de derivadas diretas como: d/dx sin(x)
@@ -701,6 +733,30 @@ function drawFrame() {
             }
 
             const ast = new PrattParser(expressaoPlot).parseExpression();
+
+            // Suporte para plotagem de pontos individuais: ex: (1, 2) ou (a, b)
+            if (ast && ast[0] === 'Point') {
+                const evalX = MathEngine.compile(ast[1])(0, 0, StateManager.values);
+                const evalY = MathEngine.compile(ast[2])(0, 0, StateManager.values);
+                if (isFinite(evalX) && isFinite(evalY)) {
+                    validEquations.push({
+                        color: item.color,
+                        id: item.id,
+                        ast,
+                        isImplicit: false,
+                        isEdo: false,
+                        isDerivative: false,
+                        isPoint: true,
+                        pointX: evalX,
+                        pointY: evalY,
+                        pointLabel: `(${parseFloat(evalX.toFixed(3))}, ${parseFloat(evalY.toFixed(3))})`,
+                        operator: '=',
+                        isHidden: !item.visible
+                    });
+                    ExpressionManager.setResult(item.id, `= (${parseFloat(evalX.toFixed(3))}, ${parseFloat(evalY.toFixed(3))})`);
+                    return;
+                }
+            }
 
             // MODO CALCULADORA (Sem gráficos)
             const isPlot = expressaoPlot.includes('x') || expressaoPlot.includes('y');
@@ -767,7 +823,10 @@ function drawFrame() {
         
         const color = item.color || colors[index % colors.length];
 
-        if (item.isEdo) {
+        if (item.isPoint && typeof item.pointX === 'number' && typeof item.pointY === 'number') {
+            renderer.drawDiscretePoint(item.pointX, item.pointY, color, item.pointLabel);
+            renderMemory_points.push({ mathX: item.pointX, mathY: item.pointY });
+        } else if (item.isEdo) {
             // Desenha o slope field
             const compiledEdo = MathEngine.compile(item.ast, 'x', item.name); 
             renderer.drawSlopeField(compiledEdo, StateManager.values, color);

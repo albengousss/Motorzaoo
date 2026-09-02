@@ -44,19 +44,24 @@ export class Tokenizer {
     init(str: string) {
         let processed = str.replace(/d([a-zA-Z])$/i, ' d $1');
         
-        // Multiplicação implícita (ex: 2x -> 2*x)
-        processed = processed.replace(/(\d)([a-zA-Z\(])/g, '$1*$2');
-        
-        // CORREÇÃO: O replace acima transforma funções como f_1(3) em f_1*(3). 
-        // Esta linha reverte o erro caso o asterisco esteja a separar um identificador de um parêntesis!
-        processed = processed.replace(/(\\?[a-zA-Z_][a-zA-Z0-9_\{\}]*)\*\(/g, '$1(');
-
-        // Tratamento especial de yx e xy (juntos ou separados) que falhariam no parser como identificador único
+        // Multiplicação implícita inteligente
+        // 1. (x+1)(x-1) -> (x+1)*(x-1)
+        processed = processed.replace(/\)\s*\(/g, ')*(');
+        // 2. (x+1)x ou (x+1)2 -> (x+1)*x ou (x+1)*2
+        processed = processed.replace(/\)\s*([a-zA-Z0-9])/g, ')*$1');
+        // 3. 2(x+1) -> 2*(x+1)
+        processed = processed.replace(/(\d)\s*\(/g, '$1*(');
+        // 4. 2x -> 2*x
+        processed = processed.replace(/(\d)\s*([a-zA-Z])/g, '$1*$2');
+        // 5. x(x+1) ou y(x+1) -> x*(x+1) ou y*(x+1)
+        processed = processed.replace(/(^|[^a-zA-Z_])([xy])\s*\(/g, '$1$2*(');
+        // 6. yx ou xy -> y*x ou x*y
         processed = processed.replace(/(^|[^a-zA-Z_])y\s*x(?![a-zA-Z_])/g, '$1y*x');
         processed = processed.replace(/(^|[^a-zA-Z_])x\s*y(?![a-zA-Z_])/g, '$1x*y');
-        
-        // Multiplicação implícita entre x/y e funções (ex: x sin(y) -> x*sin(y))
-        processed = processed.replace(/(^|[^a-zA-Z_])([xy])\s+(sin|cos|tan|log|ln|exp|abs|sqrt)(?![a-zA-Z_])/g, '$1$2*$3');
+        // 7. Multiplicação implícita entre x/y e funções (ex: x sin(y) ou x\sin(y) -> x*sin(y))
+        processed = processed.replace(/(^|[^a-zA-Z_])([xy])\s*\\?(sin|cos|tan|log|ln|exp|abs|sqrt|asin|acos|atan|sec|csc|cot)(?![a-zA-Z_])/g, '$1$2*$3');
+        // 8. \pi x ou \pi(x) -> \pi*x ou \pi*(x)
+        processed = processed.replace(/(\\pi|π)\s*([a-zA-Z0-9\(])/g, '$1*$2');
 
         this.string = processed;
         this.cursor = 0;
