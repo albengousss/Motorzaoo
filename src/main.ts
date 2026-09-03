@@ -285,6 +285,11 @@ function drawFrame() {
             .replace(/[´`’′]/g, "'")
             .replace(/\^'+/g, m => m.replace(/\^/g, ''));
 
+        // Normalização de frações (LaTeX \frac{a}{b} e AsciiMath frac(a)(b))
+        cleanStr = cleanStr
+            .replace(/frac\s*\(([^)]+)\)\s*\(([^)]+)\)/g, '(($1)/($2))')
+            .replace(/\\frac\s*\{([^}]+)\}\s*\{([^}]+)\}/g, '(($1)/($2))');
+
         // Convert d/dx(expr) to diff(expr, x)
         cleanStr = cleanStr.replace(/(?:\\frac\{d\}\{d([a-zA-Z_])\}|d\/d([a-zA-Z_])|\(d\)\/\(d([a-zA-Z_])\))\s*\(([^)]+)\)/g, 'diff($4, $1$2$3)');
 
@@ -315,7 +320,7 @@ function drawFrame() {
         const isMatrixDef = cleanStr.includes('{{') || cleanStr.includes('[[');
         if (!isMatrixDef) {
             const domainMatch = cleanStr.match(/(.+?)\s*\{([^}]+)\}\s*$/);
-            if (domainMatch) {
+            if (domainMatch && /[<>]|\\le|\\ge|<=|>=/.test(domainMatch[2])) {
                 const parsedCond = parseDomainCondition(domainMatch[2]);
                 if (parsedCond) {
                     conditionFn = parsedCond.condition;
@@ -973,7 +978,8 @@ function drawFrame() {
                 return; // Encerra o processamento, pois não queremos renderizar gráfico disto
             }
 
-            if (!['x', 'y', 'e', 'pi'].includes(varName) && !genericCasMatch) {
+            const isMultiVarProd = varName.length > 1 && !varName.includes('_') && /[xyzt]/.test(varName);
+            if (!['x', 'y', 'z', 't', 'e', 'pi'].includes(varName) && !isMultiVarProd && !genericCasMatch) {
                 // Suporte para declaração de ponto A = (x, y)
                 let pointAst: any = null;
                 try {
@@ -1003,7 +1009,7 @@ function drawFrame() {
                     }
                 }
 
-                if (!rightSide.includes('x') && !rightSide.includes('y')) {
+                if (!rightSide.includes('x') && !rightSide.includes('y') && !rightSide.includes('z')) {
                     activeVars.push(varName);
                     try {
                         const parser = new PrattParser(rightSideClean);

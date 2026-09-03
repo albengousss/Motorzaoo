@@ -44,22 +44,25 @@ export class Tokenizer {
     init(str: string) {
         let processed = str.replace(/d([a-zA-Z])$/i, ' d $1');
         
-        // Multiplicação implícita inteligente
+        // Multiplicação implícita inteligente universal
         // 1. (x+1)(x-1) -> (x+1)*(x-1)
         processed = processed.replace(/\)\s*\(/g, ')*(');
         // 2. (x+1)x ou (x+1)2 -> (x+1)*x ou (x+1)*2
         processed = processed.replace(/\)\s*([a-zA-Z0-9])/g, ')*$1');
         // 3. 2(x+1) -> 2*(x+1)
         processed = processed.replace(/(\d)\s*\(/g, '$1*(');
-        // 4. 2x -> 2*x
+        // 4. 2x, 2y, 2z, etc. -> 2*x, 2*y, 2*z
         processed = processed.replace(/(\d)\s*([a-zA-Z])/g, '$1*$2');
-        // 5. x(x+1) ou y(x+1) -> x*(x+1) ou y*(x+1)
-        processed = processed.replace(/(^|[^a-zA-Z_])([xy])\s*\(/g, '$1$2*(');
-        // 6. yx ou xy -> y*x ou x*y
-        processed = processed.replace(/(^|[^a-zA-Z_])y\s*x(?![a-zA-Z_])/g, '$1y*x');
-        processed = processed.replace(/(^|[^a-zA-Z_])x\s*y(?![a-zA-Z_])/g, '$1x*y');
-        // 7. Multiplicação implícita entre x/y e funções (ex: x sin(y) ou x\sin(y) -> x*sin(y))
-        processed = processed.replace(/(^|[^a-zA-Z_])([xy])\s*\\?(sin|cos|tan|log|ln|exp|abs|sqrt|asin|acos|atan|sec|csc|cot)(?![a-zA-Z_])/g, '$1$2*$3');
+        // 5. x(...), y(...), z(...), t(...) -> x*(...), y*(...), z*(...)
+        processed = processed.replace(/(^|[^a-zA-Z_])([xyzt])\s*\(/g, '$1$2*(');
+        // 6. Multiplicação implícita entre variáveis quaisquer: xy, xz, yz, zx, zy, yx, etc. (incluindo espaços: x z, y z)
+        let prev = '';
+        while (prev !== processed) {
+            prev = processed;
+            processed = processed.replace(/(^|[^a-zA-Z_])([xyzt])\s*([xyzt])(?![a-zA-Z_])/g, '$1$2*$3');
+        }
+        // 7. Multiplicação implícita entre x/y/z/t e funções (ex: x sin(y) ou z cos(x) -> x*sin(y))
+        processed = processed.replace(/(^|[^a-zA-Z_])([xyzt])\s*\\?(sin|cos|tan|log|ln|exp|abs|sqrt|asin|acos|atan|sec|csc|cot)(?![a-zA-Z_])/g, '$1$2*$3');
         // 8. \pi x ou \pi(x) -> \pi*x ou \pi*(x)
         processed = processed.replace(/(\\pi|π)\s*([a-zA-Z0-9\(])/g, '$1*$2');
 

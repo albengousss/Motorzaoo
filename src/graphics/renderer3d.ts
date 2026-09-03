@@ -121,40 +121,49 @@ export class Renderer3D {
         const gl = this.gl!;
         const bounds = 5.0;
 
-        // Eixos principais: X (Vermelho), Y (Verde), Z (Azul)
+        // Eixos principais estilo Desmos 3D: X (Vermelho), Y (Verde), Z (Azul)
+        // Linhas positivas mais brilhantes e grossas, negativas discretas
         const axisData = [
-            // Eixo X (Vermelho)
-            -bounds, 0, 0,  0.94, 0.27, 0.27, 0.85,
-             bounds, 0, 0,  0.94, 0.27, 0.27, 0.85,
-            // Eixo Y (Verde)
-             0, -bounds, 0, 0.13, 0.77, 0.37, 0.85,
-             0,  bounds, 0, 0.13, 0.77, 0.37, 0.85,
-            // Eixo Z (Azul)
-             0, 0, -bounds, 0.23, 0.51, 0.96, 0.85,
-             0, 0,  bounds, 0.23, 0.51, 0.96, 0.85,
+            // Eixo X Negativo e Positivo (Vermelho)
+            -bounds, 0, 0,  0.94, 0.27, 0.27, 0.4,
+                  0, 0, 0,  0.94, 0.27, 0.27, 0.4,
+                  0, 0, 0,  0.95, 0.22, 0.22, 1.0,
+             bounds, 0, 0,  0.95, 0.22, 0.22, 1.0,
+
+            // Eixo Y Negativo e Positivo (Verde)
+             0, -bounds, 0, 0.13, 0.77, 0.37, 0.4,
+             0,       0, 0, 0.13, 0.77, 0.37, 0.4,
+             0,       0, 0, 0.14, 0.82, 0.38, 1.0,
+             0,  bounds, 0, 0.14, 0.82, 0.38, 1.0,
+
+            // Eixo Z Negativo e Positivo (Azul)
+             0, 0, -bounds, 0.23, 0.51, 0.96, 0.4,
+             0, 0,       0, 0.23, 0.51, 0.96, 0.4,
+             0, 0,       0, 0.25, 0.55, 0.98, 1.0,
+             0, 0,  bounds, 0.25, 0.55, 0.98, 1.0,
         ];
         this.axisBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.axisBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(axisData), gl.STATIC_DRAW);
 
-        // Grade no plano XY de base (z = -bounds)
+        // Grade no plano XY principal (z = 0) estilo Desmos 3D
         const gridData: number[] = [];
         const step = 1.0;
-        const gridColor = [0.85, 0.88, 0.92, 0.4];
+        const gridColor = [0.72, 0.78, 0.85, 0.45];
         for (let i = -bounds; i <= bounds; i += step) {
             // Linhas paralelas a Y
-            gridData.push(i, -bounds, -bounds, ...gridColor);
-            gridData.push(i,  bounds, -bounds, ...gridColor);
+            gridData.push(i, -bounds, 0, ...gridColor);
+            gridData.push(i,  bounds, 0, ...gridColor);
             // Linhas paralelas a X
-            gridData.push(-bounds, i, -bounds, ...gridColor);
-            gridData.push( bounds, i, -bounds, ...gridColor);
+            gridData.push(-bounds, i, 0, ...gridColor);
+            gridData.push( bounds, i, 0, ...gridColor);
         }
         this.gridBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.gridBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(gridData), gl.STATIC_DRAW);
         this.gridVertexCount = gridData.length / 7;
 
-        // Caixa delimitadora (wireframe box)
+        // Caixa delimitadora cúbica [-5, 5]^3 em linhas finas e translúcidas
         const b = bounds;
         const boxLines = [
             -b,-b,-b,  b,-b,-b,   b,-b,-b,  b, b,-b,   b, b,-b, -b, b,-b,  -b, b,-b, -b,-b,-b,
@@ -162,7 +171,7 @@ export class Renderer3D {
             -b,-b,-b, -b,-b, b,   b,-b,-b,  b,-b, b,   b, b,-b,  b, b, b,  -b, b,-b, -b, b, b
         ];
         const boxData: number[] = [];
-        const boxColor = [0.75, 0.80, 0.85, 0.35];
+        const boxColor = [0.65, 0.72, 0.80, 0.35];
         for (let i = 0; i < boxLines.length; i += 3) {
             boxData.push(boxLines[i], boxLines[i+1], boxLines[i+2], ...boxColor);
         }
@@ -180,11 +189,9 @@ export class Renderer3D {
             uniform mat4 u_viewProj;
             varying vec3 v_normal;
             varying vec3 v_worldPos;
-            varying float v_height;
             void main() {
                 v_normal = a_normal;
                 v_worldPos = a_position;
-                v_height = a_position.z;
                 gl_Position = u_viewProj * vec4(a_position, 1.0);
             }
         `;
@@ -192,38 +199,24 @@ export class Renderer3D {
             precision mediump float;
             varying vec3 v_normal;
             varying vec3 v_worldPos;
-            varying float v_height;
             uniform vec3 u_lightDir;
             uniform vec3 u_eyePos;
             uniform vec3 u_baseColor;
             uniform float u_alpha;
 
-            // Gradiente de cores vibrantes com base na altura Z
-            vec3 colormap(float t) {
-                t = clamp((t + 3.0) / 6.0, 0.0, 1.0);
-                // Paleta Coolwarm / Turbo elegante
-                vec3 c0 = vec3(0.23, 0.49, 0.85); // azul frio
-                vec3 c1 = vec3(0.20, 0.75, 0.65); // turquesa
-                vec3 c2 = vec3(0.95, 0.80, 0.25); // dourado
-                vec3 c3 = vec3(0.92, 0.30, 0.24); // vermelho quente
-                if (t < 0.33) return mix(c0, c1, t * 3.0);
-                if (t < 0.66) return mix(c1, c2, (t - 0.33) * 3.0);
-                return mix(c2, c3, (t - 0.66) * 3.0);
-            }
-
             void main() {
                 vec3 norm = normalize(v_normal);
-                // Iluminação nos dois lados da superfície
                 if (!gl_FrontFacing) norm = -norm;
 
                 vec3 light = normalize(u_lightDir);
-                float diff = max(dot(norm, light), 0.25);
+                float diff = max(dot(norm, light), 0.3);
                 
                 vec3 view = normalize(u_eyePos - v_worldPos);
                 vec3 halfDir = normalize(light + view);
                 float spec = pow(max(dot(norm, halfDir), 0.0), 32.0) * 0.35;
 
-                vec3 surfaceColor = colormap(v_height);
+                // Desmos 3D dual-tone: frente com cor da expressão, verso com contraste ardósia elegante
+                vec3 surfaceColor = gl_FrontFacing ? u_baseColor : mix(u_baseColor * 0.65, vec3(0.18, 0.22, 0.32), 0.45);
                 vec3 finalColor = surfaceColor * diff + vec3(1.0) * spec;
 
                 gl_FragColor = vec4(finalColor, u_alpha);
@@ -368,15 +361,18 @@ export class Renderer3D {
                 if (!hit) discard;
 
                 vec3 norm = computeNormal(hitPos, 0.015);
-                if (dot(norm, rd) > 0.0) norm = -norm; // Dupla face
+                bool isFront = dot(norm, rd) < 0.0;
+                if (!isFront) norm = -norm; // Dupla face
 
                 vec3 light = normalize(u_lightDir);
-                float diff = max(dot(norm, light), 0.2);
+                float diff = max(dot(norm, light), 0.3);
                 vec3 view = -rd;
                 vec3 halfDir = normalize(light + view);
-                float spec = pow(max(dot(norm, halfDir), 0.0), 24.0) * 0.4;
+                float spec = pow(max(dot(norm, halfDir), 0.0), 24.0) * 0.35;
 
-                vec3 col = u_color * diff + vec3(1.0) * spec;
+                // Desmos 3D dual-tone: frente com a cor vibrante, verso com contraste de volume
+                vec3 baseCol = isFront ? u_color : mix(u_color * 0.65, vec3(0.18, 0.22, 0.32), 0.45);
+                vec3 col = baseCol * diff + vec3(1.0) * spec;
                 gl_FragColor = vec4(col, 0.95);
             }
         `;
@@ -397,40 +393,10 @@ export class Renderer3D {
         const eyePos = Camera3D.eyePos;
         const lightDir = [0.4, 0.6, 0.8]; // Luz diagonal superior
 
-        // 1. Desenha Bounding Box e Grade
-        if (this.lineProgram) {
-            gl.useProgram(this.lineProgram);
-            const uVP = gl.getUniformLocation(this.lineProgram, 'u_viewProj');
-            const aPos = gl.getAttribLocation(this.lineProgram, 'a_position');
-            const aCol = gl.getAttribLocation(this.lineProgram, 'a_color');
-
-            gl.uniformMatrix4fv(uVP, false, viewProj);
-            gl.enableVertexAttribArray(aPos);
-            gl.enableVertexAttribArray(aCol);
-
-            // Grade no chão
-            if (this.gridBuffer) {
-                gl.bindBuffer(gl.ARRAY_BUFFER, this.gridBuffer);
-                gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 28, 0);
-                gl.vertexAttribPointer(aCol, 4, gl.FLOAT, false, 28, 12);
-                gl.drawArrays(gl.LINES, 0, this.gridVertexCount);
-            }
-
-            // Caixa delimitadora
-            if (this.boxBuffer) {
-                gl.bindBuffer(gl.ARRAY_BUFFER, this.boxBuffer);
-                gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 28, 0);
-                gl.vertexAttribPointer(aCol, 4, gl.FLOAT, false, 28, 12);
-                gl.drawArrays(gl.LINES, 0, this.boxVertexCount);
-            }
-
-            // Eixos X, Y, Z destacados
-            if (this.axisBuffer) {
-                gl.bindBuffer(gl.ARRAY_BUFFER, this.axisBuffer);
-                gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 28, 0);
-                gl.vertexAttribPointer(aCol, 4, gl.FLOAT, false, 28, 12);
-                gl.lineWidth(2.5);
-                gl.drawArrays(gl.LINES, 0, 6);
+        // 1. Desenha Superfícies Implícitas F(x, y, z) = 0 via Raymarching
+        for (const surf of surfaces) {
+            if (surf.isImplicit && surf.glslExpr) {
+                this.renderImplicitRaymarch(surf, invViewProj, eyePos, lightDir);
             }
         }
 
@@ -441,17 +407,47 @@ export class Renderer3D {
             }
         }
 
-        // 3. Desenha Superfícies Implícitas F(x, y, z) = 0 via Raymarching
-        for (const surf of surfaces) {
-            if (surf.isImplicit && surf.glslExpr) {
-                this.renderImplicitRaymarch(surf, invViewProj, eyePos, lightDir);
-            }
-        }
-
-        // 4. Desenha Curvas Paramétricas 3D (x(t), y(t), z(t))
+        // 3. Desenha Curvas Paramétricas 3D (x(t), y(t), z(t))
         for (const surf of surfaces) {
             if (surf.parametric) {
                 this.renderParametricCurve(surf, scope, viewProj);
+            }
+        }
+
+        // 4. Desenha Bounding Box cúbica, Grade no plano XY e Eixos RGB (sempre visíveis e nítidos)
+        if (this.lineProgram) {
+            gl.useProgram(this.lineProgram);
+            const uVP = gl.getUniformLocation(this.lineProgram, 'u_viewProj');
+            const aPos = gl.getAttribLocation(this.lineProgram, 'a_position');
+            const aCol = gl.getAttribLocation(this.lineProgram, 'a_color');
+
+            gl.uniformMatrix4fv(uVP, false, viewProj);
+            gl.enableVertexAttribArray(aPos);
+            gl.enableVertexAttribArray(aCol);
+
+            // Grade no plano XY principal (z = 0)
+            if (this.gridBuffer) {
+                gl.bindBuffer(gl.ARRAY_BUFFER, this.gridBuffer);
+                gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 28, 0);
+                gl.vertexAttribPointer(aCol, 4, gl.FLOAT, false, 28, 12);
+                gl.drawArrays(gl.LINES, 0, this.gridVertexCount);
+            }
+
+            // Caixa delimitadora cúbica [-5, 5]^3
+            if (this.boxBuffer) {
+                gl.bindBuffer(gl.ARRAY_BUFFER, this.boxBuffer);
+                gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 28, 0);
+                gl.vertexAttribPointer(aCol, 4, gl.FLOAT, false, 28, 12);
+                gl.drawArrays(gl.LINES, 0, this.boxVertexCount);
+            }
+
+            // Eixos X, Y, Z destacados estilo Desmos 3D
+            if (this.axisBuffer) {
+                gl.bindBuffer(gl.ARRAY_BUFFER, this.axisBuffer);
+                gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 28, 0);
+                gl.vertexAttribPointer(aCol, 4, gl.FLOAT, false, 28, 12);
+                gl.lineWidth(2.5);
+                gl.drawArrays(gl.LINES, 0, 12);
             }
         }
     }
@@ -505,6 +501,7 @@ export class Renderer3D {
         const uEye = gl.getUniformLocation(this.surfaceProgram!, 'u_eyePos');
         const uLight = gl.getUniformLocation(this.surfaceProgram!, 'u_lightDir');
         const uAlpha = gl.getUniformLocation(this.surfaceProgram!, 'u_alpha');
+        const uBaseCol = gl.getUniformLocation(this.surfaceProgram!, 'u_baseColor');
 
         gl.enableVertexAttribArray(aPos);
         gl.enableVertexAttribArray(aNorm);
@@ -515,6 +512,9 @@ export class Renderer3D {
         gl.uniform3fv(uEye, new Float32Array(eyePos));
         gl.uniform3fv(uLight, new Float32Array(lightDir));
         gl.uniform1f(uAlpha, 0.92);
+
+        const rgbSurf = this.hexToRgb(surf.color || '#3b82f6');
+        gl.uniform3fv(uBaseCol, new Float32Array(rgbSurf));
 
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.meshIndexBuffer);
         gl.drawElements(gl.TRIANGLES, this.meshIndexCount, gl.UNSIGNED_SHORT, 0);
@@ -545,7 +545,9 @@ export class Renderer3D {
         const rgb = this.hexToRgb(surf.color || '#3b82f6');
         gl.uniform3fv(uCol, new Float32Array(rgb));
 
+        gl.disable(gl.DEPTH_TEST);
         gl.drawArrays(gl.TRIANGLES, 0, 6);
+        gl.enable(gl.DEPTH_TEST);
     }
 
     private renderParametricCurve(surf: Surface3DItem, scope: any, viewProj: Float32Array) {

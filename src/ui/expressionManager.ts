@@ -248,7 +248,8 @@ export class ExpressionManager {
 
         const mathField = mf as any;
         mathField.smartMode = false;
-        mathField.smartFence = false;
+        mathField.smartFence = true;
+        mathField.smartSuperscript = true;
         mathField.mathVirtualKeyboardPolicy = 'auto';
         mathField.menuItems = [];
         mathField.inlineShortcuts = {
@@ -263,8 +264,7 @@ export class ExpressionManager {
             'e': 'e',
             'sqrt': '\\sqrt',
             '<=': '\\le',
-            '>=': '\\ge',
-            '/': '\\frac{#@}{#?}'
+            '>=': '\\ge'
         };
         mathField.style.setProperty('--contains-highlight-background', 'transparent');
         mathField.style.setProperty('--highlight-background', 'transparent');
