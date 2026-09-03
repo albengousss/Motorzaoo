@@ -17,10 +17,10 @@ Este documento descreve a arquitetura, as funcionalidades implementadas e o func
 
 ### 1. Sistema de Input e UI (Estilo Desmos)
 - **Interface Limpa e Responsiva:** Sidebar expansível, fundo branco, botões de ação com cantos arredondados e suporte a toque móvel.
-- **Digitação Matemática Fluida (Estilo Desmos):**
-  - **Expoentes Imediatos (`smartSuperscript`):** Pressionar `^` pula instantaneamente para a caixa de expoente sem exibir o caractere circunflexo `^`.
+- **Digitação Matemática Fluida em Camada Tripla (Keybindings + Keydown + BeforeInput):**
+  - **Expoentes Imediatos (`moveToSuperscript`):** Ao pressionar `^` (ou `Shift + ~` no teclado ABNT2 / `Shift + 6` no US), o cursor sobe instantaneamente para o expoente, anulando o estado de tecla morta e sem jamais exibir o caractere circunflexo `^`.
+  - **Frações Inteligentes Imediatas com `/`:** Ao pressionar `/`, o termo anterior (ou seleção) é encapsulado no numerador de `\frac{#@}{#?}` e o cursor se posiciona no denominador, exatamente igual ao Desmos.
   - **Parênteses Automáticos (`smartFence`):** Digitar `(` fecha o parêntese correspondente automaticamente.
-  - **Frações Inteligentes com `/`:** A tecla `/` encapsula o termo anterior no numerador e posiciona o cursor diretamente no denominador, sem comandos invasivos.
 - **Toggles Dinâmicos de Visibilidade:** Círculos coloridos com o índice da expressão. Clicar no círculo oculta ou exibe a curva instantaneamente.
 - **Badges de Resultado:** Exibição clara e contextual de resultados escalares, expressões simbólicas simplificadas, campos vetoriais e avisos de variáveis livres.
 
@@ -37,9 +37,9 @@ Este documento descreve a arquitetura, as funcionalidades implementadas e o func
 
 ### 3. Plotagem e Gráficos
 - **Gráficos Explícitos:** Funções $f(x) = \dots$ ou $y = \dots$.
-- **Curvas Paramétricas:** Pares ordenados $(x(t), y(t))$, como $(\cos(t), \sin(t))$ ou $(t^2, t^3 - t)$.
+- **Curvas Paramétricas 2D e 3D:** Pares ordenados $(x(t), y(t))$ e tuplas espaciais $(x(t), y(t), z(t))$ (ex: hélices cônicas e cilíndricas como $(\cos(t), \sin(t), t)$).
 - **Curvas Polares:** Equações $r = f(\theta)$ ou $r = f(t)$, como $r = 1 + \cos(\theta)$, convertidas internamente para coordenadas cartesianas no intervalo $[0, 2\pi]$.
-- **Restrições de Domínio `{condição}`:** Suporte à sintaxe clássica do Desmos com condições simples e duplas (ex: `y = x^2 {x >= 0}`, `y = sin(x) {0 <= x <= pi}`, `(cos(t), sin(t)) {0 <= t <= pi}`).
+- **Restrições de Domínio `{condição}`:** Suporte à sintaxe clássica do Desmos com condições simples e duplas (ex: `y = x^2 {x >= 0}`, `y = sin(x) {0 <= x <= pi}`, `(cos(t), sin(t), t) {0 <= t <= 4pi}`).
 - **Equações Implícitas & Inequações em WebGL:** Resolução analítica por pixel no fragment shader sem o custo de triangulação pesada na CPU.
 
 ### 4. Sliders Dinâmicos e Animados (60 FPS)
@@ -62,16 +62,17 @@ Este documento descreve a arquitetura, as funcionalidades implementadas e o func
 - **Parâmetros Dinâmicos:** Variáveis livres em EDOs (como $k$ em $dy/dt = -k \cdot y$) conectam-se aos sliders em tempo real.
 - **Problema de Valor Inicial (IVP):** Traçado automático da solução a partir de condições iniciais como $y(0) = 1$ via integrador Dormand-Prince (RK45).
 
-### 7. Motor Gráfico 3D (Estilo Desmos 3D & WebGL Híbrido)
+### 7. Motor Gráfico 3D (Estilo Desmos 3D com Alto Contraste & WebGL Híbrido)
 - **Alternador de Modo 2D / 3D:** Seletor moderno no topo da tela para transitar suavemente entre o plano cartesiano 2D e o espaço tridimensional.
 - **Câmera Orbital Arcball 3D (`src/graphics/camera3d.ts`):** Rotação com um dedo/mouse, translação (pan) com dois dedos/botão direito, zoom por pinça/scroll com Z apontando para cima e inversão matricial para raios de câmera.
-- **Visual Inspirado no Desmos 3D:**
-  - **Grade no Plano Principal $XY$ ($z = 0$):** Grade translúcida suave na altura zero de referência.
-  - **Eixos RGB com Orientação Clara:** Vermelho (+X), Verde (+Y), Azul (+Z) com diferenciação visual entre o semieixo positivo (brilhante/sólido) e negativo (translúcido/discreto).
-  - **Caixa Cúbica Delimitadora:** Delimitação $[-5, 5]^3$ para enquadramento perfeito de superfícies.
+- **Visual Inspirado no Desmos 3D com Alto Contraste:**
+  - **Piso Workbench no Plano $XY$ ($z = 0$):** Placa translúcida de referência física que ancora os objetos no espaço e elimina a sensação de "vazio branco".
+  - **Grade de Alto Contraste no Plano $XY$:** Linhas escuras bem definidas (com linhas mestras reforçadas a cada 5 unidades) perfeitamente legíveis em qualquer tela.
+  - **Caixa Cúbica Delimitadora Nítida:** Delimitação $[-5, 5]^3$ com arestas escuras de alto contraste.
+  - **Eixos RGB com Orientação e Espessura:** Vermelho (+X), Verde (+Y), Azul (+Z) com traçado espesso (`lineWidth: 3.5`) e semieixos negativos translúcidos mas perfeitamente visíveis.
 - **Superfícies Explícitas $z = f(x, y)$ com Shading Dual-Tone:** Malha indexada com iluminação bilateral Phong e diferenciação entre a face externa (cor vibrante da expressão) e a face interna (tom contrastante mais escuro), conferindo volume real e eliminação do efeito casca oca.
 - **Equações Implícitas 3D $F(x, y, z) = 0$ via Raymarching:** Shader volumétrico analítico na GPU que acha a superfície por bissecção binária com cálculo de normais por diferenças centrais $\nabla F = (\partial_x F, \partial_y F, \partial_z F)$. Plota esferas ($x^2 + y^2 + z^2 = 9$), hiperboloides ($x^2 + y^2 - z^2 = 1$), toros, superfícies de sela ($xy = z$), paraboloides e equações de produtos múltiplos ($xz = y$, $y^2 = xz$, $x^2 = \frac{yz}{2}$).
-- **Curvas Espaciais Paramétricas 3D:** Traçado contínuo no espaço para $(x(t), y(t), z(t))$ (como hélices cônicas ou atratores).
+- **Curvas Espaciais Paramétricas 3D $(x(t), y(t), z(t))$:** Traçado contínuo espesso no espaço tridimensional para hélices, espirais cônicas e curvas espaciais com renderização integrada no z-buffer.
 
 ---
 
