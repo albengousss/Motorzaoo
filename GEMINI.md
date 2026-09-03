@@ -17,6 +17,10 @@ Este documento descreve a arquitetura, as funcionalidades implementadas e o func
 
 ### 1. Sistema de Input e UI (Estilo Desmos)
 - **Interface Limpa e Responsiva:** Sidebar expansível, fundo branco, botões de ação com cantos arredondados e suporte a toque móvel.
+- **Digitação Matemática Fluida (Estilo Desmos):**
+  - **Expoentes Imediatos (`smartSuperscript`):** Pressionar `^` pula instantaneamente para a caixa de expoente sem exibir o caractere circunflexo `^`.
+  - **Parênteses Automáticos (`smartFence`):** Digitar `(` fecha o parêntese correspondente automaticamente.
+  - **Frações Inteligentes com `/`:** A tecla `/` encapsula o termo anterior no numerador e posiciona o cursor diretamente no denominador, sem comandos invasivos.
 - **Toggles Dinâmicos de Visibilidade:** Círculos coloridos com o índice da expressão. Clicar no círculo oculta ou exibe a curva instantaneamente.
 - **Badges de Resultado:** Exibição clara e contextual de resultados escalares, expressões simbólicas simplificadas, campos vetoriais e avisos de variáveis livres.
 
@@ -26,6 +30,7 @@ Este documento descreve a arquitetura, as funcionalidades implementadas e o func
   - $f_1(x, y) = 2x - 3y$
   - $f_{jose}(x, y) = x^2 + y^2$
   - Funções de alta dimensão: $f(x, y, z, a, b) = x + y + z + a + b$
+- **Multiplicação Implícita Universal:** Suporte a produtos de variáveis sem operador explícito ou com espaços: `xy`, `xz`, `yz`, `x z`, `y z`, `2xz`, `3yz`, `xyz`, etc., resolvendo equações implícitas multivariáveis e superfícies analiticamente.
 - **Avaliação Numérica Multivariável:** Chamadas como $f(2, 3, 1, 0, 2)$ avaliam todos os argumentos em cascata e exibem o resultado numérico exato no badge.
 - **Curvas de Nível e Equações Implícitas com Funções:** Escrever $f(x, y) = 0$, $f(x, y) = 4$ ou $f(x, y) \le 0$ expande a definição da função e plota a curva ou região diretamente na GPU via WebGL.
 - **Cálculo Simbólico Multivariável via Giac:** Consultas como `int(f(x, y), y)` ou `diff(f(x, y, z), x)` são enviadas ao Giac com o namespace do usuário (`usr_f`), resolvendo integrais e derivadas parciais simbolicamente.
@@ -57,27 +62,31 @@ Este documento descreve a arquitetura, as funcionalidades implementadas e o func
 - **Parâmetros Dinâmicos:** Variáveis livres em EDOs (como $k$ em $dy/dt = -k \cdot y$) conectam-se aos sliders em tempo real.
 - **Problema de Valor Inicial (IVP):** Traçado automático da solução a partir de condições iniciais como $y(0) = 1$ via integrador Dormand-Prince (RK45).
 
-### 7. Motor Gráfico 3D (WebGL2 Híbrido & Raymarching GPU)
+### 7. Motor Gráfico 3D (Estilo Desmos 3D & WebGL Híbrido)
 - **Alternador de Modo 2D / 3D:** Seletor moderno no topo da tela para transitar suavemente entre o plano cartesiano 2D e o espaço tridimensional.
 - **Câmera Orbital Arcball 3D (`src/graphics/camera3d.ts`):** Rotação com um dedo/mouse, translação (pan) com dois dedos/botão direito, zoom por pinça/scroll com Z apontando para cima e inversão matricial para raios de câmera.
-- **Caixa Delimitadora e Eixos RGB 3D:** Cubo delimitador $[-5, 5]^3$ com grade de solo e eixos clássicos coloridos em Vermelho (X), Verde (Y) e Azul (Z).
-- **Superfícies Explícitas $z = f(x, y)$:** Malha indexada com iluminação Phong bilateral e colormap dinâmico baseado na altura $z$.
-- **Equações Implícitas 3D $F(x, y, z) = 0$ via Raymarching:** Shader volumétrico analítico na GPU que acha a superfície por bissecção binária com cálculo de normais por diferenças centrais $\nabla F = (\partial_x F, \partial_y F, \partial_z F)$. Permite plotar esferas ($x^2 + y^2 + z^2 = 9$), hiperboloides ($x^2 + y^2 - z^2 = 1$), toros e cones sem triangulação de CPU.
+- **Visual Inspirado no Desmos 3D:**
+  - **Grade no Plano Principal $XY$ ($z = 0$):** Grade translúcida suave na altura zero de referência.
+  - **Eixos RGB com Orientação Clara:** Vermelho (+X), Verde (+Y), Azul (+Z) com diferenciação visual entre o semieixo positivo (brilhante/sólido) e negativo (translúcido/discreto).
+  - **Caixa Cúbica Delimitadora:** Delimitação $[-5, 5]^3$ para enquadramento perfeito de superfícies.
+- **Superfícies Explícitas $z = f(x, y)$ com Shading Dual-Tone:** Malha indexada com iluminação bilateral Phong e diferenciação entre a face externa (cor vibrante da expressão) e a face interna (tom contrastante mais escuro), conferindo volume real e eliminação do efeito casca oca.
+- **Equações Implícitas 3D $F(x, y, z) = 0$ via Raymarching:** Shader volumétrico analítico na GPU que acha a superfície por bissecção binária com cálculo de normais por diferenças centrais $\nabla F = (\partial_x F, \partial_y F, \partial_z F)$. Plota esferas ($x^2 + y^2 + z^2 = 9$), hiperboloides ($x^2 + y^2 - z^2 = 1$), toros, superfícies de sela ($xy = z$), paraboloides e equações de produtos múltiplos ($xz = y$, $y^2 = xz$, $x^2 = \frac{yz}{2}$).
 - **Curvas Espaciais Paramétricas 3D:** Traçado contínuo no espaço para $(x(t), y(t), z(t))$ (como hélices cônicas ou atratores).
 
 ---
 
 ## 🧠 Fluxo de Execução do Sistema
 
-1. **Entrada do Usuário:** O componente `<math-field>` capta as edições e gera o código ASCII-Math/LaTeX.
-2. **Higienização (`cleanStr`):** Corrige operadores, normaliza plicas e subscritos de funções (`f_1`, `f_{jose}`), e extrai condições de domínio `{condição}`.
-3. **Classificação e Árvore Sintática (`PrattParser`):**
+1. **Entrada do Usuário:** O componente `<math-field>` capta as edições e gera o código ASCII-Math/LaTeX com atalhos inteligentes (sem circunflexo visível, parênteses e frações automáticas).
+2. **Higienização (`cleanStr`):** Corrige operadores, converte frações LaTeX/AsciiMath para notação funcional, normaliza plicas e subscritos de funções (`f_1`, `f_{jose}`), e extrai condições de domínio `{condição}`.
+3. **Classificação e Árvore Sintática (`PrattParser` & `Tokenizer`):**
+   - Expande multiplicações implícitas universais entre letras e variáveis (`xz`, `yz`, `xy`, `2xz`).
    - Se for definição de variável escalar $\implies$ cria slider dinâmico.
    - Se for definição de função mono ou multivariável ($f(x)$, $f(x, y)$, $f(x, y, z, \dots)$) $\implies$ registra em `compiledFuncs`, mapeia para o Giac e plota se aplicável.
    - Se for EDO $\implies$ compila o campo vetorial conectando variáveis livres ao escopo de sliders.
    - Se for comando CAS puro $\implies$ envia ao Giac Worker assíncrono.
-   - Se for equação implícita $\implies$ envia para o pipeline GLSL do WebGL.
-4. **Render Loop (`drawFrame`):** A 60 FPS, o WebGL limpa e rasteriza as curvas/inequações implícitas na camada inferior, enquanto o Canvas 2D desenha os eixos, curvas explícitas, campos de vetores e pontos discretos na camada superior.
+   - Se for equação implícita $\implies$ envia para o pipeline GLSL do WebGL (2D ou 3D raymarching).
+4. **Render Loop (`drawFrame`):** A 60 FPS, o WebGL rasteriza as superfícies e equações implícitas na camada 3D/2D com shading Phong bilateral e controle de profundidade, desenhando eixos e grades nítidos no topo.
 
 ---
 *Este ficheiro serve como documentação de referência central da arquitetura e das capacidades do Motor-Calc.*
