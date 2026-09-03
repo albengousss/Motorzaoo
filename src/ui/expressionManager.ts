@@ -249,7 +249,7 @@ export class ExpressionManager {
         const mathField = mf as any;
         mathField.smartMode = false;
         mathField.smartFence = true;
-        mathField.smartSuperscript = true;
+        mathField.smartSuperscript = false;
         mathField.mathVirtualKeyboardPolicy = 'auto';
         mathField.menuItems = [];
         mathField.inlineShortcuts = {
@@ -391,6 +391,15 @@ export class ExpressionManager {
             (mf as any).executeCommand(['insert', '\\frac{#@}{#?}']);
         };
 
+        const isCaretKey = (e: KeyboardEvent) => {
+            if (e.key === '^') return true;
+            // Teclado ABNT2 (Shift + ~) ou US-Intl (Shift + 6 ou Shift + `)
+            if (e.shiftKey && (e.code === 'BracketLeft' || e.code === 'Digit6' || e.code === 'Backquote' || e.key === 'Dead')) {
+                return true;
+            }
+            return false;
+        };
+
         mf.addEventListener('keydown', (e: KeyboardEvent) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
@@ -398,7 +407,7 @@ export class ExpressionManager {
                 this.updateBlockNumbers();
             } else if (e.key === '/' || e.code === 'Slash' || e.code === 'NumpadDivide') {
                 handleFraction(e);
-            } else if (e.key === '^' || (e.shiftKey && (e.code === 'Digit6' || e.code === 'BracketLeft' || e.key === 'Dead'))) {
+            } else if (isCaretKey(e)) {
                 handlePower(e);
             }
         });
@@ -412,12 +421,6 @@ export class ExpressionManager {
         });
 
         mf.addEventListener('input', () => {
-            // Sanitização instantânea de segurança para o caso de algum caractere literal ^ escapar
-            const currentVal = (mf as any).value;
-            if (currentVal && currentVal.includes('^')) {
-                const fixed = currentVal.replace(/\^([a-zA-Z0-9]+)/g, '^{$1}').replace(/\^/g, '');
-                (mf as any).setValue(fixed);
-            }
             this.showAutocomplete(mf);
             this.onUpdateCallback();
         });
