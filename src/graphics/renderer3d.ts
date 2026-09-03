@@ -30,6 +30,7 @@ export class Renderer3D {
     private gridBuffer: WebGLBuffer | null = null;
     private gridVertexCount: number = 0;
     private axisBuffer: WebGLBuffer | null = null;
+    private floorBuffer: WebGLBuffer | null = null;
 
     // Resolução da malha explícita
     private meshGridSize = 64;
@@ -121,36 +122,55 @@ export class Renderer3D {
         const gl = this.gl!;
         const bounds = 5.0;
 
-        // Eixos principais estilo Desmos 3D: X (Vermelho), Y (Verde), Z (Azul)
-        // Linhas positivas mais brilhantes e grossas, negativas discretas
+        // 1. Placa translúcida sutil do piso XY no nível z = 0 (estilo bancada Desmos 3D)
+        const floorColor = [0.88, 0.92, 0.96, 0.38];
+        const floorData = [
+            -bounds, -bounds, 0, ...floorColor,
+             bounds, -bounds, 0, ...floorColor,
+            -bounds,  bounds, 0, ...floorColor,
+
+            -bounds,  bounds, 0, ...floorColor,
+             bounds, -bounds, 0, ...floorColor,
+             bounds,  bounds, 0, ...floorColor,
+        ];
+        this.floorBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.floorBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(floorData), gl.STATIC_DRAW);
+
+        // 2. Eixos principais estilo Desmos 3D: X (Vermelho), Y (Verde), Z (Azul)
+        // Cores altamente saturadas e nítidas para não se perderem no fundo
         const axisData = [
             // Eixo X Negativo e Positivo (Vermelho)
-            -bounds, 0, 0,  0.94, 0.27, 0.27, 0.4,
-                  0, 0, 0,  0.94, 0.27, 0.27, 0.4,
-                  0, 0, 0,  0.95, 0.22, 0.22, 1.0,
-             bounds, 0, 0,  0.95, 0.22, 0.22, 1.0,
+            -bounds, 0, 0,  0.88, 0.22, 0.22, 0.65,
+                  0, 0, 0,  0.88, 0.22, 0.22, 0.65,
+                  0, 0, 0,  0.95, 0.15, 0.15, 1.0,
+             bounds, 0, 0,  0.95, 0.15, 0.15, 1.0,
 
             // Eixo Y Negativo e Positivo (Verde)
-             0, -bounds, 0, 0.13, 0.77, 0.37, 0.4,
-             0,       0, 0, 0.13, 0.77, 0.37, 0.4,
-             0,       0, 0, 0.14, 0.82, 0.38, 1.0,
-             0,  bounds, 0, 0.14, 0.82, 0.38, 1.0,
+             0, -bounds, 0, 0.12, 0.68, 0.32, 0.65,
+             0,       0, 0, 0.12, 0.68, 0.32, 0.65,
+             0,       0, 0, 0.10, 0.78, 0.28, 1.0,
+             0,  bounds, 0, 0.10, 0.78, 0.28, 1.0,
 
             // Eixo Z Negativo e Positivo (Azul)
-             0, 0, -bounds, 0.23, 0.51, 0.96, 0.4,
-             0, 0,       0, 0.23, 0.51, 0.96, 0.4,
-             0, 0,       0, 0.25, 0.55, 0.98, 1.0,
-             0, 0,  bounds, 0.25, 0.55, 0.98, 1.0,
+             0, 0, -bounds, 0.18, 0.45, 0.88, 0.65,
+             0, 0,       0, 0.18, 0.45, 0.88, 0.65,
+             0, 0,       0, 0.15, 0.50, 0.98, 1.0,
+             0, 0,  bounds, 0.15, 0.50, 0.98, 1.0,
         ];
         this.axisBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.axisBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(axisData), gl.STATIC_DRAW);
 
-        // Grade no plano XY principal (z = 0) estilo Desmos 3D
+        // 3. Grade no plano XY principal (z = 0) estilo Desmos 3D - Linhas escuras com alto contraste
         const gridData: number[] = [];
         const step = 1.0;
-        const gridColor = [0.72, 0.78, 0.85, 0.45];
         for (let i = -bounds; i <= bounds; i += step) {
+            const isMajor = Math.abs(i) % 5 === 0;
+            const gridColor = isMajor 
+                ? [0.25, 0.32, 0.42, 0.70]  // Linha mestra escura bem visível
+                : [0.38, 0.45, 0.55, 0.45]; // Linha secundária nítida
+
             // Linhas paralelas a Y
             gridData.push(i, -bounds, 0, ...gridColor);
             gridData.push(i,  bounds, 0, ...gridColor);
@@ -163,7 +183,7 @@ export class Renderer3D {
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(gridData), gl.STATIC_DRAW);
         this.gridVertexCount = gridData.length / 7;
 
-        // Caixa delimitadora cúbica [-5, 5]^3 em linhas finas e translúcidas
+        // 4. Caixa delimitadora cúbica [-5, 5]^3 com arestas escuras bem definidas
         const b = bounds;
         const boxLines = [
             -b,-b,-b,  b,-b,-b,   b,-b,-b,  b, b,-b,   b, b,-b, -b, b,-b,  -b, b,-b, -b,-b,-b,
@@ -171,7 +191,7 @@ export class Renderer3D {
             -b,-b,-b, -b,-b, b,   b,-b,-b,  b,-b, b,   b, b,-b,  b, b, b,  -b, b,-b, -b, b, b
         ];
         const boxData: number[] = [];
-        const boxColor = [0.65, 0.72, 0.80, 0.35];
+        const boxColor = [0.28, 0.35, 0.45, 0.75]; // Arestas da caixa com contraste impecável
         for (let i = 0; i < boxLines.length; i += 3) {
             boxData.push(boxLines[i], boxLines[i+1], boxLines[i+2], ...boxColor);
         }
@@ -425,28 +445,38 @@ export class Renderer3D {
             gl.enableVertexAttribArray(aPos);
             gl.enableVertexAttribArray(aCol);
 
-            // Grade no plano XY principal (z = 0)
+            // 4.1. Placa translúcida sutil do piso XY (bancada)
+            if (this.floorBuffer) {
+                gl.bindBuffer(gl.ARRAY_BUFFER, this.floorBuffer);
+                gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 28, 0);
+                gl.vertexAttribPointer(aCol, 4, gl.FLOAT, false, 28, 12);
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+            }
+
+            // 4.2. Grade no plano XY principal (z = 0)
             if (this.gridBuffer) {
                 gl.bindBuffer(gl.ARRAY_BUFFER, this.gridBuffer);
                 gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 28, 0);
                 gl.vertexAttribPointer(aCol, 4, gl.FLOAT, false, 28, 12);
+                gl.lineWidth(1.5);
                 gl.drawArrays(gl.LINES, 0, this.gridVertexCount);
             }
 
-            // Caixa delimitadora cúbica [-5, 5]^3
+            // 4.3. Caixa delimitadora cúbica [-5, 5]^3
             if (this.boxBuffer) {
                 gl.bindBuffer(gl.ARRAY_BUFFER, this.boxBuffer);
                 gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 28, 0);
                 gl.vertexAttribPointer(aCol, 4, gl.FLOAT, false, 28, 12);
+                gl.lineWidth(2.0);
                 gl.drawArrays(gl.LINES, 0, this.boxVertexCount);
             }
 
-            // Eixos X, Y, Z destacados estilo Desmos 3D
+            // 4.4. Eixos X, Y, Z destacados estilo Desmos 3D
             if (this.axisBuffer) {
                 gl.bindBuffer(gl.ARRAY_BUFFER, this.axisBuffer);
                 gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 28, 0);
                 gl.vertexAttribPointer(aCol, 4, gl.FLOAT, false, 28, 12);
-                gl.lineWidth(2.5);
+                gl.lineWidth(3.5);
                 gl.drawArrays(gl.LINES, 0, 12);
             }
         }
@@ -580,7 +610,7 @@ export class Renderer3D {
         gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 28, 0);
         gl.vertexAttribPointer(aCol, 4, gl.FLOAT, false, 28, 12);
         gl.uniformMatrix4fv(uVP, false, viewProj);
-
+        gl.lineWidth(3.5);
         gl.drawArrays(gl.LINE_STRIP, 0, steps + 1);
         gl.deleteBuffer(curveBuf);
     }

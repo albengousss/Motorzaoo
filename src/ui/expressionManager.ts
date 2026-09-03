@@ -266,6 +266,15 @@ export class ExpressionManager {
             '<=': '\\le',
             '>=': '\\ge'
         };
+        const currentBindings = mathField.keybindings || [];
+        mathField.keybindings = [
+            { key: '/', ifMode: 'math', command: ['insert', '\\frac{#@}{#?}'] },
+            { key: '[Slash]', ifMode: 'math', command: ['insert', '\\frac{#@}{#?}'] },
+            { key: '[NumpadDivide]', ifMode: 'math', command: ['insert', '\\frac{#@}{#?}'] },
+            { key: '^', ifMode: 'math', command: 'moveToSuperscript' },
+            { key: 'shift+[Digit6]', ifMode: 'math', command: 'moveToSuperscript' },
+            ...currentBindings
+        ];
         mathField.style.setProperty('--contains-highlight-background', 'transparent');
         mathField.style.setProperty('--highlight-background', 'transparent');
         mathField.style.setProperty('--highlight-color', 'transparent');
@@ -370,14 +379,45 @@ export class ExpressionManager {
             this.onUpdateCallback();
         };
 
-        mf.addEventListener('keydown', (e) => {
+        const handlePower = (e: Event) => {
+            e.preventDefault();
+            e.stopPropagation();
+            (mf as any).executeCommand('moveToSuperscript');
+        };
+
+        const handleFraction = (e: Event) => {
+            e.preventDefault();
+            e.stopPropagation();
+            (mf as any).executeCommand(['insert', '\\frac{#@}{#?}']);
+        };
+
+        mf.addEventListener('keydown', (e: KeyboardEvent) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
                 this.addBlock();
                 this.updateBlockNumbers();
+            } else if (e.key === '/' || e.code === 'Slash' || e.code === 'NumpadDivide') {
+                handleFraction(e);
+            } else if (e.key === '^' || (e.shiftKey && (e.code === 'Digit6' || e.code === 'BracketLeft' || e.key === 'Dead'))) {
+                handlePower(e);
             }
         });
+
+        mf.addEventListener('beforeinput', (e: any) => {
+            if (e.data === '/') {
+                handleFraction(e);
+            } else if (e.data === '^') {
+                handlePower(e);
+            }
+        });
+
         mf.addEventListener('input', () => {
+            // Sanitização instantânea de segurança para o caso de algum caractere literal ^ escapar
+            const currentVal = (mf as any).value;
+            if (currentVal && currentVal.includes('^')) {
+                const fixed = currentVal.replace(/\^([a-zA-Z0-9]+)/g, '^{$1}').replace(/\^/g, '');
+                (mf as any).setValue(fixed);
+            }
             this.showAutocomplete(mf);
             this.onUpdateCallback();
         });

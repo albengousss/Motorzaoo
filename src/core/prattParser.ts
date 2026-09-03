@@ -39,10 +39,13 @@ export class PrattParser {
         if (token.type === TokenTypes.PARENTHESIS_LEFT) {
             const expr = this.parseExpression(0);
             if (this.lookahead && this.lookahead.type === TokenTypes.COMMA) {
-                this.eat(TokenTypes.COMMA);
-                const yExpr = this.parseExpression(0);
+                const point = ["Point", expr];
+                while (this.lookahead && this.lookahead.type === TokenTypes.COMMA) {
+                    this.eat(TokenTypes.COMMA);
+                    point.push(this.parseExpression(0));
+                }
                 this.eat(TokenTypes.PARENTHESIS_RIGHT);
-                return ["Point", expr, yExpr];
+                return point;
             }
             this.eat(TokenTypes.PARENTHESIS_RIGHT);
             return expr;

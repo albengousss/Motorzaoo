@@ -1118,7 +1118,11 @@ function drawFrame() {
                 } else {
                     const evalX = MathEngine.compile(ast[1])(0, 0, StateManager.values);
                     const evalY = MathEngine.compile(ast[2])(0, 0, StateManager.values);
-                    if (isFinite(evalX) && isFinite(evalY)) {
+                    const evalZ = is3D ? MathEngine.compile(ast[3])(0, 0, StateManager.values) : 0;
+                    if (isFinite(evalX) && isFinite(evalY) && (!is3D || isFinite(evalZ))) {
+                        const ptLabel = is3D
+                            ? `(${parseFloat(evalX.toFixed(3))}, ${parseFloat(evalY.toFixed(3))}, ${parseFloat(evalZ.toFixed(3))})`
+                            : `(${parseFloat(evalX.toFixed(3))}, ${parseFloat(evalY.toFixed(3))})`;
                         validEquations.push({
                             color: item.color,
                             id: item.id,
@@ -1129,12 +1133,12 @@ function drawFrame() {
                             isPoint: true,
                             pointX: evalX,
                             pointY: evalY,
-                            pointLabel: `(${parseFloat(evalX.toFixed(3))}, ${parseFloat(evalY.toFixed(3))})`,
+                            pointLabel: ptLabel,
                             operator: '=',
                             condition: conditionFn,
                             isHidden: !item.visible
                         });
-                        ExpressionManager.setResult(item.id, `= (${parseFloat(evalX.toFixed(3))}, ${parseFloat(evalY.toFixed(3))})`);
+                        ExpressionManager.setResult(item.id, `= ${ptLabel}`);
                         return;
                     }
                 }
@@ -1252,7 +1256,7 @@ function drawFrame() {
                 const paramVar = item.paramVar || 't';
                 const fastX = MathEngine.compile(item.astX, paramVar);
                 const fastY = MathEngine.compile(item.astY, paramVar);
-                const fastZ = item.astZ ? MathEngine.compile(item.astZ, paramVar) : (t: number) => t;
+                const fastZ = item.astZ ? MathEngine.compile(item.astZ, paramVar) : () => 0;
                 surfaces3D.push({
                     id: item.id,
                     color,
