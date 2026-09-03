@@ -2,20 +2,44 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content" />
     <title>motor-calc</title>
     <style>
-      /* MathLive Overrides — must remain as CSS vars */
+      /* MathLive Overrides & Desmos-style Keyboard Theme */
       @media (min-width: 769px) { math-field::part(virtual-keyboard-toggle) { display: none; } }
+      math-virtual-keyboard {
+        --keyboard-background: #edf1f5;
+        --keyboard-toolbar-background: #f8fafc;
+        --keyboard-toolbar-text: #475569;
+        --keyboard-toolbar-text-active: #1a73e8;
+        --keycap-background: #ffffff;
+        --keycap-background-active: #e2e8f0;
+        --keycap-text: #1e293b;
+        --keycap-secondary-text: #64748b;
+        --keycap-border: #cbd5e1;
+        --keycap-border-bottom: #94a3b8;
+        --keycap-shift-color: #1a73e8;
+        --keycap-radius: 8px;
+        --keycap-gap: 5px;
+        --keycap-font-size: 1.15rem;
+        --keycap-height: 2.6rem;
+        box-shadow: 0 -4px 25px rgba(0, 0, 0, 0.15) !important;
+        border-top: 1px solid #cbd5e1 !important;
+        z-index: 40 !important;
+      }
       @media (max-width: 768px) {
-        math-virtual-keyboard { --keyboard-height: 35vh; --keycap-height: 2.2rem; --keycap-font-size: 1.2rem; --keyboard-background: #f1f3f4; }
+        math-virtual-keyboard {
+          --keycap-height: 2.35rem;
+          --keycap-font-size: 1.05rem;
+          --keycap-gap: 3px;
+          --keycap-radius: 6px;
+        }
       }
       :root, math-field, body {
         --contains-highlight-background: transparent !important;
         --highlight-background: transparent !important;
         --selection-background-color: rgba(100, 160, 255, 0.3) !important;
         --placeholder-color: transparent !important;
-        --keyboard-background: #f1f3f4;
       }
       math-field::part(container) { background-color: transparent !important; }
       math-field:focus-within { background-color: transparent !important; outline: none !important; }
@@ -43,10 +67,15 @@
     <div id="sidebar" class="w-full md:w-[380px] md:min-w-[240px] md:resize-x bg-white border-t md:border-t-0 md:border-r border-gray-200 shadow-lg flex flex-col shrink-0 overflow-hidden z-10 h-[42vh] md:h-auto">
 
       <div id="sidebar-header" class="bg-white px-3 py-2 border-b border-gray-100 flex justify-between items-center shadow-[0_2px_4px_rgba(0,0,0,0.02)] touch-none select-none shrink-0">
-        <div class="flex items-center gap-1.5 w-full justify-center md:justify-start relative">
-            <div id="drag-handle" class="w-8 h-1 bg-gray-300 rounded-full block md:hidden shadow-inner absolute -top-1"></div>
-            <span class="text-lg font-black text-blue-500 leading-none mt-2 md:mt-0">∑</span>
-            <span class="text-sm font-semibold text-gray-800 tracking-tight mt-2 md:mt-0">motor<span class="font-light text-gray-400">-calc</span></span>
+        <div class="flex items-center justify-between w-full relative">
+            <div id="drag-handle" class="w-8 h-1 bg-gray-300 rounded-full block md:hidden shadow-inner absolute -top-1 left-1/2 -translate-x-1/2"></div>
+            <div class="flex items-center gap-1.5 mt-2 md:mt-0">
+                <span class="text-lg font-black text-blue-500 leading-none">∑</span>
+                <span class="text-sm font-semibold text-gray-800 tracking-tight">motor<span class="font-light text-gray-400">-calc</span></span>
+            </div>
+            <button id="toggle-sidebar-mobile-btn" class="flex md:hidden items-center justify-center w-7 h-7 text-gray-500 hover:text-blue-600 rounded-md transition-colors mt-2" title="Recolher / Expandir Painel">
+                <i data-lucide="chevron-down" id="sidebar-chevron-icon" class="w-4 h-4"></i>
+            </button>
         </div>
       </div>
       
@@ -87,6 +116,12 @@
       
       <!-- Coordenadas do cursor -->
       <div id="cursor-coords" class="absolute bottom-3 right-4 text-xs text-gray-500 font-mono pointer-events-none hidden md:block bg-white/80 px-2 py-1 rounded backdrop-blur-sm shadow-sm border border-gray-100"></div>
+
+      <!-- Botão Flutuante do Teclado Virtual (Estilo Desmos) -->
+      <button id="toggle-keyboard-btn" title="Alternar Teclado Virtual" class="fixed bottom-3 left-3 z-30 flex items-center justify-center gap-1.5 px-3 py-2 bg-white/95 backdrop-blur-md rounded-xl shadow-lg border border-gray-200 text-gray-700 hover:text-blue-600 hover:border-blue-300 transition-all cursor-pointer select-none active:scale-95 font-medium text-xs">
+        <i data-lucide="keyboard" id="keyboard-btn-icon" class="w-4 h-4 text-blue-600"></i>
+        <span class="hidden sm:inline font-semibold">Teclado</span>
+      </button>
     </div>
     <!-- Settings Modal -->
     <div id="settings-modal" class="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 hidden flex-col items-center justify-center p-4">

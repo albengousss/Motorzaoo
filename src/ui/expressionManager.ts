@@ -249,7 +249,7 @@ export class ExpressionManager {
         const mathField = mf as any;
         mathField.smartMode = false;
         mathField.smartFence = false;
-        mathField.mathVirtualKeyboardPolicy = 'manual';
+        mathField.mathVirtualKeyboardPolicy = 'auto';
         mathField.menuItems = [];
         mathField.inlineShortcuts = {
             'pi': '\\pi',
@@ -380,6 +380,14 @@ export class ExpressionManager {
         mf.addEventListener('input', () => {
             this.showAutocomplete(mf);
             this.onUpdateCallback();
+        });
+        
+        mf.addEventListener('focus', () => {
+            if (window.innerWidth <= 768) {
+                setTimeout(() => {
+                    block.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }, 120);
+            }
         });
         
         // Esconder autocomplete se perder o foco

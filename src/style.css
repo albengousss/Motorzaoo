@@ -20,3 +20,24 @@ math-field {
     --contains-highlight-background: rgba(0, 0, 0, 0.02);
     --contains-highlight-background-color: rgba(0, 0, 0, 0.02);
 }
+
+/* Estilização refinada do teclado virtual estilo Desmos */
+math-virtual-keyboard::part(keycap) {
+  border-radius: 7px !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.07) !important;
+  transition: transform 0.08s ease, background-color 0.1s ease !important;
+  font-weight: 500 !important;
+}
+
+math-virtual-keyboard::part(keycap):active {
+  transform: scale(0.95) !important;
+}
+
+/* Transição suave da gaveta de funções no celular */
+#sidebar {
+  transition: margin-bottom 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#toggle-keyboard-btn {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}

@@ -268,15 +268,17 @@ function drawFrame() {
             return `${p1}[${parseInt(p2)-1}]`;
         }).replace(/²/g, '^2').replace(/³/g, '^3');
         
-        // Normalização de plicas (derivadas)
+        // Normalização universal de plicas (derivadas): suporta apóstrofo ('), unicode prime (′), acento agudo (´), etc.
         cleanStr = cleanStr
-            .replace(/\^\s*\{\s*\\prime\s*\}/g, "'")
-            .replace(/\^\s*\{\s*'\s*\}/g, "'")   // captura y^{'}
-            .replace(/\^\s*\(\s*'\s*\)/g, "'")   // captura y^(')
-            .replace(/\^\s*'/g, "'")             // captura y^'
+            .replace(/\^\s*\{\s*(?:\\prime|['´`’′]|\\doubleprime|″)+\s*\}/g, m => m.includes('double') || m.includes('″') || (m.match(/['´`’′]/g) || []).length > 1 ? "''" : "'")
+            .replace(/\^\s*\(\s*(?:\\prime|['´`’′]|\\doubleprime|″)+\s*\)/g, m => m.includes('double') || m.includes('″') || (m.match(/['´`’′]/g) || []).length > 1 ? "''" : "'")
+            .replace(/\^\s*(?:\\doubleprime|″)/g, "''")
+            .replace(/\^\s*(?:\\prime|['´`’′])/g, "'")
+            .replace(/\\doubleprime/g, "''")
             .replace(/\\prime/g, "'")
+            .replace(/″/g, "''")
             .replace(/[´`’′]/g, "'")
-            .replace(/″/g, "''");
+            .replace(/\^'+/g, m => m.replace(/\^/g, ''));
 
         // Convert d/dx(expr) to diff(expr, x)
         cleanStr = cleanStr.replace(/(?:\\frac\{d\}\{d([a-zA-Z_])\}|d\/d([a-zA-Z_])|\(d\)\/\(d([a-zA-Z_])\))\s*\(([^)]+)\)/g, 'diff($4, $1$2$3)');
@@ -1389,32 +1391,107 @@ drawFrame();
 // Inicializa ícones Lucide no documento
 setTimeout(() => { if ((window as any).lucide) (window as any).lucide.createIcons(); }, 100);
 
-// --- TECLADO VIRTUAL PERSONALIZADO MATHLIVE ---
+// --- TECLADO VIRTUAL PERSONALIZADO MATHLIVE (Estilo Desmos / GeoGebra) ---
 setTimeout(() => {
     if ((window as any).mathVirtualKeyboard) {
         (window as any).mathVirtualKeyboard.layouts = [
-            'numeric',
             {
-                label: 'f(x)',
-                tooltip: 'Funções Avançadas',
+                label: '123',
+                tooltip: 'Álgebra e Números',
                 rows: [
                     [
-                        { insert: "´", label: "´" }, { insert: "sin(", latex: "\\sin" }, { insert: "cos(", latex: "\\cos" }, { insert: "tan(", latex: "\\tan" }, 
-                        { latex: "<" }, { latex: ">" }, { latex: "\\le" }, { latex: "\\ge" }
+                        { latex: "x" },
+                        { latex: "y" },
+                        { latex: "a^2", insert: "^2" },
+                        { latex: "a^b", insert: "^{#?}" },
+                        { latex: "\\sqrt{x}", insert: "\\sqrt{#?}" },
+                        { latex: "\\frac{a}{b}", insert: "\\frac{#?}{#?}" },
+                        { latex: "\\pi" },
+                        { latex: "e" }
                     ],
                     [
-                        { insert: "log(", latex: "\\log" }, { insert: "ln(", latex: "\\ln" }, { latex: "f_1" }, { latex: "f_2" },
-                        { insert: "Derivative(", latex: "\\frac{d}{dx}" }, { insert: "Limit(", latex: "\\lim" }
+                        { insert: "7", label: "7" },
+                        { insert: "8", label: "8" },
+                        { insert: "9", label: "9" },
+                        { latex: "\\times", insert: "*" },
+                        { latex: "\\div", insert: "/" },
+                        { latex: "(" },
+                        { latex: ")" },
+                        { insert: "'", label: "a'", tooltip: "Derivada (plica)" }
                     ],
                     [
-                        { latex: "x" }, { latex: "y" }, { latex: "t" }, { latex: "C_0" },
-                        { insert: "Integral(", latex: "\\int" }, { insert: "IntegralBetween(", latex: "\\int_a^b" }
+                        { insert: "4", label: "4" },
+                        { insert: "5", label: "5" },
+                        { insert: "6", label: "6" },
+                        { latex: "+" },
+                        { latex: "-" },
+                        { latex: "<" },
+                        { latex: ">" },
+                        { latex: "t" }
                     ],
                     [
-                        { insert: "Solveode(", label: "EDO" }, { insert: "Slopefield(", label: "Campo" },
-                        { class: 'separator w5' },
-                        { class: 'action font-glyph w15', label: '&#x232b;', command: ['performWithFeedback', 'deleteBackward'] },
-                        { class: 'action font-glyph w15', label: '&#x23ce;', command: ['performWithFeedback', 'commit'] }
+                        { insert: "1", label: "1" },
+                        { insert: "2", label: "2" },
+                        { insert: "3", label: "3" },
+                        { latex: "=" },
+                        { latex: "\\le" },
+                        { latex: "\\ge" },
+                        { class: "action", label: "←", tooltip: "Mover cursor à esquerda", command: ["performWithFeedback", "moveToPreviousChar"] },
+                        { class: "action", label: "→", tooltip: "Mover cursor à direita", command: ["performWithFeedback", "moveToNextChar"] }
+                    ],
+                    [
+                        { insert: "0", label: "0" },
+                        { insert: ".", label: "." },
+                        { label: "(-)", tooltip: "Negativo", insert: "(-#?)" },
+                        { class: "separator w5" },
+                        { class: "action font-glyph w20", label: "&#x232b;", tooltip: "Apagar", command: ["performWithFeedback", "deleteBackward"] },
+                        { class: "action font-glyph w20", label: "&#x23ce;", tooltip: "Enter / Nova Linha", command: ["performWithFeedback", "commit"] }
+                    ]
+                ]
+            },
+            {
+                label: 'func',
+                tooltip: 'Funções e Cálculo',
+                rows: [
+                    [
+                        { insert: "sin(", latex: "\\sin" },
+                        { insert: "cos(", latex: "\\cos" },
+                        { insert: "tan(", latex: "\\tan" },
+                        { insert: "cot(", latex: "\\cot" },
+                        { insert: "sec(", latex: "\\sec" },
+                        { insert: "csc(", latex: "\\csc" }
+                    ],
+                    [
+                        { insert: "arcsin(", latex: "\\arcsin" },
+                        { insert: "arccos(", latex: "\\arccos" },
+                        { insert: "arctan(", latex: "\\arctan" },
+                        { insert: "sinh(", latex: "\\sinh" },
+                        { insert: "cosh(", latex: "\\cosh" },
+                        { insert: "tanh(", latex: "\\tanh" }
+                    ],
+                    [
+                        { insert: "d/dx(#?)", latex: "\\frac{d}{dx}" },
+                        { insert: "\\int #? d x", latex: "\\int" },
+                        { insert: "\\int_{#?}^{#?} #? d x", latex: "\\int_a^b" },
+                        { insert: "\\lim_{x \\to #?} #?", latex: "\\lim" },
+                        { insert: "|#?|", latex: "|x|" },
+                        { insert: "ln(", latex: "\\ln" },
+                        { insert: "log(", latex: "\\log" }
+                    ],
+                    [
+                        { insert: "SolveODE(#?)", label: "EDO", tooltip: "Resolver EDO" },
+                        { insert: "Campo(#?)", label: "Campo", tooltip: "Campo de Direções" },
+                        { insert: "f(x, y) = ", label: "f(x, y)" },
+                        { insert: "g(x, y) = ", label: "g(x, y)" },
+                        { insert: "Simplify(#?)", label: "Simplificar" },
+                        { insert: "Factor(#?)", label: "Fatorar" }
+                    ],
+                    [
+                        { class: "action", label: "←", command: ["performWithFeedback", "moveToPreviousChar"] },
+                        { class: "action", label: "→", command: ["performWithFeedback", "moveToNextChar"] },
+                        { class: "separator w10" },
+                        { class: "action font-glyph w20", label: "&#x232b;", command: ["performWithFeedback", "deleteBackward"] },
+                        { class: "action font-glyph w20", label: "&#x23ce;", command: ["performWithFeedback", "commit"] }
                     ]
                 ]
             },
@@ -1483,41 +1560,100 @@ window.addEventListener('touchend', () => {
     }
 });
 
-// Garante que o MathLive perca o foco quando o teclado virtual é escondido e ajusta a tela estilo Desmos
+// --- CONTROLE DE TECLADO VIRTUAL E GAVETA MOBILE (Estilo Desmos) ---
 setTimeout(() => {
+    // 1. Botão Flutuante de Abrir / Fechar Teclado
+    const toggleKbBtn = document.getElementById('toggle-keyboard-btn');
+    if (toggleKbBtn) {
+        toggleKbBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const vk = (window as any).mathVirtualKeyboard;
+            if (vk) {
+                if (vk.visible) {
+                    vk.hide();
+                } else {
+                    vk.show();
+                    const activeEl = document.activeElement;
+                    if (!activeEl || activeEl.tagName.toLowerCase() !== 'math-field') {
+                        const mfs = document.querySelectorAll('math-field');
+                        if (mfs.length > 0) (mfs[mfs.length - 1] as HTMLElement).focus();
+                    }
+                }
+            }
+        });
+    }
+
+    // 2. Botão de Recolher / Expandir Painel no Mobile
+    const toggleSidebarBtn = document.getElementById('toggle-sidebar-mobile-btn');
+    const sidebarChevron = document.getElementById('sidebar-chevron-icon');
+    let isSidebarCollapsed = false;
+    if (toggleSidebarBtn) {
+        toggleSidebarBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (window.innerWidth <= 768) {
+                isSidebarCollapsed = !isSidebarCollapsed;
+                if (isSidebarCollapsed) {
+                    if (!sidebarEl.dataset.savedHeight) {
+                        sidebarEl.dataset.savedHeight = sidebarEl.getBoundingClientRect().height.toString();
+                    }
+                    sidebarEl.style.height = '46px';
+                    if (sidebarChevron) sidebarChevron.setAttribute('data-lucide', 'chevron-up');
+                } else {
+                    sidebarEl.style.height = sidebarEl.dataset.savedHeight ? `${sidebarEl.dataset.savedHeight}px` : '42vh';
+                    if (sidebarChevron) sidebarChevron.setAttribute('data-lucide', 'chevron-down');
+                }
+                if ((window as any).lucide) (window as any).lucide.createIcons();
+                setTimeout(() => { resizeAll(); drawFrame(); }, 50);
+            }
+        });
+    }
+
+    // 3. Listener de exibição do Teclado Virtual MathLive
     if ((window as any).mathVirtualKeyboard) {
         (window as any).mathVirtualKeyboard.addEventListener('virtual-keyboard-toggle', () => {
             const vk = (window as any).mathVirtualKeyboard;
+            const kbIcon = document.getElementById('keyboard-btn-icon');
             if (vk.visible) {
+                if (kbIcon) {
+                    kbIcon.setAttribute('data-lucide', 'chevron-down');
+                    if ((window as any).lucide) (window as any).lucide.createIcons();
+                }
                 if (window.innerWidth <= 768) {
-                    const keyboardHeight = vk.boundingRect.height || 320;
-                    document.body.style.paddingBottom = `${keyboardHeight}px`;
+                    const keyboardHeight = vk.boundingRect.height || 280;
                     
                     if (!sidebarEl.dataset.savedHeight) {
                         sidebarEl.dataset.savedHeight = sidebarEl.getBoundingClientRect().height.toString();
                     }
                     
-                    // Minimize sidebar to just show items, giving space to the graph
-                    sidebarEl.style.height = '140px';
-                    sidebarEl.style.paddingBottom = '0'; 
+                    // Posiciona a barra exatamente acima do teclado sem distorcer o canvas
+                    sidebarEl.style.marginBottom = `${keyboardHeight}px`;
+                    sidebarEl.style.maxHeight = `calc(100vh - ${keyboardHeight + 50}px)`;
                     
                     setTimeout(() => {
                         resizeAll();
                         drawFrame();
                         const activeEl = document.activeElement as HTMLElement;
                         if (activeEl && activeEl.tagName.toLowerCase() === 'math-field') {
-                            activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            const block = activeEl.closest('.group') as HTMLElement;
+                            if (block) block.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                         }
-                    }, 50);
+                    }, 60);
                 }
             } else {
-                document.body.style.paddingBottom = '0px';
-                if (window.innerWidth <= 768 && sidebarEl.dataset.savedHeight) {
-                    sidebarEl.style.height = `${sidebarEl.dataset.savedHeight}px`;
-                    sidebarEl.dataset.savedHeight = '';
+                if (kbIcon) {
+                    kbIcon.setAttribute('data-lucide', 'keyboard');
+                    if ((window as any).lucide) (window as any).lucide.createIcons();
+                }
+                if (window.innerWidth <= 768) {
+                    sidebarEl.style.marginBottom = '0px';
+                    sidebarEl.style.maxHeight = '';
+                    if (sidebarEl.dataset.savedHeight) {
+                        sidebarEl.style.height = `${sidebarEl.dataset.savedHeight}px`;
+                        sidebarEl.dataset.savedHeight = '';
+                    }
                 }
                 
-                setTimeout(() => { resizeAll(); drawFrame(); }, 50);
+                setTimeout(() => { resizeAll(); drawFrame(); }, 60);
                 
                 if (document.activeElement && document.activeElement.tagName.toLowerCase() === 'math-field') {
                     (document.activeElement as HTMLElement).blur();
@@ -1525,7 +1661,7 @@ setTimeout(() => {
             }
         });
     }
-}, 1000);
+}, 800);
 
 let isDragging = false;
 let lastX = 0; let lastY = 0;
