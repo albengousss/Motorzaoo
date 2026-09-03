@@ -21,6 +21,9 @@ export class StateManager {
     
     // Registro de funções mono e multivariáveis do usuário (ex: f(x,y), f(x,y,z,a,b))
     static userFunctions: Record<string, { params: string[], expr: string, ast: any, blockId?: string }> = {};
+
+    // Modo Gráfico Atual: '2d' ou '3d'
+    static viewMode: '2d' | '3d' = '2d';
     
     // Gerenciamento Inteligente de Índices (reaproveitamento para ODEs e CAS)
     static getNextFuncIndex(): number {

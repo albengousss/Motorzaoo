@@ -57,6 +57,14 @@ Este documento descreve a arquitetura, as funcionalidades implementadas e o func
 - **Parâmetros Dinâmicos:** Variáveis livres em EDOs (como $k$ em $dy/dt = -k \cdot y$) conectam-se aos sliders em tempo real.
 - **Problema de Valor Inicial (IVP):** Traçado automático da solução a partir de condições iniciais como $y(0) = 1$ via integrador Dormand-Prince (RK45).
 
+### 7. Motor Gráfico 3D (WebGL2 Híbrido & Raymarching GPU)
+- **Alternador de Modo 2D / 3D:** Seletor moderno no topo da tela para transitar suavemente entre o plano cartesiano 2D e o espaço tridimensional.
+- **Câmera Orbital Arcball 3D (`src/graphics/camera3d.ts`):** Rotação com um dedo/mouse, translação (pan) com dois dedos/botão direito, zoom por pinça/scroll com Z apontando para cima e inversão matricial para raios de câmera.
+- **Caixa Delimitadora e Eixos RGB 3D:** Cubo delimitador $[-5, 5]^3$ com grade de solo e eixos clássicos coloridos em Vermelho (X), Verde (Y) e Azul (Z).
+- **Superfícies Explícitas $z = f(x, y)$:** Malha indexada com iluminação Phong bilateral e colormap dinâmico baseado na altura $z$.
+- **Equações Implícitas 3D $F(x, y, z) = 0$ via Raymarching:** Shader volumétrico analítico na GPU que acha a superfície por bissecção binária com cálculo de normais por diferenças centrais $\nabla F = (\partial_x F, \partial_y F, \partial_z F)$. Permite plotar esferas ($x^2 + y^2 + z^2 = 9$), hiperboloides ($x^2 + y^2 - z^2 = 1$), toros e cones sem triangulação de CPU.
+- **Curvas Espaciais Paramétricas 3D:** Traçado contínuo no espaço para $(x(t), y(t), z(t))$ (como hélices cônicas ou atratores).
+
 ---
 
 ## 🧠 Fluxo de Execução do Sistema

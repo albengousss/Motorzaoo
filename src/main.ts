@@ -3,23 +3,28 @@ import './style.css';
 import { PrattParser } from './core/prattParser';
 import { StateManager } from './core/stateManager';
 
-let validEquations: {id: string, ast: any, isImplicit: boolean, operator: string, isEdo: boolean, isDerivative: boolean, derivVar?: string, isIvp?: boolean, isPoint?: boolean, pointX?: number, pointY?: number, pointLabel?: string, isParametric?: boolean, astX?: any, astY?: any, tMin?: number, tMax?: number, paramVar?: string, depVar?: string, indepVar?: string, condition?: (x: number, y: number, scope: any, t?: number) => boolean, name?: string, x0?: number, y0?: number, isHidden?: boolean, variable?: string, color?: string}[] = [];
+let validEquations: {id: string, ast: any, isImplicit: boolean, operator: string, isEdo: boolean, isDerivative: boolean, derivVar?: string, isIvp?: boolean, isPoint?: boolean, pointX?: number, pointY?: number, pointLabel?: string, isParametric?: boolean, astX?: any, astY?: any, astZ?: any, isExplicitZ?: boolean, tMin?: number, tMax?: number, paramVar?: string, depVar?: string, indepVar?: string, condition?: (x: number, y: number, scope: any, t?: number) => boolean, name?: string, x0?: number, y0?: number, isHidden?: boolean, variable?: string, color?: string}[] = [];
 let dragDistance = 0;
 import { MathEngine } from './core/mathEngine';
 import { Renderer } from './graphics/renderer';
 import { GLRenderer } from './graphics/glRenderer';
 import { Camera } from './graphics/camera';
+import { Camera3D } from './graphics/camera3d';
+import { Renderer3D } from './graphics/renderer3d';
+import type { Surface3DItem } from './graphics/renderer3d';
 import { ExpressionManager } from './ui/expressionManager';
 import { MathAnalyzer } from './core/analyzer'; 
 import { ODESolver } from './core/odeSolver';
 
 const renderer = new Renderer('graphCanvas');
 const glRenderer = new GLRenderer('webglCanvas');
+const renderer3d = new Renderer3D('canvas3d');
 const colors = ['#c74440', '#2d70b3', '#388c46', '#6042a6', '#fa7e19'];
 
 function resizeAll() {
     renderer.resize();
     glRenderer.resize();
+    renderer3d.resize();
 }
 
 function getFreeVariables(ast: any, boundVars: string[] = []): string[] {
@@ -1027,9 +1032,14 @@ function drawFrame() {
             let derivVarTarget = 'x';
             
             let isExplicitY = false;
+            let isExplicitZ = false;
             
+            const zExplicitMatch = cleanStr.match(/^\s*z\s*=\s*(.+)$/);
             const yExplicitMatch = cleanStr.match(/^\s*y\s*=\s*(.+)$/);
-            if (yExplicitMatch) {
+            if (zExplicitMatch) {
+                expressaoPlot = zExplicitMatch[1].trim();
+                isExplicitZ = true;
+            } else if (yExplicitMatch) {
                 expressaoPlot = yExplicitMatch[1].trim();
                 isExplicitY = true;
             } else {
@@ -1048,12 +1058,14 @@ function drawFrame() {
                         
                         if (operator !== '=') {
                             isImplicit = true;
+                        } else if (implicitMatch[1].includes('z') || implicitMatch[3]?.includes('z') || noSpaceStr.includes('z')) {
+                            isImplicit = true;
                         } else if (implicitMatch[1].includes('y') && implicitMatch[1] !== 'y') {
                             isImplicit = true; 
                         } else if (implicitMatch[1].includes('x')) {
                             isImplicit = true;
                         }
-                    } else if (!expressaoPlot.includes('x') && expressaoPlot.includes('y')) {
+                    } else if (!expressaoPlot.includes('x') && expressaoPlot.includes('y') && !expressaoPlot.includes('z')) {
                         expressaoPlot = `x-(${expressaoPlot})`;
                         isImplicit = true;
                         operator = '=';
@@ -1064,11 +1076,13 @@ function drawFrame() {
             let ast = new PrattParser(expressaoPlot).parseExpression();
             ast = MathEngine.expandUserFunctions(ast);
 
-            // Suporte para plotagem de pontos individuais ou curvas paramétricas: (x(t), y(t))
+            // Suporte para plotagem de pontos individuais ou curvas paramétricas: (x(t), y(t)) ou (x(t), y(t), z(t))
             if (ast && ast[0] === 'Point') {
+                const is3D = ast.length > 3;
                 const varsX = StateManager.extractVariables(ast[1]);
                 const varsY = StateManager.extractVariables(ast[2]);
-                const isParametric = varsX.includes('t') || varsY.includes('t');
+                const varsZ = is3D ? StateManager.extractVariables(ast[3]) : [];
+                const isParametric = varsX.includes('t') || varsY.includes('t') || varsZ.includes('t');
 
                 if (isParametric) {
                     const hasTrig = JSON.stringify(ast).toLowerCase().includes('sin') || JSON.stringify(ast).toLowerCase().includes('cos');
@@ -1085,6 +1099,7 @@ function drawFrame() {
                         isParametric: true,
                         astX: ast[1],
                         astY: ast[2],
+                        astZ: is3D ? ast[3] : undefined,
                         tMin,
                         tMax,
                         paramVar: 't',
@@ -1092,7 +1107,7 @@ function drawFrame() {
                         operator: '=',
                         isHidden: !item.visible
                     });
-                    ExpressionManager.setResult(item.id, `Curva Paramétrica (t ∈ [${parseFloat(tMin.toFixed(2))}, ${parseFloat(tMax.toFixed(2))}])`);
+                    ExpressionManager.setResult(item.id, `Curva Paramétrica ${is3D ? '3D ' : ''}(t ∈ [${parseFloat(tMin.toFixed(2))}, ${parseFloat(tMax.toFixed(2))}])`);
                     return;
                 } else {
                     const evalX = MathEngine.compile(ast[1])(0, 0, StateManager.values);
@@ -1120,8 +1135,8 @@ function drawFrame() {
             }
 
             // MODO CALCULADORA (Sem gráficos)
-            const isPlot = expressaoPlot.includes('x') || expressaoPlot.includes('y');
-            if (!isPlot && !isImplicit && !isDerivativePlot && !isExplicitY) {
+            const isPlot = expressaoPlot.includes('x') || expressaoPlot.includes('y') || expressaoPlot.includes('z');
+            if (!isPlot && !isImplicit && !isDerivativePlot && !isExplicitY && !isExplicitZ) {
                 // Tenta PRIMEIRO a avaliação numérica direta local (ex: f(0, 2), 2 + 3, sin(pi/4), f(2, 3, 1, 0, 2))
                 const evalFunc = MathEngine.compile(ast);
                 const val = evalFunc(0, 0, StateManager.values);
@@ -1171,7 +1186,7 @@ function drawFrame() {
                 ExpressionManager.setResult(item.id, '');
             }
 
-            validEquations.push({ color: item.color, id: item.id, ast, isImplicit, operator, isEdo: false, isDerivative: isDerivativePlot, derivVar: derivVarTarget, condition: conditionFn, isHidden: !item.visible });
+            validEquations.push({ color: item.color, id: item.id, ast, isImplicit, operator, isEdo: false, isDerivative: isDerivativePlot, derivVar: derivVarTarget, condition: conditionFn, isHidden: !item.visible, isExplicitZ });
         } catch (e) {
             // Em vez de engolir o erro silenciosamente, avisa o utilizador no ecrã
             ExpressionManager.setResult(item.id, '⚠ Sintaxe Inválida');
@@ -1181,9 +1196,75 @@ function drawFrame() {
     // Run Garbage Collection for deleted sliders
     StateManager.gc(activeVars);
 
+    // --- RENDERIZAÇÃO 3D ---
+    if (StateManager.viewMode === '3d') {
+        const surfaces3D: Surface3DItem[] = [];
+
+        validEquations.forEach((item, index) => {
+            if (item.isHidden) return;
+            const color = item.color || colors[index % colors.length];
+
+            // 1. Superfície Explícita z = f(x, y) ou função dependente de x e y
+            if (item.ast && (item.isExplicitZ || (!item.isImplicit && !item.isParametric && !item.isPoint && !item.isEdo && !item.isIvp))) {
+                const free = getFreeVariables(item.ast, []);
+                if (item.isExplicitZ || free.includes('x') || free.includes('y')) {
+                    const fastZ = MathEngine.compileMultivariable(item.ast, ['x', 'y']);
+                    surfaces3D.push({
+                        id: item.id,
+                        color,
+                        isImplicit: false,
+                        funcZ: (x, y, s) => fastZ(x, y, s),
+                        name: item.name
+                    });
+                }
+            }
+            // 2. Superfície Implícita 3D F(x, y, z) = 0 via Raymarching
+            else if (item.isImplicit && item.ast) {
+                let glsl = '';
+                try {
+                    if (Array.isArray(item.ast) && item.ast[0] === 'Equal') {
+                        const left = GLRenderer.astToGLSL(item.ast[1], StateManager.values);
+                        const right = GLRenderer.astToGLSL(item.ast[2], StateManager.values);
+                        glsl = `(${left}) - (${right})`;
+                    } else {
+                        glsl = GLRenderer.astToGLSL(item.ast, StateManager.values);
+                    }
+                } catch (_) {}
+
+                if (glsl) {
+                    surfaces3D.push({
+                        id: item.id,
+                        color,
+                        isImplicit: true,
+                        glslExpr: glsl,
+                        name: item.name
+                    });
+                }
+            }
+            // 3. Curva Paramétrica 3D (x(t), y(t), z(t))
+            else if (item.isParametric && item.astX && item.astY) {
+                const paramVar = item.paramVar || 't';
+                const fastX = MathEngine.compile(item.astX, paramVar);
+                const fastY = MathEngine.compile(item.astY, paramVar);
+                const fastZ = item.astZ ? MathEngine.compile(item.astZ, paramVar) : (t: number) => t;
+                surfaces3D.push({
+                    id: item.id,
+                    color,
+                    isImplicit: false,
+                    parametric: (t, s) => [fastX(t, 0, s), fastY(t, 0, s), fastZ(t, 0, s)],
+                    tMin: item.tMin ?? -10,
+                    tMax: item.tMax ?? 10
+                });
+            }
+        });
+
+        renderer3d.render(surfaces3D, StateManager.values);
+        return;
+    }
+
     const explicitCurves: { f: (x: number) => number, color: string }[] = [];
 
-    // --- RENDERIZAÇÃO ---
+    // --- RENDERIZAÇÃO 2D ---
     validEquations.forEach((item, index) => {
         if (item.isHidden) return;
         
@@ -1360,8 +1441,14 @@ ExpressionManager.init(drawFrame);
 };
 
 (window as any)._resetView = () => {
-    Camera.reset();
-    resizeAll();
+    if (StateManager.viewMode === '3d') {
+        Camera3D.reset();
+        renderer3d.resize();
+    } else {
+        Camera.reset();
+        renderer.resize();
+        glRenderer.resize();
+    }
     drawFrame();
 };
 
@@ -2017,3 +2104,145 @@ canvasEl.addEventListener('touchend', (e) => {
         tooltip.style.display = 'none';
     }
 });
+
+// --- ALTERNADOR DE MODO 2D / 3D (Estilo Desmos / GeoGebra) ---
+const mode2dBtn = document.getElementById('mode-2d-btn');
+const mode3dBtn = document.getElementById('mode-3d-btn');
+const canvas3dEl = document.getElementById('canvas3d') as HTMLCanvasElement;
+const webgl2dCanvas = document.getElementById('webglCanvas') as HTMLCanvasElement;
+
+function switchViewMode(mode: '2d' | '3d') {
+    StateManager.viewMode = mode;
+    if (mode === '2d') {
+        mode2dBtn?.classList.add('bg-blue-600', 'text-white', 'shadow-sm');
+        mode2dBtn?.classList.remove('text-gray-500', 'hover:text-gray-900');
+        mode3dBtn?.classList.remove('bg-blue-600', 'text-white', 'shadow-sm');
+        mode3dBtn?.classList.add('text-gray-500', 'hover:text-gray-900');
+
+        canvasEl.classList.remove('hidden');
+        webgl2dCanvas?.classList.remove('hidden');
+        canvas3dEl?.classList.add('hidden');
+    } else {
+        mode3dBtn?.classList.add('bg-blue-600', 'text-white', 'shadow-sm');
+        mode3dBtn?.classList.remove('text-gray-500', 'hover:text-gray-900');
+        mode2dBtn?.classList.remove('bg-blue-600', 'text-white', 'shadow-sm');
+        mode2dBtn?.classList.add('text-gray-500', 'hover:text-gray-900');
+
+        canvasEl.classList.add('hidden');
+        webgl2dCanvas?.classList.add('hidden');
+        canvas3dEl?.classList.remove('hidden');
+        renderer3d.resize();
+    }
+    resizeAll();
+    drawFrame();
+}
+
+mode2dBtn?.addEventListener('click', () => switchViewMode('2d'));
+mode3dBtn?.addEventListener('click', () => switchViewMode('3d'));
+
+// --- CONTROLES 3D (MOUSE & TOUCH) ---
+let isRotating3D = false;
+let isPanning3D = false;
+let last3DX = 0;
+let last3DY = 0;
+let initialPinch3D = -1;
+
+if (canvas3dEl) {
+    canvas3dEl.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    canvas3dEl.addEventListener('mousedown', (e) => {
+        if (e.button === 0 && !e.shiftKey) {
+            isRotating3D = true;
+        } else if (e.button === 2 || (e.button === 0 && e.shiftKey)) {
+            isPanning3D = true;
+        }
+        last3DX = e.clientX;
+        last3DY = e.clientY;
+    });
+
+    window.addEventListener('mouseup', () => {
+        isRotating3D = false;
+        isPanning3D = false;
+    });
+
+    canvas3dEl.addEventListener('mousemove', (e) => {
+        const dx = e.clientX - last3DX;
+        const dy = e.clientY - last3DY;
+        last3DX = e.clientX;
+        last3DY = e.clientY;
+
+        if (isRotating3D) {
+            Camera3D.rotate(-dx * 0.008, dy * 0.008);
+            drawFrame();
+        } else if (isPanning3D) {
+            Camera3D.pan(dx, dy);
+            drawFrame();
+        }
+    });
+
+    canvas3dEl.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const factor = e.deltaY > 0 ? 1.08 : 0.92;
+        Camera3D.zoom(factor);
+        drawFrame();
+    }, { passive: false });
+
+    // Touch 3D
+    canvas3dEl.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        if (e.touches.length === 1) {
+            isRotating3D = true;
+            isPanning3D = false;
+            last3DX = e.touches[0].clientX;
+            last3DY = e.touches[0].clientY;
+        } else if (e.touches.length === 2) {
+            isRotating3D = false;
+            isPanning3D = true;
+            last3DX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+            last3DY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+            initialPinch3D = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+            );
+        }
+    }, { passive: false });
+
+    canvas3dEl.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        if (e.touches.length === 1 && isRotating3D) {
+            const dx = e.touches[0].clientX - last3DX;
+            const dy = e.touches[0].clientY - last3DY;
+            last3DX = e.touches[0].clientX;
+            last3DY = e.touches[0].clientY;
+            Camera3D.rotate(-dx * 0.01, dy * 0.01);
+            drawFrame();
+        } else if (e.touches.length === 2) {
+            const curCenterX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+            const curCenterY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+            const dx = curCenterX - last3DX;
+            const dy = curCenterY - last3DY;
+            last3DX = curCenterX;
+            last3DY = curCenterY;
+            Camera3D.pan(dx, dy);
+
+            const curDist = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+            );
+            if (initialPinch3D > 0 && curDist > 0) {
+                const factor = initialPinch3D / curDist;
+                Camera3D.zoom(factor);
+                initialPinch3D = curDist;
+            }
+            drawFrame();
+        }
+    }, { passive: false });
+
+    canvas3dEl.addEventListener('touchend', (e) => {
+        if (e.touches.length < 2) initialPinch3D = -1;
+        if (e.touches.length === 0) {
+            isRotating3D = false;
+            isPanning3D = false;
+        }
+    });
+}

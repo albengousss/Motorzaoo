@@ -100,6 +100,13 @@
     <div id="graph-container" class="grow relative overflow-hidden bg-white">
       <canvas id="webglCanvas" class="block w-full h-full absolute inset-0 pointer-events-none"></canvas>
       <canvas id="graphCanvas" class="block w-full h-full relative bg-transparent"></canvas>
+      <canvas id="canvas3d" class="block w-full h-full absolute inset-0 hidden bg-transparent"></canvas>
+      
+      <!-- Alternador de Modo 2D / 3D (Estilo Desmos/GeoGebra) -->
+      <div id="mode-switcher" class="absolute top-4 left-4 z-20 flex items-center bg-white/90 backdrop-blur-sm rounded-xl shadow-md border border-gray-200 p-1 select-none">
+        <button id="mode-2d-btn" class="px-3 py-1.5 text-xs font-bold rounded-lg transition-all bg-blue-600 text-white shadow-sm cursor-pointer">2D</button>
+        <button id="mode-3d-btn" class="px-3 py-1.5 text-xs font-bold rounded-lg transition-all text-gray-500 hover:text-gray-900 cursor-pointer">3D</button>
+      </div>
       
       <!-- Botoes flutuantes -->
       <div class="absolute top-4 right-4 flex flex-col gap-2 z-20">

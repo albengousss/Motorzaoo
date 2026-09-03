@@ -73,6 +73,7 @@ export class GLRenderer {
             const clean = node.trim();
             if (clean === 'x') return 'x';
             if (clean === 'y') return 'y';
+            if (clean === 'z') return 'z';
             if (clean === 'pi' || clean === '\\pi' || clean === 'π') return '3.141592653589793';
             if (clean === 'e') return '2.718281828459045';
             
