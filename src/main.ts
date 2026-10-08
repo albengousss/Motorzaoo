@@ -3,7 +3,7 @@ import './style.css';
 import { PrattParser } from './core/prattParser';
 import { StateManager } from './core/stateManager';
 
-let validEquations: {id: string, ast: any, isImplicit: boolean, operator: string, isEdo: boolean, isDerivative: boolean, derivVar?: string, isIvp?: boolean, isPoint?: boolean, pointX?: number, pointY?: number, pointLabel?: string, isParametric?: boolean, astX?: any, astY?: any, astZ?: any, isExplicitZ?: boolean, tMin?: number, tMax?: number, paramVar?: string, depVar?: string, indepVar?: string, condition?: (x: number, y: number, scope: any, t?: number) => boolean, name?: string, x0?: number, y0?: number, isHidden?: boolean, variable?: string, color?: string}[] = [];
+let validEquations: {id: string, ast: any, isImplicit: boolean, operator: string, isEdo: boolean, isDerivative: boolean, derivVar?: string, isIvp?: boolean, isPoint?: boolean, pointX?: number, pointY?: number, pointLabel?: string, isParametric?: boolean, astX?: any, astY?: any, astZ?: any, isExplicitZ?: boolean, tMin?: number, tMax?: number, paramVar?: string, depVar?: string, indepVar?: string, condition?: (x: number, y: number, scope: any, t?: number) => boolean, name?: string, x0?: number, y0?: number, isHidden?: boolean, variable?: string, color?: string, lineStyle?: 'solid' | 'dashed' | 'dotted', lineWidth?: number}[] = [];
 let dragDistance = 0;
 import { MathEngine } from './core/mathEngine';
 import { Renderer } from './graphics/renderer';
@@ -208,26 +208,22 @@ function parseDomainCondition(condRaw: string): { condition: (x: number, y: numb
     return null;
 }
 
-/** RAF debounce: evita múltiplos redraws no mesmo frame quando várias Promises terminam juntas */
 let _rafPending = false;
+let expressionsDirty = true;
+
+function markExpressionsDirty() {
+    expressionsDirty = true;
+    scheduleFrame();
+}
+
 function scheduleFrame() {
     if (_rafPending) return;
     _rafPending = true;
     requestAnimationFrame(() => { _rafPending = false; drawFrame(); });
 }
 
-function drawFrame() {
-    glRenderer.clear();
-    renderer.clear();
-    renderer.drawAxes(hoverX, hoverY);
-
-    renderMemory_points = [];
-    renderMemory_curves = [];
-    renderMemory_segments = [];
-    renderMemory_curve_points = [];
-
-    // Limpa apenas as funções compiladas de EDOs/CAS; funções do utilizador serão recompiladas
-    // somente quando as expressões mudarem (via isDirty).
+function compileAllExpressions() {
+    // Limpa apenas as funções compiladas de EDOs/CAS
     MathEngine.compiledFuncs = { realPow: MathEngine.realPow };
 
     const rawData = ExpressionManager.getAllExpressions();
@@ -1196,15 +1192,73 @@ function drawFrame() {
                 ExpressionManager.setResult(item.id, '');
             }
 
-            validEquations.push({ color: item.color, id: item.id, ast, isImplicit, operator, isEdo: false, isDerivative: isDerivativePlot, derivVar: derivVarTarget, condition: conditionFn, isHidden: !item.visible, isExplicitZ });
-        } catch (e) {
-            // Em vez de engolir o erro silenciosamente, avisa o utilizador no ecrã
+            validEquations.push({ 
+                color: item.color, 
+                id: item.id, 
+                ast, 
+                isImplicit, 
+                operator, 
+                isEdo: false, 
+                isDerivative: isDerivativePlot, 
+                derivVar: derivVarTarget, 
+                condition: conditionFn, 
+                isHidden: !item.visible, 
+                isExplicitZ,
+                lineStyle: item.lineStyle,
+                lineWidth: item.lineWidth
+            });
+            ExpressionManager.setError(item.id, null);
+
+            // Detecção de parâmetros livres para sugestão de sliders (Estilo Desmos)
+            try {
+                if (ast && !isEdo) {
+                    let boundForSliders = ['x', 'y', 'z', 't', 'pi', 'e'];
+                    const funcDeclMatch = ascii.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\(([^)]+)\)\s*=/);
+                    if (funcDeclMatch) {
+                        const params = funcDeclMatch[2].split(',').map(s => s.trim());
+                        boundForSliders.push(...params, funcDeclMatch[1]);
+                    }
+                    const free = getFreeVariables(ast, boundForSliders);
+                    const missingSliders = free.filter(v => StateManager.values[v] === undefined && !MathEngine.compiledFuncs[v]);
+                    if (missingSliders.length > 0) {
+                        ExpressionManager.setSliderSuggestions(item.id, missingSliders, (varName) => {
+                            ExpressionManager.addExpression(`${varName} = 1`);
+                            scheduleFrame();
+                        });
+                    } else {
+                        ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                    }
+                } else {
+                    ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                }
+            } catch(e) {
+                ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+            }
+        } catch (e: any) {
+            // Em vez de engolir o erro silenciosamente, avisa o utilizador no ecrã e no badge
             ExpressionManager.setResult(item.id, '⚠ Sintaxe Inválida');
+            ExpressionManager.setError(item.id, e?.message || 'Expressão incompleta ou sintaxe inválida');
         }
     });
 
     // Run Garbage Collection for deleted sliders
     StateManager.gc(activeVars);
+}
+
+function drawFrame() {
+    if (expressionsDirty) {
+        compileAllExpressions();
+        expressionsDirty = false;
+    }
+
+    glRenderer.clear();
+    renderer.clear();
+    renderer.drawAxes(hoverX, hoverY);
+
+    renderMemory_points = [];
+    renderMemory_curves = [];
+    renderMemory_segments = [];
+    renderMemory_curve_points = [];
 
     // --- RENDERIZAÇÃO 3D ---
     if (StateManager.viewMode === '3d') {
@@ -1319,7 +1373,7 @@ function drawFrame() {
                 reversed.pop(); // remove point at tau=0 (x0) to prevent duplicate
                 const allPoints = reversed.concat(pointsFwd);
                 
-                renderer.drawCurve(allPoints, color);
+                renderer.drawCurve(allPoints, color, item.lineStyle, item.lineWidth);
                 renderMemory_curve_points.push({ points: allPoints, color });
             }
         } else if (item.isParametric) {
@@ -1345,7 +1399,7 @@ function drawFrame() {
                 }
             }
 
-            renderer.drawCurve(pontos, color);
+            renderer.drawCurve(pontos, color, item.lineStyle, item.lineWidth);
             renderMemory_curve_points.push({ points: pontos, color });
 
         } else if (item.isDerivative) {
@@ -1358,7 +1412,7 @@ function drawFrame() {
             const pontos = MathEngine.generatePointsAdaptive(derivAst, Camera.xMin, Camera.xMax, StateManager.values, derivVar, canvasEl.width)
                 .map(p => ({ x: p.x, y: f(p.x) }));
 
-            renderer.drawCurve(pontos, color);
+            renderer.drawCurve(pontos, color, item.lineStyle, item.lineWidth);
             explicitCurves.push({ f, color });
             renderMemory_curves.push({ f, color }); 
 
@@ -1392,7 +1446,7 @@ function drawFrame() {
             const pontos = MathEngine.generatePointsAdaptive(item.ast, Camera.xMin, Camera.xMax, StateManager.values, item.variable || 'x', canvasEl.width)
                 .map(p => ({ x: p.x, y: f(p.x) }));
             
-            renderer.drawCurve(pontos, color);
+            renderer.drawCurve(pontos, color, item.lineStyle, item.lineWidth);
             explicitCurves.push({ f, color });
             renderMemory_curves.push({ f, color }); 
         }
@@ -1420,7 +1474,7 @@ function drawFrame() {
     }
 }
 
-ExpressionManager.init(drawFrame);
+ExpressionManager.init(markExpressionsDirty);
 
 // ─── HANDLERS GLOBAIS DOS BOTÕES DO HUD ───────────────────────────────────────
 
@@ -1927,7 +1981,7 @@ canvasEl.addEventListener('mousemove', (e) => {
     if (isShiftDown) {
         const oldX = hoverX; const oldY = hoverY;
         updateHover();
-        if (oldX !== hoverX || oldY !== hoverY) drawFrame();
+        if (oldX !== hoverX || oldY !== hoverY) scheduleFrame();
     }
 
     if (isDragging) {
@@ -1935,7 +1989,7 @@ canvasEl.addEventListener('mousemove', (e) => {
         const dx = e.clientX - lastX;
         const dy = e.clientY - lastY;
         Camera.pan(dx, dy);
-        drawFrame();
+        scheduleFrame();
     } else if (isTracing) {
         // Find closest point with a large maxDist to lock onto the curve
         const closest = getClosestCurvePoint(mouseX, mouseY, 2000);
@@ -1950,7 +2004,7 @@ canvasEl.addEventListener('mousemove', (e) => {
             document.body.style.cursor = 'crosshair';
             
             globalTracePoint = { x: closest.mathX, y: closest.mathY, color: closest.color };
-            drawFrame();
+            scheduleFrame();
         }
     } else {
         let foundCollision = false;
@@ -2010,7 +2064,7 @@ canvasEl.addEventListener('wheel', (e) => {
     }
 
     Camera.zoom(fX, fY, mouseX, mouseY);
-    drawFrame();
+    scheduleFrame();
     tooltip.style.display = 'none'; 
 }, { passive: false });
 
@@ -2043,7 +2097,7 @@ canvasEl.addEventListener('touchstart', (e) => {
             tooltip.style.color = '#fff';
             
             globalTracePoint = { x: closest.mathX, y: closest.mathY, color: closest.color };
-            drawFrame();
+            scheduleFrame();
         } else {
             tooltip.style.display = 'none';
         }
@@ -2075,7 +2129,7 @@ canvasEl.addEventListener('touchmove', (e) => {
             tooltip.style.color = '#fff';
             
             globalTracePoint = { x: closest.mathX, y: closest.mathY, color: closest.color };
-            drawFrame();
+            scheduleFrame();
         }
         return;
     }
@@ -2084,7 +2138,7 @@ canvasEl.addEventListener('touchmove', (e) => {
         Camera.pan(e.touches[0].clientX - lastX, e.touches[0].clientY - lastY);
         lastX = e.touches[0].clientX;
         lastY = e.touches[0].clientY;
-        drawFrame();
+        scheduleFrame();
     } else if (e.touches.length === 2) {
         const currentDistance = Math.hypot(
             e.touches[0].clientX - e.touches[1].clientX,
@@ -2096,7 +2150,7 @@ canvasEl.addEventListener('touchmove', (e) => {
             const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
             Camera.zoom(factor, factor, centerX - rect.left, centerY - rect.top);
             initialPinchDistance = currentDistance;
-            drawFrame();
+            scheduleFrame();
         }
     }
 }, {passive: false});
@@ -2183,10 +2237,10 @@ if (canvas3dEl) {
 
         if (isRotating3D) {
             Camera3D.rotate(-dx * 0.008, dy * 0.008);
-            drawFrame();
+            scheduleFrame();
         } else if (isPanning3D) {
             Camera3D.pan(dx, dy);
-            drawFrame();
+            scheduleFrame();
         }
     });
 
@@ -2194,7 +2248,7 @@ if (canvas3dEl) {
         e.preventDefault();
         const factor = e.deltaY > 0 ? 1.08 : 0.92;
         Camera3D.zoom(factor);
-        drawFrame();
+        scheduleFrame();
     }, { passive: false });
 
     // Touch 3D
@@ -2225,7 +2279,7 @@ if (canvas3dEl) {
             last3DX = e.touches[0].clientX;
             last3DY = e.touches[0].clientY;
             Camera3D.rotate(-dx * 0.01, dy * 0.01);
-            drawFrame();
+            scheduleFrame();
         } else if (e.touches.length === 2) {
             const curCenterX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
             const curCenterY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
@@ -2244,7 +2298,7 @@ if (canvas3dEl) {
                 Camera3D.zoom(factor);
                 initialPinch3D = curDist;
             }
-            drawFrame();
+            scheduleFrame();
         }
     }, { passive: false });
 

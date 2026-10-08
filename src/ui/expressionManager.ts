@@ -111,9 +111,191 @@ export class ExpressionManager {
         }
     }
 
+    // ─── POPOVER DE ESTILO (DESMOS STYLE) ──────────────────────────
+    static stylePopover: HTMLDivElement = document.createElement('div');
+    static currentStyledBlock: HTMLElement | null = null;
+
+    static initStylePopover() {
+        this.stylePopover.id = 'expression-style-popover';
+        this.stylePopover.className = 'fixed bg-white rounded-xl shadow-2xl border border-gray-200 p-3 z-50 select-none hidden flex-col gap-3 min-w-[230px] transition-all duration-150';
+        this.stylePopover.innerHTML = `
+            <div class="flex items-center justify-between pb-2 border-b border-gray-100">
+                <span class="text-xs font-bold text-gray-700 tracking-wide uppercase">Estilo da Curva</span>
+                <button id="close-style-popover" class="text-gray-400 hover:text-gray-700 p-0.5 rounded cursor-pointer transition-colors">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <!-- Paleta de Cores Desmos -->
+            <div>
+                <span class="text-[11px] font-semibold text-gray-500 block mb-1.5">Cor</span>
+                <div class="grid grid-cols-6 gap-1.5" id="style-color-palette">
+                    ${['#c74440', '#2d70b3', '#388c46', '#6042a6', '#fa7e19', '#333333'].map(c => `
+                        <button class="color-swatch w-7 h-7 rounded-full cursor-pointer transition-transform hover:scale-110 active:scale-95 border-2 border-white shadow-sm flex items-center justify-center" data-color="${c}" style="background-color: ${c}">
+                        </button>
+                    `).join('')}
+                </div>
+            </div>
+            <!-- Estilo da Linha -->
+            <div>
+                <span class="text-[11px] font-semibold text-gray-500 block mb-1.5">Traçado</span>
+                <div class="grid grid-cols-3 gap-1 bg-gray-100 p-1 rounded-lg" id="style-line-types">
+                    <button class="line-style-btn py-1.5 px-2 rounded-md text-xs font-medium text-gray-600 hover:text-gray-900 transition-all flex flex-col items-center gap-1 cursor-pointer" data-style="solid" title="Linha Sólida">
+                        <svg width="24" height="6"><line x1="0" y1="3" x2="24" y2="3" stroke="currentColor" stroke-width="2.5"/></svg>
+                        <span class="text-[10px]">Sólida</span>
+                    </button>
+                    <button class="line-style-btn py-1.5 px-2 rounded-md text-xs font-medium text-gray-600 hover:text-gray-900 transition-all flex flex-col items-center gap-1 cursor-pointer" data-style="dashed" title="Linha Tracejada">
+                        <svg width="24" height="6"><line x1="0" y1="3" x2="24" y2="3" stroke="currentColor" stroke-width="2.5" stroke-dasharray="6,4"/></svg>
+                        <span class="text-[10px]">Tracejada</span>
+                    </button>
+                    <button class="line-style-btn py-1.5 px-2 rounded-md text-xs font-medium text-gray-600 hover:text-gray-900 transition-all flex flex-col items-center gap-1 cursor-pointer" data-style="dotted" title="Linha Pontilhada">
+                        <svg width="24" height="6"><line x1="0" y1="3" x2="24" y2="3" stroke="currentColor" stroke-width="2.5" stroke-dasharray="2,3"/></svg>
+                        <span class="text-[10px]">Pontilhada</span>
+                    </button>
+                </div>
+            </div>
+            <!-- Espessura da Linha -->
+            <div>
+                <span class="text-[11px] font-semibold text-gray-500 block mb-1.5">Espessura</span>
+                <div class="grid grid-cols-3 gap-1 bg-gray-100 p-1 rounded-lg" id="style-line-widths">
+                    <button class="line-width-btn py-1 px-2 rounded-md text-xs font-medium text-gray-600 hover:text-gray-900 transition-all cursor-pointer" data-width="1.5">Fina</button>
+                    <button class="line-width-btn py-1 px-2 rounded-md text-xs font-medium text-gray-600 hover:text-gray-900 transition-all cursor-pointer" data-width="2.5">Normal</button>
+                    <button class="line-width-btn py-1 px-2 rounded-md text-xs font-medium text-gray-600 hover:text-gray-900 transition-all cursor-pointer" data-width="4">Grossa</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(this.stylePopover);
+
+        // Event listeners do Popover:
+        const closeBtn = this.stylePopover.querySelector('#close-style-popover');
+        if (closeBtn) closeBtn.addEventListener('click', () => this.closeStylePopover());
+
+        // Cor
+        this.stylePopover.querySelectorAll('.color-swatch').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const targetColor = (e.currentTarget as HTMLElement).dataset.color;
+                if (targetColor && this.currentStyledBlock) {
+                    this.applyBlockColor(this.currentStyledBlock, targetColor);
+                    this.updatePopoverSelection();
+                    this.onUpdateCallback();
+                }
+            });
+        });
+
+        // Tipo de linha
+        this.stylePopover.querySelectorAll('.line-style-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const style = (e.currentTarget as HTMLElement).dataset.style;
+                if (style && this.currentStyledBlock) {
+                    this.currentStyledBlock.dataset.lineStyle = style;
+                    this.updatePopoverSelection();
+                    this.onUpdateCallback();
+                }
+            });
+        });
+
+        // Espessura
+        this.stylePopover.querySelectorAll('.line-width-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const width = (e.currentTarget as HTMLElement).dataset.width;
+                if (width && this.currentStyledBlock) {
+                    this.currentStyledBlock.dataset.lineWidth = width;
+                    this.updatePopoverSelection();
+                    this.onUpdateCallback();
+                }
+            });
+        });
+
+        // Fechar ao clicar fora
+        document.addEventListener('pointerdown', (e) => {
+            if (this.stylePopover.style.display !== 'none' && !this.stylePopover.classList.contains('hidden')) {
+                if (!this.stylePopover.contains(e.target as Node) && !(e.target as HTMLElement).closest('.visibility-toggle')) {
+                    this.closeStylePopover();
+                }
+            }
+        });
+    }
+
+    static openStylePopover(block: HTMLElement, anchorEl: HTMLElement) {
+        this.currentStyledBlock = block;
+        const rect = anchorEl.getBoundingClientRect();
+        
+        let left = rect.right + 10;
+        let top = rect.top - 10;
+
+        if (left + 240 > window.innerWidth) {
+            left = rect.left - 240 - 10;
+        }
+        if (top + 280 > window.innerHeight) {
+            top = Math.max(10, window.innerHeight - 290);
+        }
+
+        this.stylePopover.style.left = `${left}px`;
+        this.stylePopover.style.top = `${top}px`;
+        this.stylePopover.classList.remove('hidden');
+        this.stylePopover.style.display = 'flex';
+        this.updatePopoverSelection();
+    }
+
+    static closeStylePopover() {
+        this.stylePopover.classList.add('hidden');
+        this.stylePopover.style.display = 'none';
+        this.currentStyledBlock = null;
+    }
+
+    static updatePopoverSelection() {
+        if (!this.currentStyledBlock) return;
+        const currentColor = this.currentStyledBlock.dataset.color || '#2d70b3';
+        const currentStyle = this.currentStyledBlock.dataset.lineStyle || 'solid';
+        const currentWidth = this.currentStyledBlock.dataset.lineWidth || '2.5';
+
+        this.stylePopover.querySelectorAll('.color-swatch').forEach((swatch: any) => {
+            if (swatch.dataset.color === currentColor) {
+                swatch.style.outline = '2px solid #2d70b3';
+                swatch.style.outlineOffset = '2px';
+            } else {
+                swatch.style.outline = 'none';
+            }
+        });
+
+        this.stylePopover.querySelectorAll('.line-style-btn').forEach((btn: any) => {
+            if (btn.dataset.style === currentStyle) {
+                btn.classList.add('bg-white', 'shadow-xs', 'text-blue-600');
+                btn.classList.remove('text-gray-600');
+            } else {
+                btn.classList.remove('bg-white', 'shadow-xs', 'text-blue-600');
+                btn.classList.add('text-gray-600');
+            }
+        });
+
+        this.stylePopover.querySelectorAll('.line-width-btn').forEach((btn: any) => {
+            if (btn.dataset.width === currentWidth) {
+                btn.classList.add('bg-white', 'shadow-xs', 'text-blue-600', 'font-bold');
+                btn.classList.remove('text-gray-600');
+            } else {
+                btn.classList.remove('bg-white', 'shadow-xs', 'text-blue-600', 'font-bold');
+                btn.classList.add('text-gray-600');
+            }
+        });
+    }
+
+    static applyBlockColor(block: HTMLElement, color: string) {
+        block.dataset.color = color;
+        const visBtn = block.querySelector('.visibility-toggle') as HTMLElement;
+        const numSpan = block.querySelector('.block-number') as HTMLElement;
+        if (visBtn) {
+            visBtn.style.borderColor = color;
+            const isVisible = visBtn.dataset.visible === 'true';
+            visBtn.style.background = isVisible ? `${color}20` : 'transparent';
+        }
+        if (numSpan) {
+            numSpan.style.color = color;
+        }
+    }
+
     static init(onUpdate: () => void) {
         this.autocompleteDiv.style.cssText = 'position: absolute; background: white; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); font-family: sans-serif; font-size: 12px; z-index: 9999; display: none; padding: 5px; max-height: 200px; overflow-y: auto; width: 300px; text-align: left;';
         document.body.appendChild(this.autocompleteDiv);
+        this.initStylePopover();
 
         this.onUpdateCallback = onUpdate;
         this.addBtn.addEventListener('click', () => {
@@ -150,22 +332,51 @@ export class ExpressionManager {
         const colorIndex = Array.from(this.container.children).length % colors.length;
         const blockColor = colors[colorIndex];
         block.dataset.color = blockColor;
+        block.dataset.lineStyle = 'solid';
+        block.dataset.lineWidth = '2.5';
 
-          const visibilityBtn = document.createElement('div');
-          visibilityBtn.className = 'visibility-toggle';
-          visibilityBtn.dataset.visible = 'true';
-          visibilityBtn.title = 'Mostrar / Esconder';
-          // Desmos-style circle
-          visibilityBtn.style.cssText = `width: 28px; height: 28px; border-radius: 50%; border: 2px solid ${blockColor}; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; background: ${blockColor}20;`;
-          
-          const numberSpan = document.createElement('span');
-          numberSpan.className = 'block-number';
-          numberSpan.style.cssText = `font-size: 14px; font-weight: bold; color: ${blockColor}; cursor: grab;`;
-          numberSpan.innerText = this.blockCounter.toString();
-          
-          visibilityBtn.appendChild(numberSpan);
-          
-                  visibilityBtn.onclick = () => {
+        const visibilityBtn = document.createElement('div');
+        visibilityBtn.className = 'visibility-toggle';
+        visibilityBtn.dataset.visible = 'true';
+        visibilityBtn.title = 'Clique: ocultar/exibir | Botão direito ou segurar: estilo';
+        // Desmos-style circle
+        visibilityBtn.style.cssText = `width: 28px; height: 28px; border-radius: 50%; border: 2px solid ${blockColor}; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; background: ${blockColor}20; position: relative;`;
+        
+        const numberSpan = document.createElement('span');
+        numberSpan.className = 'block-number';
+        numberSpan.style.cssText = `font-size: 14px; font-weight: bold; color: ${blockColor}; cursor: grab;`;
+        numberSpan.innerText = this.blockCounter.toString();
+        
+        visibilityBtn.appendChild(numberSpan);
+
+        // Long press detection para dispositivos touch e mouse
+        let longPressTimer: any = null;
+        let isLongPress = false;
+
+        const startLongPress = () => {
+            isLongPress = false;
+            longPressTimer = setTimeout(() => {
+                isLongPress = true;
+                this.openStylePopover(block, visibilityBtn);
+            }, 450);
+        };
+
+        const cancelLongPress = () => {
+            if (longPressTimer) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+            }
+        };
+
+        visibilityBtn.addEventListener('pointerdown', (e) => {
+            if (e.button === 0) startLongPress();
+        });
+        visibilityBtn.addEventListener('pointerup', cancelLongPress);
+        visibilityBtn.addEventListener('pointercancel', cancelLongPress);
+        visibilityBtn.addEventListener('pointerleave', cancelLongPress);
+
+        visibilityBtn.onclick = () => {
+            if (isLongPress) return;
             const isVisible = visibilityBtn.dataset.visible === 'true';
             visibilityBtn.dataset.visible = isVisible ? 'false' : 'true';
             const currentColor = block.dataset.color || blockColor;
@@ -177,28 +388,10 @@ export class ExpressionManager {
 
         visibilityBtn.oncontextmenu = (e) => {
             e.preventDefault();
-            const colorInput = document.createElement('input');
-            colorInput.type = 'color';
-            colorInput.value = block.dataset.color || blockColor;
-            colorInput.style.position = 'absolute';
-            colorInput.style.opacity = '0';
-            document.body.appendChild(colorInput);
-            colorInput.focus();
-            colorInput.click();
-            
-            colorInput.onchange = () => {
-                const newColor = colorInput.value;
-                block.dataset.color = newColor;
-                const isVisible = visibilityBtn.dataset.visible === 'true';
-                visibilityBtn.style.borderColor = newColor;
-                visibilityBtn.style.background = isVisible ? `${newColor}20` : 'transparent';
-                numberSpan.style.color = newColor;
-                this.onUpdateCallback();
-                document.body.removeChild(colorInput);
-            };
+            this.openStylePopover(block, visibilityBtn);
         };
-          
-          grabZone.appendChild(visibilityBtn);
+        
+        grabZone.appendChild(visibilityBtn);
 
         // --- ÁREA DE CONTEÚDO (Matemática + Slider) ---
         const contentZone = document.createElement('div');
@@ -219,12 +412,23 @@ export class ExpressionManager {
         delBtn.innerHTML = '<i data-lucide="x" class="w-5 h-5"></i>';
         delBtn.className = 'bg-transparent border-none text-gray-400 cursor-pointer text-base py-1 px-3 shrink-0 ml-auto transition-all opacity-40 hover:opacity-100 hover:text-gray-800 outline-none';
 
+        const errorBadge = document.createElement('div');
+        errorBadge.className = 'error-badge hidden flex items-center justify-center w-6 h-6 rounded-full bg-amber-50 hover:bg-amber-100 text-amber-600 cursor-pointer shrink-0 mt-1 transition-all';
+        errorBadge.title = 'Aviso na expressão';
+        errorBadge.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
+
         mathContainer.appendChild(mf);
         mathContainer.appendChild(resultSpan);
 
         topRow.appendChild(mathContainer);
+        topRow.appendChild(errorBadge);
         topRow.appendChild(delBtn);
         contentZone.appendChild(topRow);
+
+        // --- CHIPS DE SUGESTÃO DE SLIDERS (DESMOS STYLE) ---
+        const sliderChipsRow = document.createElement('div');
+        sliderChipsRow.className = 'slider-chips-row hidden flex-wrap items-center gap-1.5 px-3 py-1.5 bg-blue-50/70 border-t border-blue-100 text-xs text-gray-600 select-none';
+        contentZone.appendChild(sliderChipsRow);
 
         // --- LINHA DO SLIDER ---
         const sliderRow = document.createElement('div');
@@ -534,20 +738,95 @@ export class ExpressionManager {
         }
     }
 
-    static getAllExpressions(): {id: string, rawAscii: string, visible: boolean, color: string}[] {
+    static getAllExpressions(): {
+        id: string, 
+        rawAscii: string, 
+        visible: boolean, 
+        color: string,
+        lineStyle: 'solid' | 'dashed' | 'dotted',
+        lineWidth: number
+    }[] {
         const blocks = Array.from(this.container.children);
-        const exprs: {id: string, rawAscii: string, visible: boolean, color: string}[] = [];
+        const exprs: {
+            id: string, 
+            rawAscii: string, 
+            visible: boolean, 
+            color: string,
+            lineStyle: 'solid' | 'dashed' | 'dotted',
+            lineWidth: number
+        }[] = [];
         blocks.forEach((block: any) => {
             const mf = block.querySelector('math-field');
             const visBtn = block.querySelector('.visibility-toggle');
             if (mf) {
                 const ascii = mf.getValue('ascii-math');
                 const visible = visBtn ? (visBtn as HTMLElement).dataset.visible === 'true' : true;
-                const color = block.dataset.color || '#000000';
-                if (ascii) exprs.push({ id: block.id, rawAscii: ascii, visible, color });
+                const color = block.dataset.color || '#2d70b3';
+                const lineStyle = (block.dataset.lineStyle as 'solid' | 'dashed' | 'dotted') || 'solid';
+                const lineWidth = parseFloat(block.dataset.lineWidth || '2.5');
+                if (ascii) exprs.push({ id: block.id, rawAscii: ascii, visible, color, lineStyle, lineWidth });
             }
         });
         return exprs;
+    }
+
+    /**
+     * Exibe chips de sugestão de criação de sliders no estilo Desmos ("adicionar controle: [m] [b] [todos]")
+     */
+    static setSliderSuggestions(blockId: string, freeVars: string[], onAddSlider: (v: string) => void) {
+        const block = document.getElementById(blockId);
+        if (!block) return;
+        const chipsRow = block.querySelector('.slider-chips-row') as HTMLElement;
+        if (!chipsRow) return;
+
+        if (!freeVars || freeVars.length === 0) {
+            chipsRow.innerHTML = '';
+            chipsRow.classList.add('hidden');
+            return;
+        }
+
+        chipsRow.innerHTML = `<span class="font-medium text-gray-500">adicionar controle:</span>`;
+        freeVars.forEach(v => {
+            const btn = document.createElement('button');
+            btn.className = 'px-2 py-0.5 rounded bg-white hover:bg-blue-600 hover:text-white border border-blue-200 text-blue-600 font-semibold shadow-xs transition-all cursor-pointer';
+            btn.innerText = v;
+            btn.onclick = (e) => {
+                e.stopPropagation();
+                onAddSlider(v);
+            };
+            chipsRow.appendChild(btn);
+        });
+
+        if (freeVars.length > 1) {
+            const allBtn = document.createElement('button');
+            allBtn.className = 'px-2 py-0.5 rounded bg-blue-500 hover:bg-blue-600 text-white font-semibold shadow-xs transition-all cursor-pointer';
+            allBtn.innerText = 'todos';
+            allBtn.onclick = (e) => {
+                e.stopPropagation();
+                freeVars.forEach(v => onAddSlider(v));
+            };
+            chipsRow.appendChild(allBtn);
+        }
+
+        chipsRow.classList.remove('hidden');
+    }
+
+    /**
+     * Exibe ou oculta o indicador de erro sutil com tooltip na linha da expressão
+     */
+    static setError(blockId: string, errorMsg: string | null) {
+        const block = document.getElementById(blockId);
+        if (!block) return;
+        const errorBadge = block.querySelector('.error-badge') as HTMLElement;
+        if (!errorBadge) return;
+
+        if (errorMsg) {
+            errorBadge.title = `Aviso: ${errorMsg}`;
+            errorBadge.classList.remove('hidden');
+        } else {
+            errorBadge.classList.add('hidden');
+            errorBadge.title = '';
+        }
     }
 
     static processBlockState(blockId: string, ascii: string, scope: any) {

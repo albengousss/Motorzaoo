@@ -218,14 +218,27 @@ export class Renderer {
         });
     }
 
-    // Modificamos para aceitar a cor como parâmetro
-    drawCurve(points: {x: number, y: number}[], color: string = '#2d70b3') {
+    // Aceita cor, estilo de linha (sólida, tracejada, pontilhada) e espessura
+    drawCurve(
+        points: {x: number, y: number}[], 
+        color: string = '#2d70b3', 
+        lineStyle: 'solid' | 'dashed' | 'dotted' = 'solid', 
+        lineWidth: number = 2
+    ) {
         if (points.length === 0) return;
         
         this.ctx.strokeStyle = color; 
-        this.ctx.lineWidth = 2;
+        this.ctx.lineWidth = lineWidth;
+
+        if (lineStyle === 'dashed') {
+            this.ctx.setLineDash([8, 6]);
+        } else if (lineStyle === 'dotted') {
+            this.ctx.setLineDash([2.5, 4]);
+        } else {
+            this.ctx.setLineDash([]);
+        }
+
         this.ctx.beginPath();
-        
         let levantarPincel = true;
 
         for (let i = 0; i < points.length; i++) {
@@ -247,6 +260,7 @@ export class Renderer {
         }
         
         this.ctx.stroke(); 
+        this.ctx.setLineDash([]);
     }
     drawFills(fills: {x:number, y:number, w:number, h:number}[], color: string = '#2d70b3') {
         if (fills.length === 0) return;
