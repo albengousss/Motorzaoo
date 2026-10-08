@@ -2,6 +2,7 @@ import 'mathlive';
 import './style.css';
 import { PrattParser } from './core/prattParser';
 import { StateManager } from './core/stateManager';
+import { HistoryManager } from './core/historyManager';
 
 let validEquations: {id: string, ast: any, isImplicit: boolean, operator: string, isEdo: boolean, isDerivative: boolean, derivVar?: string, isIvp?: boolean, isPoint?: boolean, pointX?: number, pointY?: number, pointLabel?: string, isParametric?: boolean, astX?: any, astY?: any, astZ?: any, isExplicitZ?: boolean, tMin?: number, tMax?: number, paramVar?: string, depVar?: string, indepVar?: string, condition?: (x: number, y: number, scope: any, t?: number) => boolean, name?: string, x0?: number, y0?: number, isHidden?: boolean, variable?: string, color?: string, lineStyle?: 'solid' | 'dashed' | 'dotted', lineWidth?: number}[] = [];
 let dragDistance = 0;
@@ -80,6 +81,8 @@ interface PinnedPoint {
 
 let renderMemory_points: NotablePointData[] = [];
 let pinnedPoints: PinnedPoint[] = [];
+(window as any)._pinnedPoints = pinnedPoints;
+(window as any)._setPinnedPoints = (pts: PinnedPoint[]) => { pinnedPoints = pts; (window as any)._pinnedPoints = pts; drawFrame(); };
 let hoveredNotablePoint: NotablePointData | null = null;
 let renderMemory_curves: {f: (x: number) => number, color: string}[] = [];
 let renderMemory_segments: {x1: number, y1: number, x2: number, y2: number, color: string}[] = [];
@@ -1606,8 +1609,10 @@ ExpressionManager.init(markExpressionsDirty);
     StateManager.dependents = {};
     MathEngine.compiledFuncs = {};
     pinnedPoints = [];
+    (window as any)._pinnedPoints = pinnedPoints;
     hoveredNotablePoint = null;
     ExpressionManager.addBlock();
+    HistoryManager.recordState(true);
     drawFrame();
 };
 
@@ -1677,41 +1682,113 @@ setTimeout(() => {
                 ]
             },
             {
-                label: 'func',
-                tooltip: 'Funções e Cálculo',
+                label: 'calc',
+                tooltip: 'Cálculo Diferencial, Integral e EDOs',
                 rows: [
                     [
-                        { insert: "sin(", latex: "\\sin" },
-                        { insert: "cos(", latex: "\\cos" },
-                        { insert: "tan(", latex: "\\tan" },
-                        { insert: "cot(", latex: "\\cot" },
-                        { insert: "sec(", latex: "\\sec" },
-                        { insert: "csc(", latex: "\\csc" }
-                    ],
-                    [
-                        { insert: "arcsin(", latex: "\\arcsin" },
-                        { insert: "arccos(", latex: "\\arccos" },
-                        { insert: "arctan(", latex: "\\arctan" },
-                        { insert: "sinh(", latex: "\\sinh" },
-                        { insert: "cosh(", latex: "\\cosh" },
-                        { insert: "tanh(", latex: "\\tanh" }
-                    ],
-                    [
-                        { insert: "d/dx(#?)", latex: "\\frac{d}{dx}" },
+                        { insert: "\\frac{d}{dx}\\left(#?\\right)", latex: "\\frac{d}{dx}" },
+                        { insert: "\\frac{d^2}{dx^2}\\left(#?\\right)", latex: "\\frac{d^2}{dx^2}" },
+                        { insert: "\\frac{\\partial}{\\partial x}\\left(#?\\right)", latex: "\\frac{\\partial}{\\partial x}" },
                         { insert: "\\int #? d x", latex: "\\int" },
                         { insert: "\\int_{#?}^{#?} #? d x", latex: "\\int_a^b" },
-                        { insert: "\\lim_{x \\to #?} #?", latex: "\\lim" },
-                        { insert: "|#?|", latex: "|x|" },
-                        { insert: "ln(", latex: "\\ln" },
-                        { insert: "log(", latex: "\\log" }
+                        { insert: "\\sum_{n=#?}^{#?} #?", latex: "\\sum" },
+                        { insert: "\\prod_{n=#?}^{#?} #?", latex: "\\prod" },
+                        { latex: "\\infty" }
                     ],
                     [
-                        { insert: "SolveODE(#?)", label: "EDO", tooltip: "Resolver EDO" },
+                        { insert: "\\lim_{x \\to #?} #?", latex: "\\lim" },
+                        { insert: "\\lim_{x \\to \\infty} #?", latex: "\\lim_{x\\to\\infty}" },
+                        { insert: "y' = #?", label: "y'", tooltip: "Equação Diferencial y'" },
+                        { insert: "y'' = #?", label: "y''", tooltip: "Equação Diferencial y''" },
+                        { insert: "SolveODE(#?)", label: "SolveODE", tooltip: "Resolver EDO" },
                         { insert: "Campo(#?)", label: "Campo", tooltip: "Campo de Direções" },
-                        { insert: "f(x, y) = ", label: "f(x, y)" },
-                        { insert: "g(x, y) = ", label: "g(x, y)" },
-                        { insert: "Simplify(#?)", label: "Simplificar" },
-                        { insert: "Factor(#?)", label: "Fatorar" }
+                        { insert: "Taylor(#?, x, 0, 4)", label: "Taylor", tooltip: "Série de Taylor" },
+                        { insert: "\\nabla", latex: "\\nabla" }
+                    ],
+                    [
+                        { insert: "ln(#?)", latex: "\\ln" },
+                        { insert: "log(#?)", latex: "\\log" },
+                        { insert: "log_{#?}(#?)", latex: "\\log_b" },
+                        { insert: "e^{#?}", latex: "e^x" },
+                        { insert: "f(x) = #?", label: "f(x)" },
+                        { insert: "f(x, y) = #?", label: "f(x, y)" },
+                        { latex: "\\theta" },
+                        { latex: "\\pi" }
+                    ],
+                    [
+                        { class: "action", label: "←", command: ["performWithFeedback", "moveToPreviousChar"] },
+                        { class: "action", label: "→", command: ["performWithFeedback", "moveToNextChar"] },
+                        { class: "separator w10" },
+                        { class: "action font-glyph w20", label: "&#x232b;", command: ["performWithFeedback", "deleteBackward"] },
+                        { class: "action font-glyph w20", label: "&#x23ce;", command: ["performWithFeedback", "commit"] }
+                    ]
+                ]
+            },
+            {
+                label: 'CAS',
+                tooltip: 'Computação Algébrica Simbólica & Matrizes',
+                rows: [
+                    [
+                        { insert: "Solve(#?)", label: "Solve", tooltip: "Resolver Simbolicamente" },
+                        { insert: "NSolve(#?)", label: "NSolve", tooltip: "Resolver Numericamente" },
+                        { insert: "Simplify(#?)", label: "Simplify", tooltip: "Simplificar Expressão" },
+                        { insert: "Factor(#?)", label: "Factor", tooltip: "Fatorar Polinómio" },
+                        { insert: "Expand(#?)", label: "Expand", tooltip: "Expandir Expressão" },
+                        { insert: "PartialFractions(#?)", label: "PartFrac", tooltip: "Frações Parciais" }
+                    ],
+                    [
+                        { insert: "\\begin{pmatrix}#? & #? \\\\ #? & #?\\end{pmatrix}", label: "Mat 2x2", tooltip: "Matriz 2x2" },
+                        { insert: "\\begin{pmatrix}#? & #? & #? \\\\ #? & #? & #? \\\\ #? & #? & #?\\end{pmatrix}", label: "Mat 3x3", tooltip: "Matriz 3x3" },
+                        { insert: "\\begin{pmatrix}#? \\\\ #?\\end{pmatrix}", label: "Vet 2D", tooltip: "Vetor Coluna 2D" },
+                        { insert: "\\begin{pmatrix}#? \\\\ #? \\\\ #?\\end{pmatrix}", label: "Vet 3D", tooltip: "Vetor Coluna 3D" },
+                        { insert: "Determinant(#?)", label: "det", tooltip: "Determinante" },
+                        { insert: "Invert(#?)", label: "A⁻¹", tooltip: "Inversa da Matriz" }
+                    ],
+                    [
+                        { insert: "Eigenvalues(#?)", label: "Eigenvals", tooltip: "Autovalores" },
+                        { insert: "Eigenvectors(#?)", label: "Eigenvects", tooltip: "Autovetores" },
+                        { insert: "ReducedRowEchelonForm(#?)", label: "RREF", tooltip: "Escalonamento Reduzido" },
+                        { insert: "MatrixRank(#?)", label: "Rank", tooltip: "Posto da Matriz" },
+                        { insert: "Dot(#?, #?)", label: "u · v", tooltip: "Produto Escalar" },
+                        { insert: "Cross(#?, #?)", label: "u × v", tooltip: "Produto Vetorial" }
+                    ],
+                    [
+                        { class: "action", label: "←", command: ["performWithFeedback", "moveToPreviousChar"] },
+                        { class: "action", label: "→", command: ["performWithFeedback", "moveToNextChar"] },
+                        { class: "separator w10" },
+                        { class: "action font-glyph w20", label: "&#x232b;", command: ["performWithFeedback", "deleteBackward"] },
+                        { class: "action font-glyph w20", label: "&#x23ce;", command: ["performWithFeedback", "commit"] }
+                    ]
+                ]
+            },
+            {
+                label: 'func',
+                tooltip: 'Trigonometria, Hiperbólicas e Estatística',
+                rows: [
+                    [
+                        { insert: "sin(#?)", latex: "\\sin" },
+                        { insert: "cos(#?)", latex: "\\cos" },
+                        { insert: "tan(#?)", latex: "\\tan" },
+                        { insert: "cot(#?)", latex: "\\cot" },
+                        { insert: "sec(#?)", latex: "\\sec" },
+                        { insert: "csc(#?)", latex: "\\csc" }
+                    ],
+                    [
+                        { insert: "arcsin(#?)", latex: "\\arcsin" },
+                        { insert: "arccos(#?)", latex: "\\arccos" },
+                        { insert: "arctan(#?)", latex: "\\arctan" },
+                        { insert: "sinh(#?)", latex: "\\sinh" },
+                        { insert: "cosh(#?)", latex: "\\cosh" },
+                        { insert: "tanh(#?)", latex: "\\tanh" }
+                    ],
+                    [
+                        { insert: "|#?|", latex: "|x|" },
+                        { insert: "\\sqrt[#?]{#?}", latex: "\\sqrt[n]{x}" },
+                        { insert: "floor(#?)", label: "floor" },
+                        { insert: "ceil(#?)", label: "ceil" },
+                        { insert: "sign(#?)", label: "sign" },
+                        { insert: "Mean(#?)", label: "Média" },
+                        { insert: "Normal(#?, #?, #?)", label: "Normal" }
                     ],
                     [
                         { class: "action", label: "←", command: ["performWithFeedback", "moveToPreviousChar"] },
@@ -2029,6 +2106,8 @@ canvasEl.addEventListener('click', (e) => {
         });
         if (pinnedIdx !== -1) {
             pinnedPoints.splice(pinnedIdx, 1);
+            (window as any)._pinnedPoints = pinnedPoints;
+            HistoryManager.recordState(true);
             scheduleFrame();
             return;
         }
@@ -2062,6 +2141,8 @@ canvasEl.addEventListener('click', (e) => {
                     showTangent: e.altKey || false
                 });
             }
+            (window as any)._pinnedPoints = pinnedPoints;
+            HistoryManager.recordState(true);
             scheduleFrame();
             return;
         }
@@ -2079,6 +2160,8 @@ canvasEl.addEventListener('click', (e) => {
                 slope: closest.slope,
                 showTangent: e.altKey || false
             });
+            (window as any)._pinnedPoints = pinnedPoints;
+            HistoryManager.recordState(true);
             scheduleFrame();
             return;
         }

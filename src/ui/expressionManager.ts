@@ -1,6 +1,7 @@
 import { StateManager } from '../core/stateManager';
 import { MathEngine } from '../core/mathEngine';
 import { PrattParser } from '../core/prattParser';
+import { HistoryManager, type BlockSnapshot } from '../core/historyManager';
 
 export class ExpressionManager {
     static container = document.getElementById('expressions-list')!;
@@ -298,32 +299,87 @@ export class ExpressionManager {
         this.initStylePopover();
 
         this.onUpdateCallback = onUpdate;
-        this.addBtn.addEventListener('click', () => {
-            this.addBlock();
-            this.updateBlockNumbers();
-        });
+        
+        // Botão Adicionar Expressão
+        if (this.addBtn) {
+            this.addBtn.addEventListener('click', () => {
+                this.addBlock();
+                this.updateBlockNumbers();
+                HistoryManager.recordState(true);
+            });
+        }
+
+        // Botão Adicionar Nota
+        const addNoteBtn = document.getElementById('add-note-btn');
+        if (addNoteBtn) {
+            addNoteBtn.addEventListener('click', () => {
+                this.addNote();
+                this.updateBlockNumbers();
+                HistoryManager.recordState(true);
+            });
+        }
+
+        // Botão Adicionar Pasta
+        const addFolderBtn = document.getElementById('add-folder-btn');
+        if (addFolderBtn) {
+            addFolderBtn.addEventListener('click', () => {
+                this.addFolder();
+                this.updateBlockNumbers();
+                HistoryManager.recordState(true);
+            });
+        }
+
+        // Botões Undo / Redo do cabeçalho
+        const undoBtn = document.getElementById('undo-btn') as HTMLButtonElement;
+        const redoBtn = document.getElementById('redo-btn') as HTMLButtonElement;
+        if (undoBtn) {
+            undoBtn.addEventListener('click', () => HistoryManager.undo());
+        }
+        if (redoBtn) {
+            redoBtn.addEventListener('click', () => HistoryManager.redo());
+        }
+
+        HistoryManager.init(
+            () => this.onUpdateCallback(),
+            (canUndo, canRedo) => {
+                if (undoBtn) undoBtn.disabled = !canUndo;
+                if (redoBtn) redoBtn.disabled = !canRedo;
+            }
+        );
+
         this.addBlock();
         this.updateBlockNumbers();
+        HistoryManager.recordState(true);
     }
 
     /**
-     * Atualiza a numeração lateral (1, 2, 3...) de todos os blocos na tela
+     * Atualiza a numeração lateral (1, 2, 3...) de todos os blocos de expressão na tela
      */
     static updateBlockNumbers() {
+        let index = 1;
         const blocks = Array.from(this.container.children);
-        blocks.forEach((block: any, index) => {
-            const numSpan = block.querySelector('.block-number');
-            if (numSpan) numSpan.innerText = (index + 1).toString();
+        blocks.forEach((block: any) => {
+            if (block.dataset.type === 'expression') {
+                const numSpan = block.querySelector('.block-number');
+                if (numSpan) numSpan.innerText = index.toString();
+                index++;
+            }
         });
     }
 
-    static addBlock(autoFocus: boolean = true): string {
+    static addBlock(autoFocus: boolean = true, initialValue: string = '', folderId?: string): string {
         this.blockCounter++;
         const blockId = 'expr-block-' + this.blockCounter;
 
         const block = document.createElement('div');
         block.id = blockId;
-        block.className = 'flex border-b border-gray-100 bg-white transition-colors duration-200 relative group';
+        block.dataset.type = 'expression';
+        if (folderId) {
+            block.dataset.folderId = folderId;
+            block.className = 'flex border-b border-gray-100 bg-white transition-colors duration-200 relative group pl-3 border-l-4 border-l-blue-300';
+        } else {
+            block.className = 'flex border-b border-gray-100 bg-white transition-colors duration-200 relative group';
+        }
 
         const grabZone = document.createElement('div');
         grabZone.className = 'w-12 bg-white flex flex-col items-center justify-start pt-[14px] shrink-0 select-none text-gray-500 gap-1.5';
@@ -384,6 +440,7 @@ export class ExpressionManager {
             visibilityBtn.style.borderStyle = isVisible ? 'dashed' : 'solid';
             numberSpan.style.opacity = isVisible ? '0.3' : '1';
             this.onUpdateCallback();
+            HistoryManager.recordState(true);
         };
 
         visibilityBtn.oncontextmenu = (e) => {
@@ -580,6 +637,7 @@ export class ExpressionManager {
             stopAnimation();
             block.remove();
             this.updateBlockNumbers();
+            HistoryManager.recordState(true);
             this.onUpdateCallback();
         };
 
@@ -627,6 +685,7 @@ export class ExpressionManager {
         mf.addEventListener('input', () => {
             this.showAutocomplete(mf);
             this.onUpdateCallback();
+            HistoryManager.recordState(false);
         });
         
         mf.addEventListener('focus', () => {
@@ -656,16 +715,25 @@ export class ExpressionManager {
                 // Atualiza o motor matemático e redesenha a tela
                 StateManager.updateSlider(varName, newVal);
                 this.onUpdateCallback();
+                HistoryManager.recordState(false);
             }
         });
 
         // --- FÍSICA CUSTOMIZADA DO DRAG AND DROP (DESMOS STYLE) ---
-        // Aqui o bloco inteiro flutua suavemente sobre os outros!
+        this.setupBlockDrag(block, grabZone);
+
+        if (initialValue) {
+            (mf as any).setValue(initialValue, { suppressChangeNotifications: true });
+        }
+        if (autoFocus) setTimeout(() => mf.focus(), 10);
+        return blockId;
+    }
+
+    static setupBlockDrag(block: HTMLElement, grabZone: HTMLElement) {
         grabZone.addEventListener('pointerdown', (e) => {
             e.preventDefault();
             grabZone.style.cursor = 'grabbing';
-            block.classList.add('bg-blue-50', 'shadow-md', 'z-50'); // Azul igual do Desmos!
-            // handled by tailwind
+            block.classList.add('bg-blue-50', 'shadow-md', 'z-50');
             block.style.position = 'relative';
             block.style.zIndex = '1000';
 
@@ -679,11 +747,10 @@ export class ExpressionManager {
                 const blocks = Array.from(this.container.children) as HTMLElement[];
                 const index = blocks.indexOf(block);
 
-                // Lógica que troca os elementos de lugar no DOM dinamicamente
                 if (currentTranslate > block.offsetHeight / 2 && index < blocks.length - 1) {
                     const nextBlock = blocks[index + 1];
                     this.container.insertBefore(nextBlock, block);
-                    startY += nextBlock.offsetHeight; // Compensa a altura para o mouse não pular
+                    startY += nextBlock.offsetHeight;
                     currentTranslate = moveEvent.clientY - startY;
                 } else if (currentTranslate < -block.offsetHeight / 2 && index > 0) {
                     const prevBlock = blocks[index - 1];
@@ -697,6 +764,7 @@ export class ExpressionManager {
 
             const onUp = () => {
                 grabZone.style.cursor = 'grab';
+                block.classList.remove('bg-blue-50', 'shadow-md', 'z-50');
                 block.style.backgroundColor = '';
                 block.style.boxShadow = '';
                 block.style.position = '';
@@ -705,14 +773,253 @@ export class ExpressionManager {
                 document.removeEventListener('pointermove', onMove);
                 document.removeEventListener('pointerup', onUp);
                 this.onUpdateCallback();
+                HistoryManager.recordState(true);
             };
 
             document.addEventListener('pointermove', onMove);
             document.addEventListener('pointerup', onUp);
         });
+    }
 
-        if (autoFocus) setTimeout(() => mf.focus(), 10);
+    static addNote(text: string = '', autoFocus: boolean = true, folderId?: string): string {
+        this.blockCounter++;
+        const blockId = 'note-block-' + this.blockCounter;
+
+        const block = document.createElement('div');
+        block.id = blockId;
+        block.dataset.type = 'note';
+        if (folderId) {
+            block.dataset.folderId = folderId;
+            block.className = 'flex border-b border-gray-100 bg-amber-50/20 hover:bg-amber-50/40 transition-colors duration-200 relative group pl-3 border-l-4 border-l-amber-300';
+        } else {
+            block.className = 'flex border-b border-gray-100 bg-white hover:bg-amber-50/20 transition-colors duration-200 relative group';
+        }
+
+        const grabZone = document.createElement('div');
+        grabZone.className = 'w-12 bg-transparent flex flex-col items-center justify-start pt-[14px] shrink-0 select-none text-amber-500 gap-1.5 cursor-grab';
+        grabZone.innerHTML = `
+            <div class="w-7 h-7 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center shadow-xs" title="Bloco de Nota Explicativa">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
+            </div>
+        `;
+
+        const contentZone = document.createElement('div');
+        contentZone.className = 'flex items-start px-2 py-2.5 gap-2 grow overflow-hidden min-h-[48px]';
+
+        const textarea = document.createElement('textarea');
+        textarea.className = 'w-full bg-transparent resize-none outline-none text-gray-700 text-sm font-normal placeholder-gray-400 py-1 leading-relaxed';
+        textarea.placeholder = 'Adicione uma anotação, enunciado ou comentário explicativo...';
+        textarea.rows = 1;
+        textarea.value = text;
+
+        const autoResize = () => {
+            textarea.style.height = 'auto';
+            textarea.style.height = Math.max(32, textarea.scrollHeight) + 'px';
+        };
+        textarea.addEventListener('input', () => {
+            autoResize();
+            HistoryManager.recordState(false);
+        });
+        setTimeout(autoResize, 10);
+
+        const delBtn = document.createElement('button');
+        delBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+        delBtn.className = 'bg-transparent border-none text-gray-400 cursor-pointer p-1 shrink-0 ml-auto transition-all opacity-40 hover:opacity-100 hover:text-red-500 outline-none';
+        delBtn.onclick = () => {
+            block.remove();
+            this.updateBlockNumbers();
+            HistoryManager.recordState(true);
+            this.onUpdateCallback();
+        };
+
+        contentZone.appendChild(textarea);
+        contentZone.appendChild(delBtn);
+
+        block.appendChild(grabZone);
+        block.appendChild(contentZone);
+
+        this.setupBlockDrag(block, grabZone);
+
+        this.container.appendChild(block);
+        this.updateBlockNumbers();
+
+        if (autoFocus) setTimeout(() => textarea.focus(), 15);
         return blockId;
+    }
+
+    static addFolder(title: string = 'Nova Pasta', autoFocus: boolean = true): string {
+        this.blockCounter++;
+        const folderId = 'folder-' + this.blockCounter;
+
+        const block = document.createElement('div');
+        block.id = folderId;
+        block.dataset.type = 'folder';
+        block.dataset.collapsed = 'false';
+        block.className = 'flex flex-col border-b border-gray-200 bg-gray-50/90 transition-colors duration-200 relative group select-none';
+
+        const header = document.createElement('div');
+        header.className = 'flex items-center px-2 py-2.5 gap-2 cursor-pointer hover:bg-gray-100 transition-colors';
+
+        // Toggle collapse button
+        const collapseBtn = document.createElement('button');
+        collapseBtn.className = 'w-6 h-6 flex items-center justify-center text-gray-500 hover:text-gray-800 rounded transition-transform';
+        collapseBtn.innerHTML = `<svg class="folder-chevron w-4 h-4 transition-transform duration-200" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>`;
+
+        // Folder icon
+        const folderIcon = document.createElement('div');
+        folderIcon.className = 'folder-icon text-emerald-600 flex items-center justify-center';
+        folderIcon.innerHTML = `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
+
+        // Title input
+        const titleInput = document.createElement('input');
+        titleInput.type = 'text';
+        titleInput.className = 'folder-title-input font-bold text-gray-800 text-sm bg-transparent border-none outline-none grow px-1 hover:bg-white/60 focus:bg-white rounded transition-colors';
+        titleInput.value = title;
+        titleInput.placeholder = 'Nome da Pasta';
+        titleInput.onclick = (e) => e.stopPropagation();
+        titleInput.oninput = () => HistoryManager.recordState(false);
+
+        // Group visibility toggle button
+        const visBtn = document.createElement('button');
+        visBtn.className = 'visibility-toggle folder-vis-btn w-6 h-6 rounded-full flex items-center justify-center text-emerald-600 hover:text-emerald-700 transition-colors';
+        visBtn.dataset.visible = 'true';
+        visBtn.title = 'Ocultar / Exibir todo o conteúdo da pasta';
+        visBtn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`;
+
+        visBtn.onclick = (e) => {
+            e.stopPropagation();
+            const isVis = visBtn.dataset.visible === 'true';
+            visBtn.dataset.visible = isVis ? 'false' : 'true';
+            visBtn.innerHTML = isVis ? 
+                `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>` :
+                `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`;
+            visBtn.classList.toggle('text-gray-300', isVis);
+            visBtn.classList.toggle('text-emerald-600', !isVis);
+            this.onUpdateCallback();
+            HistoryManager.recordState(true);
+        };
+
+        // Add expression inside folder button (+)
+        const addInFolderBtn = document.createElement('button');
+        addInFolderBtn.className = 'w-6 h-6 flex items-center justify-center text-gray-400 hover:text-emerald-600 hover:bg-white rounded transition-colors';
+        addInFolderBtn.title = 'Adicionar expressão nesta pasta';
+        addInFolderBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
+        addInFolderBtn.onclick = (e) => {
+            e.stopPropagation();
+            if (block.dataset.collapsed === 'true') {
+                this.toggleFolderCollapse(folderId);
+            }
+            this.addBlock(true, '', folderId);
+            HistoryManager.recordState(true);
+        };
+
+        // Delete folder button
+        const delFolderBtn = document.createElement('button');
+        delFolderBtn.className = 'w-6 h-6 flex items-center justify-center text-gray-400 hover:text-red-500 rounded transition-colors';
+        delFolderBtn.title = 'Excluir pasta e itens';
+        delFolderBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+        delFolderBtn.onclick = (e) => {
+            e.stopPropagation();
+            const children = this.container.querySelectorAll(`[data-folder-id="${folderId}"]`);
+            children.forEach(c => c.remove());
+            block.remove();
+            this.updateBlockNumbers();
+            HistoryManager.recordState(true);
+            this.onUpdateCallback();
+        };
+
+        header.onclick = () => {
+            this.toggleFolderCollapse(folderId);
+        };
+
+        header.appendChild(collapseBtn);
+        header.appendChild(folderIcon);
+        header.appendChild(titleInput);
+        header.appendChild(addInFolderBtn);
+        header.appendChild(visBtn);
+        header.appendChild(delFolderBtn);
+
+        block.appendChild(header);
+        this.container.appendChild(block);
+
+        this.updateBlockNumbers();
+
+        if (autoFocus) setTimeout(() => titleInput.focus(), 15);
+        return folderId;
+    }
+
+    static toggleFolderCollapse(folderId: string) {
+        const folder = document.getElementById(folderId);
+        if (!folder) return;
+        const isCollapsed = folder.dataset.collapsed === 'true';
+        folder.dataset.collapsed = isCollapsed ? 'false' : 'true';
+
+        const chevron = folder.querySelector('.folder-chevron') as HTMLElement;
+        if (chevron) {
+            chevron.style.transform = isCollapsed ? 'rotate(0deg)' : 'rotate(-90deg)';
+        }
+
+        const children = this.container.querySelectorAll(`[data-folder-id="${folderId}"]`) as NodeListOf<HTMLElement>;
+        children.forEach(child => {
+            child.style.display = isCollapsed ? 'flex' : 'none';
+        });
+
+        HistoryManager.recordState(true);
+    }
+
+    static restoreFromSnapshot(blocks: BlockSnapshot[]) {
+        this.container.innerHTML = '';
+        if (!blocks || blocks.length === 0) {
+            this.addBlock(false);
+            this.updateBlockNumbers();
+            return;
+        }
+
+        blocks.forEach(b => {
+            if (b.type === 'folder') {
+                const fid = this.addFolder(b.content, false);
+                const folderEl = document.getElementById(fid);
+                if (folderEl) {
+                    folderEl.id = b.id;
+                    if (!b.visible) {
+                        const visBtn = folderEl.querySelector('.visibility-toggle') as HTMLElement;
+                        if (visBtn) visBtn.click();
+                    }
+                    if (b.isCollapsed) {
+                        this.toggleFolderCollapse(b.id);
+                    }
+                }
+            } else if (b.type === 'note') {
+                const nid = this.addNote(b.content, false, b.folderId);
+                const noteEl = document.getElementById(nid);
+                if (noteEl) {
+                    noteEl.id = b.id;
+                }
+            } else {
+                const bid = this.addBlock(false, b.content, b.folderId);
+                const blockEl = document.getElementById(bid);
+                if (blockEl) {
+                    blockEl.id = b.id;
+                    this.applyBlockColor(blockEl, b.color);
+                    blockEl.dataset.lineStyle = b.lineStyle;
+                    blockEl.dataset.lineWidth = b.lineWidth.toString();
+                    if (!b.visible) {
+                        const visBtn = blockEl.querySelector('.visibility-toggle') as HTMLElement;
+                        if (visBtn) visBtn.click();
+                    }
+                    const sliderRow = blockEl.querySelector('.slider-row') as HTMLElement;
+                    if (sliderRow && b.sliderVal !== undefined) {
+                        const sliderInput = sliderRow.querySelector('.slider-input') as HTMLInputElement;
+                        const minInput = sliderRow.querySelector('.min-val') as HTMLInputElement;
+                        const maxInput = sliderRow.querySelector('.max-val') as HTMLInputElement;
+                        if (sliderInput && b.sliderVal) sliderInput.value = b.sliderVal;
+                        if (minInput && b.sliderMin) minInput.value = b.sliderMin;
+                        if (maxInput && b.sliderMax) maxInput.value = b.sliderMax;
+                    }
+                }
+            }
+        });
+        this.updateBlockNumbers();
     }
 
     static addExpression(asciiValue: string, autoFocus: boolean = false): string {
@@ -725,6 +1032,7 @@ export class ExpressionManager {
             }
         }
         this.updateBlockNumbers();
+        HistoryManager.recordState(true);
         return blockId;
     }
 
@@ -755,12 +1063,31 @@ export class ExpressionManager {
             lineStyle: 'solid' | 'dashed' | 'dotted',
             lineWidth: number
         }[] = [];
+
+        // Mapa de visibilidade das pastas
+        const folderVisMap: Record<string, boolean> = {};
         blocks.forEach((block: any) => {
+            if (block.dataset.type === 'folder') {
+                const visBtn = block.querySelector('.visibility-toggle');
+                folderVisMap[block.id] = visBtn ? (visBtn.dataset.visible !== 'false') : true;
+            }
+        });
+
+        blocks.forEach((block: any) => {
+            if (block.dataset.type === 'note' || block.dataset.type === 'folder') return;
+
             const mf = block.querySelector('math-field');
             const visBtn = block.querySelector('.visibility-toggle');
             if (mf) {
                 const ascii = mf.getValue('ascii-math');
-                const visible = visBtn ? (visBtn as HTMLElement).dataset.visible === 'true' : true;
+                let visible = visBtn ? (visBtn as HTMLElement).dataset.visible === 'true' : true;
+                
+                // Se pertencer a uma pasta oculta, fica oculta no gráfico
+                const folderId = block.dataset.folderId;
+                if (folderId && folderVisMap[folderId] === false) {
+                    visible = false;
+                }
+
                 const color = block.dataset.color || '#2d70b3';
                 const lineStyle = (block.dataset.lineStyle as 'solid' | 'dashed' | 'dotted') || 'solid';
                 const lineWidth = parseFloat(block.dataset.lineWidth || '2.5');
