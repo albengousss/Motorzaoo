@@ -309,6 +309,26 @@ export class ExpressionManager {
             });
         }
 
+        // Botão Adicionar Tabela
+        const addTableBtn = document.getElementById('add-table-btn');
+        if (addTableBtn) {
+            addTableBtn.addEventListener('click', () => {
+                this.addTable();
+                this.updateBlockNumbers();
+                HistoryManager.recordState(true);
+            });
+        }
+
+        // Botão Adicionar Matriz
+        const addMatrixBtn = document.getElementById('add-matrix-btn');
+        if (addMatrixBtn) {
+            addMatrixBtn.addEventListener('click', () => {
+                this.addMatrix();
+                this.updateBlockNumbers();
+                HistoryManager.recordState(true);
+            });
+        }
+
         // Botão Adicionar Nota
         const addNoteBtn = document.getElementById('add-note-btn');
         if (addNoteBtn) {
@@ -519,13 +539,38 @@ export class ExpressionManager {
             'alpha': '\\alpha',
             'beta': '\\beta',
             'gamma': '\\gamma',
+            'delta': '\\delta',
+            'Delta': '\\Delta',
+            'lambda': '\\lambda',
+            'Lambda': '\\Lambda',
+            'sigma': '\\sigma',
+            'Sigma': '\\Sigma',
+            'omega': '\\omega',
+            'Omega': '\\Omega',
+            'phi': '\\phi',
+            'Phi': '\\Phi',
+            'mu': '\\mu',
+            'sqrt': '\\sqrt{#?}',
+            'cbrt': '\\sqrt[3]{#?}',
+            'nthroot': '\\sqrt[#?]{#?}',
+            'sum': '\\sum_{#?}^{#?}',
+            'prod': '\\prod_{#?}^{#?}',
             'int': '\\int',
             'limit': '\\lim',
             'lim': '\\lim',
-            'e': 'e',
-            'sqrt': '\\sqrt',
+            'inf': '\\infty',
+            'infty': '\\infty',
             '<=': '\\le',
-            '>=': '\\ge'
+            '>=': '\\ge',
+            '!=': '\\ne',
+            'pm': '\\pm',
+            '+-': '\\pm',
+            'approx': '\\approx',
+            '*': '\\cdot',
+            'cdot': '\\cdot',
+            'times': '\\times',
+            'div': '\\div',
+            'e': 'e'
         };
         const currentBindings = mathField.keybindings || [];
         mathField.keybindings = [
@@ -534,6 +579,7 @@ export class ExpressionManager {
             { key: '[NumpadDivide]', ifMode: 'math', command: ['insert', '\\frac{#@}{#?}'] },
             { key: '^', ifMode: 'math', command: 'moveToSuperscript' },
             { key: 'shift+[Digit6]', ifMode: 'math', command: 'moveToSuperscript' },
+            { key: '*', ifMode: 'math', command: ['insert', '\\cdot'] },
             ...currentBindings
         ];
         mathField.style.setProperty('--contains-highlight-background', 'transparent');
@@ -847,6 +893,587 @@ export class ExpressionManager {
         return blockId;
     }
 
+    static getNextMatrixName(): string {
+        const used = new Set<string>();
+        const blocks = Array.from(this.container.children);
+        blocks.forEach((b: any) => {
+            if (b.dataset.type === 'matrix') {
+                const nameInp = b.querySelector('.matrix-name-input') as HTMLInputElement;
+                if (nameInp) used.add(nameInp.value.trim().toUpperCase());
+            }
+        });
+        const candidates = ['A', 'B', 'C', 'D', 'M', 'N', 'P'];
+        for (const name of candidates) {
+            if (!used.has(name)) return name;
+        }
+        return `M${this.blockCounter}`;
+    }
+
+    static addMatrix(
+        matrixData?: { name?: string; rows?: number; cols?: number; data?: string[][] },
+        autoFocus: boolean = true,
+        folderId?: string
+    ): string {
+        this.blockCounter++;
+        const blockId = 'matrix-block-' + this.blockCounter;
+
+        const defaultName = matrixData?.name || this.getNextMatrixName();
+        let rows = matrixData?.rows || 2;
+        let cols = matrixData?.cols || 2;
+        let cellValues = matrixData?.data ? JSON.parse(JSON.stringify(matrixData.data)) : [
+            ['1', '0'],
+            ['0', '1']
+        ];
+
+        const block = document.createElement('div');
+        block.id = blockId;
+        block.dataset.type = 'matrix';
+        block.dataset.rows = rows.toString();
+        block.dataset.cols = cols.toString();
+        const blockColor = '#7c3aed';
+        block.dataset.color = blockColor;
+        block.dataset.lineStyle = 'solid';
+        block.dataset.lineWidth = '2.5';
+        if (folderId) {
+            block.dataset.folderId = folderId;
+            block.className = 'flex border-b border-gray-100 bg-white transition-colors duration-200 relative group pl-3 border-l-4 border-l-purple-300';
+        } else {
+            block.className = 'flex border-b border-gray-100 bg-white transition-colors duration-200 relative group';
+        }
+
+        const grabZone = document.createElement('div');
+        grabZone.className = 'w-12 bg-white flex flex-col items-center justify-start pt-[14px] shrink-0 select-none text-gray-500 gap-1.5';
+
+        const visibilityBtn = document.createElement('div');
+        visibilityBtn.className = 'visibility-toggle';
+        visibilityBtn.dataset.visible = 'true';
+        visibilityBtn.title = 'Clique: ocultar/exibir | Botão direito ou segurar: estilo';
+        visibilityBtn.style.cssText = `width: 28px; height: 28px; border-radius: 50%; border: 2px solid ${blockColor}; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; background: ${blockColor}20; position: relative;`;
+
+        const nameBadge = document.createElement('span');
+        nameBadge.className = 'font-bold text-sm text-purple-700 select-none';
+        nameBadge.innerText = defaultName;
+        visibilityBtn.appendChild(nameBadge);
+
+        visibilityBtn.onclick = () => {
+            const isVisible = visibilityBtn.dataset.visible === 'true';
+            visibilityBtn.dataset.visible = isVisible ? 'false' : 'true';
+            visibilityBtn.style.background = isVisible ? 'transparent' : `${block.dataset.color || blockColor}20`;
+            visibilityBtn.style.borderStyle = isVisible ? 'dashed' : 'solid';
+            nameBadge.style.opacity = isVisible ? '0.3' : '1';
+            this.onUpdateCallback();
+            HistoryManager.recordState(true);
+        };
+        visibilityBtn.oncontextmenu = (e) => {
+            e.preventDefault();
+            this.openStylePopover(block, visibilityBtn);
+        };
+        grabZone.appendChild(visibilityBtn);
+
+        const contentZone = document.createElement('div');
+        contentZone.className = 'flex flex-col grow overflow-hidden px-2 py-3 gap-2';
+
+        // Header do Bloco: Nome, Dimensões e Controles de Redimensionamento (+L, -L, +C, -C)
+        const headerRow = document.createElement('div');
+        headerRow.className = 'flex items-center gap-2 flex-wrap';
+
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.className = 'matrix-name-input uppercase font-bold text-base text-purple-900 w-7 text-center bg-purple-50/80 border border-purple-200 rounded focus:bg-white focus:border-purple-500 outline-none transition-colors';
+        nameInput.value = defaultName;
+        nameInput.maxLength = 2;
+        nameInput.title = 'Nome da Matriz';
+        nameInput.oninput = () => {
+            const val = nameInput.value.trim().toUpperCase() || 'A';
+            nameBadge.innerText = val;
+            updateGiacDefinition();
+            this.onUpdateCallback();
+            HistoryManager.recordState(false);
+        };
+
+        const eqSpan = document.createElement('span');
+        eqSpan.className = 'text-gray-400 font-bold text-sm';
+        eqSpan.innerText = '=';
+
+        const dimBadge = document.createElement('span');
+        dimBadge.className = 'matrix-dim-badge px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200 select-none';
+        dimBadge.innerText = `${rows}×${cols}`;
+
+        // Controles de Linhas e Colunas (+ Linha, - Linha, + Coluna, - Coluna)
+        const ctrlGroup = document.createElement('div');
+        ctrlGroup.className = 'flex items-center gap-1 bg-gray-100 p-0.5 rounded-md text-xs';
+
+        const createCtrlBtn = (text: string, title: string, onClick: () => void) => {
+            const btn = document.createElement('button');
+            btn.className = 'px-1.5 py-0.5 rounded bg-white hover:bg-purple-600 hover:text-white font-semibold text-gray-700 transition-colors shadow-2xs cursor-pointer text-[11px]';
+            btn.innerText = text;
+            btn.title = title;
+            btn.onclick = (e) => {
+                e.stopPropagation();
+                onClick();
+            };
+            return btn;
+        };
+
+        // Grade da Matriz com Parênteses / Colchetes Estilizados
+        const gridWrapper = document.createElement('div');
+        gridWrapper.className = 'flex items-center my-1 select-none overflow-x-auto';
+
+        const bracketLeft = document.createElement('div');
+        bracketLeft.className = 'border-l-2 border-t-2 border-b-2 border-gray-800 w-2.5 self-stretch rounded-l-xs shrink-0 mr-1.5 my-0.5';
+
+        const gridContainer = document.createElement('div');
+        gridContainer.className = 'grid gap-1.5 py-1 px-1 grow';
+
+        const bracketRight = document.createElement('div');
+        bracketRight.className = 'border-r-2 border-t-2 border-b-2 border-gray-800 w-2.5 self-stretch rounded-r-xs shrink-0 ml-1.5 my-0.5';
+
+        gridWrapper.appendChild(bracketLeft);
+        gridWrapper.appendChild(gridContainer);
+        gridWrapper.appendChild(bracketRight);
+
+        const focusCell = (r: number, c: number) => {
+            const target = gridContainer.querySelector(`.matrix-cell[data-r="${r}"][data-c="${c}"]`) as HTMLInputElement;
+            if (target) {
+                target.focus();
+                target.select();
+            }
+        };
+
+        const renderGrid = () => {
+            block.dataset.rows = rows.toString();
+            block.dataset.cols = cols.toString();
+            dimBadge.innerText = `${rows}×${cols}`;
+            gridContainer.innerHTML = '';
+            gridContainer.style.gridTemplateColumns = `repeat(${cols}, minmax(36px, 1fr))`;
+
+            for (let r = 0; r < rows; r++) {
+                if (!cellValues[r]) cellValues[r] = [];
+                for (let c = 0; c < cols; c++) {
+                    const val = cellValues[r][c] !== undefined ? cellValues[r][c] : '0';
+                    const cell = document.createElement('input');
+                    cell.type = 'text';
+                    cell.className = 'matrix-cell text-center text-xs font-mono font-medium py-1 px-1 rounded border border-gray-200 bg-white hover:border-purple-300 focus:border-purple-600 focus:ring-1 focus:ring-purple-300 outline-none transition-all shadow-2xs';
+                    cell.dataset.r = r.toString();
+                    cell.dataset.c = c.toString();
+                    cell.value = val;
+
+                    cell.oninput = () => {
+                        cellValues[r][c] = cell.value.trim() || '0';
+                        updateGiacDefinition();
+                        this.onUpdateCallback();
+                        HistoryManager.recordState(false);
+                    };
+
+                    cell.onkeydown = (e: KeyboardEvent) => {
+                        if (e.key === 'ArrowRight' && cell.selectionStart === cell.value.length) {
+                            if (c < cols - 1) focusCell(r, c + 1);
+                            else if (r < rows - 1) focusCell(r + 1, 0);
+                        } else if (e.key === 'ArrowLeft' && cell.selectionEnd === 0) {
+                            if (c > 0) focusCell(r, c - 1);
+                            else if (r > 0) focusCell(r - 1, cols - 1);
+                        } else if (e.key === 'ArrowDown') {
+                            if (r < rows - 1) focusCell(r + 1, c);
+                        } else if (e.key === 'ArrowUp') {
+                            if (r > 0) focusCell(r - 1, c);
+                        } else if (e.key === 'Enter') {
+                            e.preventDefault();
+                            if (r < rows - 1) {
+                                focusCell(r + 1, c);
+                            } else if (rows < 6) {
+                                addRow();
+                                setTimeout(() => focusCell(r + 1, c), 10);
+                            }
+                        }
+                    };
+
+                    gridContainer.appendChild(cell);
+                }
+            }
+            updateGiacDefinition();
+        };
+
+        const addRow = () => {
+            if (rows >= 6) return;
+            rows++;
+            cellValues.push(new Array(cols).fill('0'));
+            renderGrid();
+            this.onUpdateCallback();
+            HistoryManager.recordState(true);
+        };
+
+        const delRow = () => {
+            if (rows <= 1) return;
+            rows--;
+            cellValues.pop();
+            renderGrid();
+            this.onUpdateCallback();
+            HistoryManager.recordState(true);
+        };
+
+        const addCol = () => {
+            if (cols >= 6) return;
+            cols++;
+            cellValues.forEach((row: string[]) => row.push('0'));
+            renderGrid();
+            this.onUpdateCallback();
+            HistoryManager.recordState(true);
+        };
+
+        const delCol = () => {
+            if (cols <= 1) return;
+            cols--;
+            cellValues.forEach((row: string[]) => row.pop());
+            renderGrid();
+            this.onUpdateCallback();
+            HistoryManager.recordState(true);
+        };
+
+        ctrlGroup.appendChild(createCtrlBtn('+L', 'Adicionar Linha (+ Linha)', addRow));
+        ctrlGroup.appendChild(createCtrlBtn('-L', 'Remover Linha (- Linha)', delRow));
+        ctrlGroup.appendChild(createCtrlBtn('+C', 'Adicionar Coluna (+ Coluna)', addCol));
+        ctrlGroup.appendChild(createCtrlBtn('-C', 'Remover Coluna (- Coluna)', delCol));
+
+        const delBtn = document.createElement('button');
+        delBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+        delBtn.className = 'bg-transparent border-none text-gray-400 cursor-pointer p-1 shrink-0 ml-auto transition-all opacity-40 hover:opacity-100 hover:text-red-500 outline-none';
+        delBtn.onclick = () => {
+            const currentName = nameInput.value.trim().toUpperCase() || defaultName;
+            delete StateManager.giacDefinitions[currentName];
+            block.remove();
+            this.updateBlockNumbers();
+            HistoryManager.recordState(true);
+            this.onUpdateCallback();
+        };
+
+        headerRow.appendChild(nameInput);
+        headerRow.appendChild(eqSpan);
+        headerRow.appendChild(dimBadge);
+        headerRow.appendChild(ctrlGroup);
+        headerRow.appendChild(delBtn);
+        contentZone.appendChild(headerRow);
+        contentZone.appendChild(gridWrapper);
+
+        // Barra de Ações Rápidas de CAS (det, inv, tran, rref, rank, tr)
+        const actionsRow = document.createElement('div');
+        actionsRow.className = 'flex items-center gap-1 flex-wrap pt-1 border-t border-gray-100';
+
+        const resultDisplay = document.createElement('div');
+        resultDisplay.className = 'matrix-res-display w-full text-xs font-semibold text-purple-700 bg-purple-50/70 p-1.5 rounded border border-purple-200 hidden select-text';
+
+        const createCasChip = (label: string, cmd: string, giacCmd: string) => {
+            const chip = document.createElement('button');
+            chip.className = 'px-2 py-0.5 rounded text-[11px] font-bold bg-gray-100 hover:bg-purple-600 hover:text-white text-gray-700 transition-all cursor-pointer shadow-2xs';
+            chip.innerText = label;
+            chip.onclick = () => {
+                const curName = nameInput.value.trim().toUpperCase() || 'A';
+                const giacMatrix = `[[${cellValues.map((r: string[]) => r.join(', ')).join('], [')}]]`;
+                resultDisplay.innerText = 'Calculando...';
+                resultDisplay.classList.remove('hidden');
+
+                MathEngine.askGiac(`${giacCmd}(${giacMatrix})`).then(res => {
+                    const cleanRes = res.replace(/"/g, '').replace(/list\[/g, '[').trim();
+                    const win = window as any;
+                    if (win.katex) {
+                        try {
+                            const html = win.katex.renderToString(`${cmd}(${curName}) = ${cleanRes}`, { throwOnError: false });
+                            resultDisplay.innerHTML = `<div class="flex items-center justify-between"><span>${html}</span><button class="add-as-block-btn text-[10px] text-purple-600 hover:underline cursor-pointer ml-2 shrink-0 font-bold">+ Bloco</button></div>`;
+                        } catch(e) {
+                            resultDisplay.innerText = `${cmd}(${curName}) = ${cleanRes}`;
+                        }
+                    } else {
+                        resultDisplay.innerText = `${cmd}(${curName}) = ${cleanRes}`;
+                    }
+
+                    const addBlockBtn = resultDisplay.querySelector('.add-as-block-btn');
+                    if (addBlockBtn) {
+                        addBlockBtn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            this.addExpression(`${cmd}(${curName})`, true);
+                        });
+                    }
+                });
+            };
+            return chip;
+        };
+
+        actionsRow.appendChild(createCasChip('det', 'Determinant', 'det'));
+        actionsRow.appendChild(createCasChip('A⁻¹', 'Invert', 'inv'));
+        actionsRow.appendChild(createCasChip('Aᵀ', 'Transpose', 'tran'));
+        actionsRow.appendChild(createCasChip('rref', 'ReducedRowEchelonForm', 'rref'));
+        actionsRow.appendChild(createCasChip('rank', 'MatrixRank', 'rank'));
+        actionsRow.appendChild(createCasChip('tr', 'Trace', 'trace'));
+
+        contentZone.appendChild(actionsRow);
+        contentZone.appendChild(resultDisplay);
+
+        block.appendChild(grabZone);
+        block.appendChild(contentZone);
+
+        const updateGiacDefinition = () => {
+            const curName = nameInput.value.trim().toUpperCase() || 'A';
+            const giacMatrix = `[[${cellValues.map((r: string[]) => r.join(', ')).join('], [')}]]`;
+            const giacDef = `usr_${curName}:=${giacMatrix}`;
+            StateManager.giacDefinitions[curName] = giacDef;
+            StateManager.casSolutions = {};
+            MathEngine.askGiac(giacDef);
+        };
+
+        renderGrid();
+        this.setupBlockDrag(block, grabZone);
+        this.container.appendChild(block);
+        if ((window as any).lucide) (window as any).lucide.createIcons({ root: block });
+
+        this.updateBlockNumbers();
+        if (autoFocus) {
+            setTimeout(() => {
+                const firstCell = gridContainer.querySelector('.matrix-cell') as HTMLInputElement;
+                if (firstCell) firstCell.focus();
+            }, 20);
+        }
+
+        return blockId;
+    }
+
+    static addTable(
+        tableData?: { xCol?: string; yCol?: string; rows?: { x: string; y: string }[]; connectLines?: boolean },
+        autoFocus: boolean = true,
+        folderId?: string
+    ): string {
+        this.blockCounter++;
+        const blockId = 'table-block-' + this.blockCounter;
+
+        const xCol = tableData?.xCol || 'x_1';
+        const yCol = tableData?.yCol || 'y_1';
+        const connectLines = tableData?.connectLines ?? false;
+        const initialRows = tableData?.rows ? JSON.parse(JSON.stringify(tableData.rows)) : [
+            { x: '0', y: '0' },
+            { x: '1', y: '1' },
+            { x: '2', y: '4' }
+        ];
+
+        const block = document.createElement('div');
+        block.id = blockId;
+        block.dataset.type = 'table';
+        const blockColor = '#4f46e5';
+        block.dataset.color = blockColor;
+        block.dataset.lineStyle = 'solid';
+        block.dataset.lineWidth = '2.5';
+        if (folderId) {
+            block.dataset.folderId = folderId;
+            block.className = 'flex border-b border-gray-100 bg-white transition-colors duration-200 relative group pl-3 border-l-4 border-l-indigo-300';
+        } else {
+            block.className = 'flex border-b border-gray-100 bg-white transition-colors duration-200 relative group';
+        }
+
+        const grabZone = document.createElement('div');
+        grabZone.className = 'w-12 bg-white flex flex-col items-center justify-start pt-[14px] shrink-0 select-none text-gray-500 gap-1.5';
+
+        const visibilityBtn = document.createElement('div');
+        visibilityBtn.className = 'visibility-toggle';
+        visibilityBtn.dataset.visible = 'true';
+        visibilityBtn.title = 'Clique: ocultar/exibir | Botão direito ou segurar: estilo';
+        visibilityBtn.style.cssText = `width: 28px; height: 28px; border-radius: 50%; border: 2px solid ${blockColor}; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; background: ${blockColor}20; position: relative;`;
+
+        const numberSpan = document.createElement('span');
+        numberSpan.className = 'block-number';
+        numberSpan.style.cssText = `font-size: 14px; font-weight: bold; color: ${blockColor}; cursor: grab;`;
+        numberSpan.innerText = this.blockCounter.toString();
+        visibilityBtn.appendChild(numberSpan);
+
+        visibilityBtn.onclick = () => {
+            const isVisible = visibilityBtn.dataset.visible === 'true';
+            visibilityBtn.dataset.visible = isVisible ? 'false' : 'true';
+            visibilityBtn.style.background = isVisible ? 'transparent' : `${block.dataset.color || blockColor}20`;
+            visibilityBtn.style.borderStyle = isVisible ? 'dashed' : 'solid';
+            numberSpan.style.opacity = isVisible ? '0.3' : '1';
+            this.onUpdateCallback();
+            HistoryManager.recordState(true);
+        };
+        visibilityBtn.oncontextmenu = (e) => {
+            e.preventDefault();
+            this.openStylePopover(block, visibilityBtn);
+        };
+        grabZone.appendChild(visibilityBtn);
+
+        const contentZone = document.createElement('div');
+        contentZone.className = 'flex flex-col grow overflow-hidden px-2 py-3 gap-2';
+
+        // Cabeçalho da Tabela
+        const headerRow = document.createElement('div');
+        headerRow.className = 'flex items-center justify-between pb-1 border-b border-gray-100';
+
+        const colLabels = document.createElement('div');
+        colLabels.className = 'flex items-center gap-4 grow pl-2';
+
+        const xColInput = document.createElement('input');
+        xColInput.type = 'text';
+        xColInput.className = 'table-col-x font-bold text-xs text-indigo-900 bg-transparent border-none outline-none w-14 text-center';
+        xColInput.value = xCol;
+
+        const yColInput = document.createElement('input');
+        yColInput.type = 'text';
+        yColInput.className = 'table-col-y font-bold text-xs text-indigo-900 bg-transparent border-none outline-none w-14 text-center';
+        yColInput.value = yCol;
+
+        colLabels.appendChild(xColInput);
+        colLabels.appendChild(yColInput);
+
+        const connectLabel = document.createElement('label');
+        connectLabel.className = 'flex items-center gap-1 text-[11px] text-gray-500 cursor-pointer select-none';
+        connectLabel.innerHTML = `<input type="checkbox" class="table-connect-lines rounded text-indigo-600 cursor-pointer" ${connectLines ? 'checked' : ''}> Ligar Linhas`;
+        const connectLinesCb = connectLabel.querySelector('.table-connect-lines') as HTMLInputElement;
+        connectLinesCb.onchange = () => {
+            this.onUpdateCallback();
+            HistoryManager.recordState(true);
+        };
+
+        const delBtn = document.createElement('button');
+        delBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+        delBtn.className = 'bg-transparent border-none text-gray-400 cursor-pointer p-1 shrink-0 ml-2 transition-all opacity-40 hover:opacity-100 hover:text-red-500 outline-none';
+        delBtn.onclick = () => {
+            block.remove();
+            this.updateBlockNumbers();
+            HistoryManager.recordState(true);
+            this.onUpdateCallback();
+        };
+
+        headerRow.appendChild(colLabels);
+        headerRow.appendChild(connectLabel);
+        headerRow.appendChild(delBtn);
+        contentZone.appendChild(headerRow);
+
+        // Container de Linhas da Tabela
+        const rowsContainer = document.createElement('div');
+        rowsContainer.className = 'flex flex-col gap-1 max-h-[220px] overflow-y-auto py-1';
+
+        const createRowEl = (xVal: string, yVal: string) => {
+            const rowDiv = document.createElement('div');
+            rowDiv.className = 'table-data-row flex items-center gap-2 group';
+
+            const xi = document.createElement('input');
+            xi.type = 'text';
+            xi.className = 'table-cell-x w-1/2 text-center text-xs font-mono py-1 px-1 rounded border border-gray-200 bg-white hover:border-indigo-300 focus:border-indigo-600 focus:ring-1 focus:ring-indigo-300 outline-none transition-all shadow-2xs';
+            xi.value = xVal;
+
+            const yi = document.createElement('input');
+            yi.type = 'text';
+            yi.className = 'table-cell-y w-1/2 text-center text-xs font-mono py-1 px-1 rounded border border-gray-200 bg-white hover:border-indigo-300 focus:border-indigo-600 focus:ring-1 focus:ring-indigo-300 outline-none transition-all shadow-2xs';
+            yi.value = yVal;
+
+            const rowDel = document.createElement('button');
+            rowDel.className = 'text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 cursor-pointer text-xs shrink-0';
+            rowDel.innerHTML = '×';
+            rowDel.onclick = () => {
+                rowDiv.remove();
+                this.onUpdateCallback();
+                HistoryManager.recordState(true);
+            };
+
+            xi.oninput = () => {
+                this.onUpdateCallback();
+                HistoryManager.recordState(false);
+            };
+            yi.oninput = () => {
+                this.onUpdateCallback();
+                HistoryManager.recordState(false);
+            };
+
+            xi.onkeydown = (e: KeyboardEvent) => {
+                if (e.key === 'Enter' || e.key === 'ArrowRight') {
+                    if (e.key === 'Enter') e.preventDefault();
+                    yi.focus();
+                } else if (e.key === 'ArrowDown') {
+                    const nextRow = rowDiv.nextElementSibling as HTMLElement;
+                    if (nextRow) {
+                        const nextXi = nextRow.querySelector('.table-cell-x') as HTMLInputElement;
+                        if (nextXi) nextXi.focus();
+                    }
+                } else if (e.key === 'ArrowUp') {
+                    const prevRow = rowDiv.previousElementSibling as HTMLElement;
+                    if (prevRow) {
+                        const prevXi = prevRow.querySelector('.table-cell-x') as HTMLInputElement;
+                        if (prevXi) prevXi.focus();
+                    }
+                }
+            };
+
+            yi.onkeydown = (e: KeyboardEvent) => {
+                if (e.key === 'Enter' || (e.key === 'Tab' && !e.shiftKey)) {
+                    const nextRow = rowDiv.nextElementSibling as HTMLElement;
+                    if (nextRow) {
+                        e.preventDefault();
+                        const nextXi = nextRow.querySelector('.table-cell-x') as HTMLInputElement;
+                        if (nextXi) nextXi.focus();
+                    } else {
+                        // Última linha: cria nova linha automaticamente (Desmos UX!)
+                        e.preventDefault();
+                        const newRow = createRowEl('', '');
+                        rowsContainer.appendChild(newRow);
+                        const newXi = newRow.querySelector('.table-cell-x') as HTMLInputElement;
+                        if (newXi) newXi.focus();
+                        this.onUpdateCallback();
+                        HistoryManager.recordState(true);
+                    }
+                } else if (e.key === 'ArrowLeft') {
+                    xi.focus();
+                } else if (e.key === 'ArrowDown') {
+                    const nextRow = rowDiv.nextElementSibling as HTMLElement;
+                    if (nextRow) {
+                        const nextYi = nextRow.querySelector('.table-cell-y') as HTMLInputElement;
+                        if (nextYi) nextYi.focus();
+                    }
+                } else if (e.key === 'ArrowUp') {
+                    const prevRow = rowDiv.previousElementSibling as HTMLElement;
+                    if (prevRow) {
+                        const prevYi = prevRow.querySelector('.table-cell-y') as HTMLInputElement;
+                        if (prevYi) prevYi.focus();
+                    }
+                }
+            };
+
+            rowDiv.appendChild(xi);
+            rowDiv.appendChild(yi);
+            rowDiv.appendChild(rowDel);
+            return rowDiv;
+        };
+
+        initialRows.forEach((r: { x: string; y: string }) => {
+            rowsContainer.appendChild(createRowEl(r.x, r.y));
+        });
+        contentZone.appendChild(rowsContainer);
+
+        // Botão + Linha
+        const addRowBtn = document.createElement('button');
+        addRowBtn.className = 'self-start py-1 px-2.5 rounded bg-gray-50 hover:bg-indigo-50 hover:text-indigo-600 text-gray-600 border border-gray-200 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer shadow-2xs mt-1';
+        addRowBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Linha`;
+        addRowBtn.onclick = () => {
+            const newRow = createRowEl('', '');
+            rowsContainer.appendChild(newRow);
+            const newXi = newRow.querySelector('.table-cell-x') as HTMLInputElement;
+            if (newXi) newXi.focus();
+            this.onUpdateCallback();
+            HistoryManager.recordState(true);
+        };
+        contentZone.appendChild(addRowBtn);
+
+        block.appendChild(grabZone);
+        block.appendChild(contentZone);
+
+        this.setupBlockDrag(block, grabZone);
+        this.container.appendChild(block);
+        if ((window as any).lucide) (window as any).lucide.createIcons({ root: block });
+
+        this.updateBlockNumbers();
+        if (autoFocus) {
+            setTimeout(() => {
+                const fc = rowsContainer.querySelector('.table-cell-x') as HTMLInputElement;
+                if (fc) fc.focus();
+            }, 20);
+        }
+        return blockId;
+    }
+
     static addFolder(title: string = 'Nova Pasta', autoFocus: boolean = true): string {
         this.blockCounter++;
         const folderId = 'folder-' + this.blockCounter;
@@ -995,6 +1622,32 @@ export class ExpressionManager {
                 if (noteEl) {
                     noteEl.id = b.id;
                 }
+            } else if (b.type === 'matrix') {
+                const mid = this.addMatrix(b.matrixData, false, b.folderId);
+                const matEl = document.getElementById(mid);
+                if (matEl) {
+                    matEl.id = b.id;
+                    this.applyBlockColor(matEl, b.color);
+                    matEl.dataset.lineStyle = b.lineStyle;
+                    matEl.dataset.lineWidth = b.lineWidth.toString();
+                    if (!b.visible) {
+                        const visBtn = matEl.querySelector('.visibility-toggle') as HTMLElement;
+                        if (visBtn) visBtn.click();
+                    }
+                }
+            } else if (b.type === 'table') {
+                const tid = this.addTable(b.tableData, false, b.folderId);
+                const tblEl = document.getElementById(tid);
+                if (tblEl) {
+                    tblEl.id = b.id;
+                    this.applyBlockColor(tblEl, b.color);
+                    tblEl.dataset.lineStyle = b.lineStyle;
+                    tblEl.dataset.lineWidth = b.lineWidth.toString();
+                    if (!b.visible) {
+                        const visBtn = tblEl.querySelector('.visibility-toggle') as HTMLElement;
+                        if (visBtn) visBtn.click();
+                    }
+                }
             } else {
                 const bid = this.addBlock(false, b.content, b.folderId);
                 const blockEl = document.getElementById(bid);
@@ -1052,7 +1705,12 @@ export class ExpressionManager {
         visible: boolean, 
         color: string,
         lineStyle: 'solid' | 'dashed' | 'dotted',
-        lineWidth: number
+        lineWidth: number,
+        isTable?: boolean,
+        tablePoints?: { x: number, y: number, rowIndex: number, tableBlockId: string }[],
+        connectLines?: boolean,
+        isMatrix?: boolean,
+        matrixName?: string
     }[] {
         const blocks = Array.from(this.container.children);
         const exprs: {
@@ -1061,7 +1719,12 @@ export class ExpressionManager {
             visible: boolean, 
             color: string,
             lineStyle: 'solid' | 'dashed' | 'dotted',
-            lineWidth: number
+            lineWidth: number,
+            isTable?: boolean,
+            tablePoints?: { x: number, y: number, rowIndex: number, tableBlockId: string }[],
+            connectLines?: boolean,
+            isMatrix?: boolean,
+            matrixName?: string
         }[] = [];
 
         // Mapa de visibilidade das pastas
@@ -1076,21 +1739,80 @@ export class ExpressionManager {
         blocks.forEach((block: any) => {
             if (block.dataset.type === 'note' || block.dataset.type === 'folder') return;
 
-            const mf = block.querySelector('math-field');
             const visBtn = block.querySelector('.visibility-toggle');
+            let visible = visBtn ? (visBtn as HTMLElement).dataset.visible === 'true' : true;
+            
+            // Se pertencer a uma pasta oculta, fica oculta no gráfico
+            const folderId = block.dataset.folderId;
+            if (folderId && folderVisMap[folderId] === false) {
+                visible = false;
+            }
+
+            const color = block.dataset.color || '#2d70b3';
+            const lineStyle = (block.dataset.lineStyle as 'solid' | 'dashed' | 'dotted') || 'solid';
+            const lineWidth = parseFloat(block.dataset.lineWidth || '2.5');
+
+            if (block.dataset.type === 'matrix') {
+                const nameInput = block.querySelector('.matrix-name-input') as HTMLInputElement;
+                const name = nameInput ? nameInput.value.trim().toUpperCase() : 'A';
+                const rows = parseInt(block.dataset.rows || '2');
+                const cols = parseInt(block.dataset.cols || '2');
+                const data: string[][] = [];
+                for (let r = 0; r < rows; r++) {
+                    const rowArr: string[] = [];
+                    for (let c = 0; c < cols; c++) {
+                        const cell = block.querySelector(`.matrix-cell[data-r="${r}"][data-c="${c}"]`) as HTMLInputElement;
+                        rowArr.push(cell ? (cell.value.trim() || '0') : '0');
+                    }
+                    data.push(rowArr);
+                }
+                const giacMatrix = `[[${data.map(r => r.join(', ')).join('], [')}]]`;
+                exprs.push({
+                    id: block.id,
+                    rawAscii: `${name} = ${giacMatrix}`,
+                    visible,
+                    color,
+                    lineStyle,
+                    lineWidth,
+                    isMatrix: true,
+                    matrixName: name
+                });
+                return;
+            }
+
+            if (block.dataset.type === 'table') {
+                const connectLinesCb = block.querySelector('.table-connect-lines') as HTMLInputElement;
+                const connectLines = connectLinesCb ? connectLinesCb.checked : false;
+                const tablePoints: { x: number, y: number, rowIndex: number, tableBlockId: string }[] = [];
+                const rowEls = block.querySelectorAll('.table-data-row');
+                rowEls.forEach((rEl: HTMLElement, idx: number) => {
+                    const xi = rEl.querySelector('.table-cell-x') as HTMLInputElement;
+                    const yi = rEl.querySelector('.table-cell-y') as HTMLInputElement;
+                    if (xi && yi && xi.value.trim() !== '' && yi.value.trim() !== '') {
+                        const nx = parseFloat(xi.value.trim());
+                        const ny = parseFloat(yi.value.trim());
+                        if (isFinite(nx) && isFinite(ny)) {
+                            tablePoints.push({ x: nx, y: ny, rowIndex: idx, tableBlockId: block.id });
+                        }
+                    }
+                });
+                exprs.push({
+                    id: block.id,
+                    rawAscii: '',
+                    visible,
+                    color,
+                    lineStyle,
+                    lineWidth,
+                    isTable: true,
+                    tablePoints,
+                    connectLines
+                });
+                return;
+            }
+
+            const mf = block.querySelector('math-field');
             if (mf) {
                 const ascii = mf.getValue('ascii-math');
-                let visible = visBtn ? (visBtn as HTMLElement).dataset.visible === 'true' : true;
-                
-                // Se pertencer a uma pasta oculta, fica oculta no gráfico
-                const folderId = block.dataset.folderId;
-                if (folderId && folderVisMap[folderId] === false) {
-                    visible = false;
-                }
-
-                const color = block.dataset.color || '#2d70b3';
-                const lineStyle = (block.dataset.lineStyle as 'solid' | 'dashed' | 'dotted') || 'solid';
-                const lineWidth = parseFloat(block.dataset.lineWidth || '2.5');
                 if (ascii) exprs.push({ id: block.id, rawAscii: ascii, visible, color, lineStyle, lineWidth });
             }
         });

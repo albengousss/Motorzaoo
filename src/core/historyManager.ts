@@ -2,7 +2,7 @@ import { ExpressionManager } from '../ui/expressionManager';
 
 export interface BlockSnapshot {
     id: string;
-    type: 'expression' | 'note' | 'folder';
+    type: 'expression' | 'note' | 'folder' | 'matrix' | 'table';
     content: string; // ascii/latex para math, texto para nota, titulo para pasta
     color: string;
     lineStyle: 'solid' | 'dashed' | 'dotted';
@@ -13,6 +13,18 @@ export interface BlockSnapshot {
     sliderMin?: string;
     sliderMax?: string;
     sliderVal?: string;
+    matrixData?: {
+        name: string;
+        rows: number;
+        cols: number;
+        data: string[][];
+    };
+    tableData?: {
+        xCol: string;
+        yCol: string;
+        rows: { x: string; y: string }[];
+        connectLines?: boolean;
+    };
 }
 
 export interface HistorySnapshot {
@@ -114,8 +126,10 @@ export class HistoryManager {
         const container = ExpressionManager.container;
         if (container) {
             Array.from(container.children).forEach((el: any) => {
-                const blockType = (el.dataset.type as 'expression' | 'note' | 'folder') || 'expression';
+                const blockType = (el.dataset.type as 'expression' | 'note' | 'folder' | 'matrix' | 'table') || 'expression';
                 let content = '';
+                let matrixData: any = undefined;
+                let tableData: any = undefined;
 
                 if (blockType === 'expression') {
                     const mf = el.querySelector('math-field');
@@ -126,6 +140,40 @@ export class HistoryManager {
                 } else if (blockType === 'folder') {
                     const titleInput = el.querySelector('.folder-title-input');
                     content = titleInput ? titleInput.value : 'Pasta';
+                } else if (blockType === 'matrix') {
+                    const nameInput = el.querySelector('.matrix-name-input') as HTMLInputElement;
+                    const name = nameInput ? nameInput.value.trim() : 'A';
+                    const rows = parseInt(el.dataset.rows || '2');
+                    const cols = parseInt(el.dataset.cols || '2');
+                    const data: string[][] = [];
+                    for (let r = 0; r < rows; r++) {
+                        const rowArr: string[] = [];
+                        for (let c = 0; c < cols; c++) {
+                            const cell = el.querySelector(`.matrix-cell[data-r="${r}"][data-c="${c}"]`) as HTMLInputElement;
+                            rowArr.push(cell ? cell.value : '0');
+                        }
+                        data.push(rowArr);
+                    }
+                    content = `${name} = [[${data.map(r => r.join(', ')).join('], [')}]]`;
+                    matrixData = { name, rows, cols, data };
+                } else if (blockType === 'table') {
+                    const xColInput = el.querySelector('.table-col-x') as HTMLInputElement;
+                    const yColInput = el.querySelector('.table-col-y') as HTMLInputElement;
+                    const xCol = xColInput ? xColInput.value.trim() : 'x_1';
+                    const yCol = yColInput ? yColInput.value.trim() : 'y_1';
+                    const connectLinesCb = el.querySelector('.table-connect-lines') as HTMLInputElement;
+                    const connectLines = connectLinesCb ? connectLinesCb.checked : false;
+                    const rows: { x: string; y: string }[] = [];
+                    const rowEls = el.querySelectorAll('.table-data-row');
+                    rowEls.forEach((rEl: HTMLElement) => {
+                        const xi = rEl.querySelector('.table-cell-x') as HTMLInputElement;
+                        const yi = rEl.querySelector('.table-cell-y') as HTMLInputElement;
+                        if (xi && yi) {
+                            rows.push({ x: xi.value, y: yi.value });
+                        }
+                    });
+                    content = `Table(${xCol}, ${yCol})`;
+                    tableData = { xCol, yCol, rows, connectLines };
                 }
 
                 const visBtn = el.querySelector('.visibility-toggle');
@@ -148,7 +196,9 @@ export class HistoryManager {
                     isCollapsed: el.dataset.collapsed === 'true',
                     sliderMin: minInput ? minInput.value : undefined,
                     sliderMax: maxInput ? maxInput.value : undefined,
-                    sliderVal: sliderInput ? sliderInput.value : undefined
+                    sliderVal: sliderInput ? sliderInput.value : undefined,
+                    matrixData,
+                    tableData
                 });
             });
         }

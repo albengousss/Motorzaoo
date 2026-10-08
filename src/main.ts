@@ -4,7 +4,7 @@ import { PrattParser } from './core/prattParser';
 import { StateManager } from './core/stateManager';
 import { HistoryManager } from './core/historyManager';
 
-let validEquations: {id: string, ast: any, isImplicit: boolean, operator: string, isEdo: boolean, isDerivative: boolean, derivVar?: string, isIvp?: boolean, isPoint?: boolean, pointX?: number, pointY?: number, pointLabel?: string, isParametric?: boolean, astX?: any, astY?: any, astZ?: any, isExplicitZ?: boolean, tMin?: number, tMax?: number, paramVar?: string, depVar?: string, indepVar?: string, condition?: (x: number, y: number, scope: any, t?: number) => boolean, name?: string, x0?: number, y0?: number, isHidden?: boolean, variable?: string, color?: string, lineStyle?: 'solid' | 'dashed' | 'dotted', lineWidth?: number}[] = [];
+let validEquations: {id: string, ast?: any, isImplicit: boolean, operator: string, isEdo: boolean, isDerivative: boolean, derivVar?: string, isIvp?: boolean, isPoint?: boolean, pointX?: number, pointY?: number, pointLabel?: string, isParametric?: boolean, astX?: any, astY?: any, astZ?: any, isExplicitZ?: boolean, tMin?: number, tMax?: number, paramVar?: string, depVar?: string, indepVar?: string, condition?: (x: number, y: number, scope: any, t?: number) => boolean, name?: string, x0?: number, y0?: number, isHidden?: boolean, variable?: string, color?: string, lineStyle?: 'solid' | 'dashed' | 'dotted', lineWidth?: number, isTable?: boolean, tablePoints?: { x: number, y: number, rowIndex: number, tableBlockId: string }[], connectLines?: boolean}[] = [];
 let dragDistance = 0;
 import { MathEngine } from './core/mathEngine';
 import { Renderer } from './graphics/renderer';
@@ -78,6 +78,20 @@ interface PinnedPoint {
     showTangent?: boolean;
     slope?: number;
 }
+
+interface DraggablePoint {
+    mathX: number;
+    mathY: number;
+    color: string;
+    type: 'table' | 'expression';
+    tableBlockId?: string;
+    rowIndex?: number;
+    exprBlockId?: string;
+}
+
+let draggableCanvasPoints: DraggablePoint[] = [];
+let activeDragPoint: DraggablePoint | null = null;
+let isDraggingPoint = false;
 
 let renderMemory_points: NotablePointData[] = [];
 let pinnedPoints: PinnedPoint[] = [];
@@ -256,11 +270,46 @@ function compileAllExpressions() {
     const rawData = ExpressionManager.getAllExpressions();
     validEquations = [];
     const activeVars: string[] = [];
+    const definedUserFunctionNames = new Set<string>();
 
     rawData.forEach(item => {
+        if (item.isTable) {
+            if (item.tablePoints && item.tablePoints.length > 0) {
+                validEquations.push({
+                    color: item.color,
+                    id: item.id,
+                    isTable: true,
+                    tablePoints: item.tablePoints,
+                    connectLines: item.connectLines ?? false,
+                    operator: '=',
+                    isImplicit: false,
+                    isEdo: false,
+                    isDerivative: false,
+                    isHidden: !item.visible,
+                    lineStyle: item.lineStyle,
+                    lineWidth: item.lineWidth
+                });
+            }
+            return;
+        }
+
+        if (item.isMatrix && item.matrixName) {
+            const varName = item.matrixName;
+            const rightSide = item.rawAscii.substring(item.rawAscii.indexOf('=') + 1).trim();
+            const giacDef = `usr_${varName}:=${rightSide}`;
+            if (StateManager.giacDefinitions[varName] !== giacDef) {
+                StateManager.giacDefinitions[varName] = giacDef;
+                StateManager.casSolutions = {};
+                MathEngine.askGiac(giacDef);
+            }
+            return;
+        }
+
         let ascii = item.rawAscii.trim();
         if (!ascii) {
             ExpressionManager.setResult(item.id, '');
+            ExpressionManager.setError(item.id, null);
+            ExpressionManager.setSliderSuggestions(item.id, [], () => {});
             return;
         }
         // =========================================================
@@ -832,12 +881,14 @@ function compileAllExpressions() {
                         MathEngine.compiledFuncs[funcName] = MathEngine.createDerivativeFunction(ast, derivVar);
                         MathEngine.userFunctions[funcName] = { params: paramNames, expr, ast, blockId: item.id };
                         StateManager.userFunctions[funcName] = { params: paramNames, expr, ast, blockId: item.id };
+                        definedUserFunctionNames.add(funcName);
                         validEquations.push({ color: item.color, id: item.id, ast, isImplicit: false, operator: '=', isEdo: false, isDerivative: true, derivVar, isHidden: !item.visible, variable: paramNames[0] });
                         ExpressionManager.setResult(item.id, `Derivada ${funcName}(${paramNames[0]})`);
                     } else {
                         const ast = new PrattParser(expr).parseExpression();
                         MathEngine.userFunctions[funcName] = { params: paramNames, expr, ast, blockId: item.id };
                         StateManager.userFunctions[funcName] = { params: paramNames, expr, ast, blockId: item.id };
+                        definedUserFunctionNames.add(funcName);
                         
                         if (isMultiVar) {
                             // Função multivariável (ex: f(x, y) = x^2*y + y^2/x ou f(x, y, z, a, b))
@@ -1270,6 +1321,29 @@ function compileAllExpressions() {
 
     // Run Garbage Collection for deleted sliders
     StateManager.gc(activeVars);
+
+    // Limpeza Instantânea: Remove funções de usuário apagadas ou alteradas
+    for (const fName in StateManager.userFunctions) {
+        if (!definedUserFunctionNames.has(fName)) {
+            delete StateManager.userFunctions[fName];
+            delete MathEngine.userFunctions[fName];
+            delete MathEngine.compiledFuncs[fName];
+            delete StateManager.giacDefinitions[fName];
+        }
+    }
+
+    // Limpeza de caches CAS de blocos inexistentes
+    const currentBlockIds = new Set(rawData.map(r => r.id));
+    for (const bId in StateManager.casSolutions) {
+        if (!currentBlockIds.has(bId)) {
+            delete StateManager.casSolutions[bId];
+        }
+    }
+    for (const bId in StateManager.odeSolutions) {
+        if (!currentBlockIds.has(bId)) {
+            delete StateManager.odeSolutions[bId];
+        }
+    }
 }
 
 function drawFrame() {
@@ -1286,6 +1360,7 @@ function drawFrame() {
     renderMemory_curves = [];
     renderMemory_segments = [];
     renderMemory_curve_points = [];
+    draggableCanvasPoints = [];
 
     // --- RENDERIZAÇÃO 3D ---
     if (StateManager.viewMode === '3d') {
@@ -1361,9 +1436,38 @@ function drawFrame() {
         
         const color = item.color || colors[index % colors.length];
 
+        if ((item as any).isTable && (item as any).tablePoints) {
+            const tablePoints = (item as any).tablePoints as { x: number, y: number, rowIndex: number, tableBlockId: string }[];
+            if ((item as any).connectLines && tablePoints.length > 1) {
+                renderer.drawCurve(tablePoints, color, item.lineStyle || 'solid', item.lineWidth || 2);
+                renderMemory_curve_points.push({ points: tablePoints, color });
+            }
+            tablePoints.forEach(tp => {
+                const label = `(${tp.x}, ${tp.y})`;
+                renderer.drawDiscretePoint(tp.x, tp.y, color, label);
+                renderMemory_points.push({ mathX: tp.x, mathY: tp.y, type: 'point', color, label });
+                draggableCanvasPoints.push({
+                    mathX: tp.x,
+                    mathY: tp.y,
+                    color,
+                    type: 'table',
+                    tableBlockId: tp.tableBlockId,
+                    rowIndex: tp.rowIndex
+                });
+            });
+            return;
+        }
+
         if (item.isPoint && typeof item.pointX === 'number' && typeof item.pointY === 'number') {
             renderer.drawDiscretePoint(item.pointX, item.pointY, color, item.pointLabel);
             renderMemory_points.push({ mathX: item.pointX, mathY: item.pointY, type: 'point', color, label: item.pointLabel });
+            draggableCanvasPoints.push({
+                mathX: item.pointX,
+                mathY: item.pointY,
+                color,
+                type: 'expression',
+                exprBlockId: item.id
+            });
         } else if (item.isEdo) {
             // Desenha o slope field
             const indep = item.indepVar || 'x';
@@ -2061,15 +2165,44 @@ function getClosestCurvePoint(pixelX: number, pixelY: number, maxDist: number = 
 }
 
 canvasEl.addEventListener('mousedown', (e) => { 
+    const rect = canvasEl.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    // 0. Dragging de pontos discretos (Tabelas ou Coordenadas)
+    let foundDragPt: DraggablePoint | null = null;
+    let closestDragDist = 14;
+    for (const dp of draggableCanvasPoints) {
+        const px = Camera.toPixelX(dp.mathX);
+        const py = Camera.toPixelY(dp.mathY);
+        const dist = Math.hypot(mx - px, my - py);
+        if (dist < closestDragDist) {
+            closestDragDist = dist;
+            foundDragPt = dp;
+        }
+    }
+
+    if (foundDragPt) {
+        isDraggingPoint = true;
+        activeDragPoint = foundDragPt;
+        isDragging = false;
+        isTracing = false;
+        document.body.style.cursor = 'grabbing';
+        const formatCoord = (val: number) => parseFloat(val.toFixed(4)).toString();
+        tooltip.innerText = `(${formatCoord(foundDragPt.mathX)}, ${formatCoord(foundDragPt.mathY)})`;
+        tooltip.style.display = 'block';
+        tooltip.style.left = (rect.left + Camera.toPixelX(foundDragPt.mathX)) + 'px';
+        tooltip.style.top = (rect.top + Camera.toPixelY(foundDragPt.mathY) - 10) + 'px';
+        tooltip.style.backgroundColor = foundDragPt.color;
+        tooltip.style.color = '#fff';
+        return;
+    }
+
     isDragging = true; 
     isTracing = false;
     dragDistance = 0;
     lastX = e.clientX; 
     lastY = e.clientY; 
-    
-    const rect = canvasEl.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
     
     const closest = getClosestCurvePoint(mx, my, 15);
     if (closest) {
@@ -2093,7 +2226,7 @@ canvasEl.addEventListener('mousedown', (e) => {
 });
 
 canvasEl.addEventListener('click', (e) => {
-    if (dragDistance < 5 && !isTracing) {
+    if (dragDistance < 5 && !isTracing && !isDraggingPoint) {
         const rect = canvasEl.getBoundingClientRect();
         const mx = e.clientX - rect.left;
         const my = e.clientY - rect.top;
@@ -2180,6 +2313,12 @@ canvasEl.addEventListener('click', (e) => {
 });
 
 window.addEventListener('mouseup', () => { 
+    if (isDraggingPoint) {
+        isDraggingPoint = false;
+        activeDragPoint = null;
+        document.body.style.cursor = 'default';
+        HistoryManager.recordState(true);
+    }
     isDragging = false; 
     isTracing = false;
     if (globalTracePoint) {
@@ -2199,6 +2338,52 @@ canvasEl.addEventListener('mousemove', (e) => {
         const mathX = Camera.toMathX(mouseX);
         const mathY = Camera.toMathY(mouseY);
         coordsEl.innerText = `${mathX.toFixed(3)}, ${mathY.toFixed(3)}`;
+    }
+
+    if (isDraggingPoint && activeDragPoint) {
+        const newMathX = parseFloat(Camera.toMathX(mouseX).toFixed(2));
+        const newMathY = parseFloat(Camera.toMathY(mouseY).toFixed(2));
+
+        if (activeDragPoint.type === 'table' && activeDragPoint.tableBlockId !== undefined && activeDragPoint.rowIndex !== undefined) {
+            const tblBlock = document.getElementById(activeDragPoint.tableBlockId);
+            if (tblBlock) {
+                const rows = tblBlock.querySelectorAll('.table-data-row');
+                const rowEl = rows[activeDragPoint.rowIndex];
+                if (rowEl) {
+                    const xi = rowEl.querySelector('.table-cell-x') as HTMLInputElement;
+                    const yi = rowEl.querySelector('.table-cell-y') as HTMLInputElement;
+                    if (xi && yi) {
+                        xi.value = newMathX.toString();
+                        yi.value = newMathY.toString();
+                    }
+                }
+            }
+            activeDragPoint.mathX = newMathX;
+            activeDragPoint.mathY = newMathY;
+            markExpressionsDirty();
+        } else if (activeDragPoint.type === 'expression' && activeDragPoint.exprBlockId) {
+            const exprBlock = document.getElementById(activeDragPoint.exprBlockId);
+            if (exprBlock) {
+                const mf = exprBlock.querySelector('math-field');
+                if (mf) {
+                    const currentVal = (mf as any).getValue('ascii-math');
+                    const nameMatch = currentVal.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*=/);
+                    const varPrefix = nameMatch ? `${nameMatch[1]} = ` : '';
+                    (mf as any).setValue(`${varPrefix}(${newMathX}, ${newMathY})`);
+                    activeDragPoint.mathX = newMathX;
+                    activeDragPoint.mathY = newMathY;
+                    markExpressionsDirty();
+                }
+            }
+        }
+
+        const px = Camera.toPixelX(newMathX);
+        const py = Camera.toPixelY(newMathY);
+        tooltip.innerText = `(${newMathX}, ${newMathY})`;
+        tooltip.style.display = 'block';
+        tooltip.style.left = (rect.left + px) + 'px';
+        tooltip.style.top = (rect.top + py - 10) + 'px';
+        return;
     }
 
     if (isShiftDown) {
@@ -2235,6 +2420,27 @@ canvasEl.addEventListener('mousemove', (e) => {
         }
     } else {
         const formatCoord = (val: number) => parseFloat(val.toFixed(4)).toString();
+
+        // 0. Hover sobre pontos arrastáveis
+        let foundHoverDrag: DraggablePoint | null = null;
+        for (const dp of draggableCanvasPoints) {
+            const px = Camera.toPixelX(dp.mathX);
+            const py = Camera.toPixelY(dp.mathY);
+            if (Math.hypot(mouseX - px, mouseY - py) < 14) {
+                foundHoverDrag = dp;
+                break;
+            }
+        }
+        if (foundHoverDrag) {
+            document.body.style.cursor = 'grab';
+            tooltip.innerText = `(${foundHoverDrag.mathX.toFixed(2)}, ${foundHoverDrag.mathY.toFixed(2)}) [Arrastar]`;
+            tooltip.style.display = 'block';
+            tooltip.style.left = (rect.left + Camera.toPixelX(foundHoverDrag.mathX)) + 'px';
+            tooltip.style.top = (rect.top + Camera.toPixelY(foundHoverDrag.mathY) - 10) + 'px';
+            tooltip.style.backgroundColor = foundHoverDrag.color;
+            tooltip.style.color = '#fff';
+            return;
+        }
 
         // 1. Magnetic Snapping on Notable Points (Roots, Extrema, Intercepts, Intersections)
         let foundNotable: NotablePointData | null = null;

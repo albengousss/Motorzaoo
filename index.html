@@ -92,20 +92,28 @@
       <!-- LISTA DE EXPRESSÕES — scrollable -->
       <div id="expressions-list" class="flex flex-col gap-0 overflow-y-auto flex-1 overscroll-contain"></div>
       
-      <!-- Botões Adicionar (Expressão, Nota, Pasta) -->
-      <div class="px-2.5 py-2 shrink-0 border-t border-gray-100 bg-gray-50/70">
-        <div class="grid grid-cols-3 gap-1.5">
-          <button id="add-expr-btn" class="flex items-center justify-center gap-1.5 py-1.5 px-2 bg-white hover:bg-blue-50 border border-gray-200 hover:border-blue-300 rounded-lg text-xs font-semibold text-gray-700 hover:text-blue-600 transition-all shadow-xs cursor-pointer active:scale-95" title="Adicionar Expressão Matemática">
-            <i data-lucide="plus" class="w-3.5 h-3.5 text-blue-500"></i>
-            Expressão
+      <!-- Botões Adicionar (Expressão, Tabela, Matriz, Nota, Pasta) -->
+      <div class="px-2 py-2 shrink-0 border-t border-gray-100 bg-gray-50/70">
+        <div class="grid grid-cols-5 gap-1">
+          <button id="add-expr-btn" class="flex flex-col items-center justify-center py-1.5 px-0.5 bg-white hover:bg-blue-50 border border-gray-200 hover:border-blue-300 rounded-lg text-[10px] font-semibold text-gray-700 hover:text-blue-600 transition-all shadow-xs cursor-pointer active:scale-95" title="Adicionar Expressão Matemática">
+            <i data-lucide="plus" class="w-3.5 h-3.5 text-blue-500 mb-0.5"></i>
+            <span>Expressão</span>
           </button>
-          <button id="add-note-btn" class="flex items-center justify-center gap-1.5 py-1.5 px-2 bg-white hover:bg-amber-50 border border-gray-200 hover:border-amber-300 rounded-lg text-xs font-semibold text-gray-700 hover:text-amber-600 transition-all shadow-xs cursor-pointer active:scale-95" title="Adicionar Bloco de Nota Explicativa">
-            <i data-lucide="file-text" class="w-3.5 h-3.5 text-amber-500"></i>
-            Nota
+          <button id="add-table-btn" class="flex flex-col items-center justify-center py-1.5 px-0.5 bg-white hover:bg-indigo-50 border border-gray-200 hover:border-indigo-300 rounded-lg text-[10px] font-semibold text-gray-700 hover:text-indigo-600 transition-all shadow-xs cursor-pointer active:scale-95" title="Adicionar Tabela de Coordenadas (x, y)">
+            <i data-lucide="table" class="w-3.5 h-3.5 text-indigo-500 mb-0.5"></i>
+            <span>Tabela</span>
           </button>
-          <button id="add-folder-btn" class="flex items-center justify-center gap-1.5 py-1.5 px-2 bg-white hover:bg-emerald-50 border border-gray-200 hover:border-emerald-300 rounded-lg text-xs font-semibold text-gray-700 hover:text-emerald-600 transition-all shadow-xs cursor-pointer active:scale-95" title="Adicionar Pasta Retrátil">
-            <i data-lucide="folder" class="w-3.5 h-3.5 text-emerald-500"></i>
-            Pasta
+          <button id="add-matrix-btn" class="flex flex-col items-center justify-center py-1.5 px-0.5 bg-white hover:bg-purple-50 border border-gray-200 hover:border-purple-300 rounded-lg text-[10px] font-semibold text-gray-700 hover:text-purple-600 transition-all shadow-xs cursor-pointer active:scale-95" title="Adicionar Editor de Matriz Interativa">
+            <i data-lucide="grid-3x3" class="w-3.5 h-3.5 text-purple-500 mb-0.5"></i>
+            <span>Matriz</span>
+          </button>
+          <button id="add-note-btn" class="flex flex-col items-center justify-center py-1.5 px-0.5 bg-white hover:bg-amber-50 border border-gray-200 hover:border-amber-300 rounded-lg text-[10px] font-semibold text-gray-700 hover:text-amber-600 transition-all shadow-xs cursor-pointer active:scale-95" title="Adicionar Bloco de Nota Explicativa">
+            <i data-lucide="file-text" class="w-3.5 h-3.5 text-amber-500 mb-0.5"></i>
+            <span>Nota</span>
+          </button>
+          <button id="add-folder-btn" class="flex flex-col items-center justify-center py-1.5 px-0.5 bg-white hover:bg-emerald-50 border border-gray-200 hover:border-emerald-300 rounded-lg text-[10px] font-semibold text-gray-700 hover:text-emerald-600 transition-all shadow-xs cursor-pointer active:scale-95" title="Adicionar Pasta Retrátil">
+            <i data-lucide="folder" class="w-3.5 h-3.5 text-emerald-500 mb-0.5"></i>
+            <span>Pasta</span>
           </button>
         </div>
       </div>
