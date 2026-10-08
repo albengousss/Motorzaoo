@@ -218,6 +218,138 @@ export class Renderer {
         });
     }
 
+    drawNotablePoint(p: { x: number, y: number, color?: string, isHovered?: boolean, type?: string }) {
+        const px = Camera.toPixelX(p.x);
+        const py = Camera.toPixelY(p.y);
+        const W = Camera.width;
+        const H = Camera.height;
+        if (px < -20 || px > W + 20 || py < -20 || py > H + 20) return;
+
+        const color = p.color || '#2d70b3';
+
+        if (p.isHovered) {
+            // Halo / Glow
+            this.ctx.beginPath();
+            this.ctx.arc(px, py, 10, 0, Math.PI * 2);
+            this.ctx.fillStyle = color + '33';
+            this.ctx.fill();
+
+            // Ponto central em destaque
+            this.ctx.beginPath();
+            this.ctx.arc(px, py, 6, 0, Math.PI * 2);
+            this.ctx.fillStyle = color;
+            this.ctx.fill();
+            this.ctx.lineWidth = 2.5;
+            this.ctx.strokeStyle = '#ffffff';
+            this.ctx.stroke();
+        } else {
+            // Ponto discreto com visual limpo do Desmos
+            this.ctx.beginPath();
+            this.ctx.arc(px, py, 4.5, 0, Math.PI * 2);
+            this.ctx.fillStyle = '#f8fafc';
+            this.ctx.fill();
+            this.ctx.lineWidth = 2;
+            this.ctx.strokeStyle = color;
+            this.ctx.stroke();
+        }
+    }
+
+    drawPinnedPointBadge(p: { x: number, y: number, text: string, color: string, type?: string, showTangent?: boolean, slope?: number }) {
+        const px = Camera.toPixelX(p.x);
+        const py = Camera.toPixelY(p.y);
+        const W = Camera.width;
+        const H = Camera.height;
+
+        // Se tiver tangente ativada, desenha a reta tangente no gráfico!
+        if (p.showTangent && typeof p.slope === 'number' && isFinite(p.slope)) {
+            this.ctx.save();
+            this.ctx.strokeStyle = p.color;
+            this.ctx.lineWidth = 1.5;
+            this.ctx.setLineDash([6, 4]);
+
+            const m = p.slope;
+            const x1 = Camera.xMin;
+            const y1 = p.y + m * (x1 - p.x);
+            const x2 = Camera.xMax;
+            const y2 = p.y + m * (x2 - p.x);
+
+            const px1 = Camera.toPixelX(x1);
+            const py1 = Camera.toPixelY(y1);
+            const px2 = Camera.toPixelX(x2);
+            const py2 = Camera.toPixelY(y2);
+
+            this.ctx.beginPath();
+            this.ctx.moveTo(px1, py1);
+            this.ctx.lineTo(px2, py2);
+            this.ctx.stroke();
+            this.ctx.restore();
+        }
+
+        if (px < -40 || px > W + 40 || py < -40 || py > H + 40) return;
+
+        // Desenha ponto ancorado fixo
+        this.ctx.beginPath();
+        this.ctx.arc(px, py, 6, 0, Math.PI * 2);
+        this.ctx.fillStyle = p.color;
+        this.ctx.fill();
+        this.ctx.lineWidth = 2.5;
+        this.ctx.strokeStyle = '#ffffff';
+        this.ctx.stroke();
+
+        // Caixa da etiqueta (Badge flutuante estilo Desmos)
+        this.ctx.font = 'bold 12px sans-serif';
+        const metrics = this.ctx.measureText(p.text);
+        const textWidth = metrics.width;
+        const paddingX = 8;
+        const badgeWidth = textWidth + paddingX * 2;
+        const badgeHeight = 22;
+
+        let badgeX = px - badgeWidth / 2;
+        let badgeY = py - 32;
+
+        // Evita sair dos limites da tela
+        if (badgeX < 10) badgeX = 10;
+        if (badgeX + badgeWidth > W - 10) badgeX = W - badgeWidth - 10;
+        if (badgeY < 10) badgeY = py + 12;
+
+        this.ctx.save();
+        // Sombra suave
+        this.ctx.shadowColor = 'rgba(0, 0, 0, 0.18)';
+        this.ctx.shadowBlur = 6;
+        this.ctx.shadowOffsetY = 2;
+
+        // Fundo do badge
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+        this.ctx.beginPath();
+        this.roundRect(badgeX, badgeY, badgeWidth, badgeHeight, 6);
+        this.ctx.fill();
+
+        // Borda sutil na cor da curva
+        this.ctx.shadowColor = 'transparent';
+        this.ctx.strokeStyle = p.color;
+        this.ctx.lineWidth = 1.5;
+        this.ctx.stroke();
+
+        // Texto
+        this.ctx.fillStyle = '#1e293b';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(p.text, badgeX + badgeWidth / 2, badgeY + badgeHeight / 2);
+        this.ctx.restore();
+    }
+
+    private roundRect(x: number, y: number, w: number, h: number, r: number) {
+        if (w < 2 * r) r = w / 2;
+        if (h < 2 * r) r = h / 2;
+        this.ctx.beginPath();
+        this.ctx.moveTo(x + r, y);
+        this.ctx.arcTo(x + w, y, x + w, y + h, r);
+        this.ctx.arcTo(x + w, y + h, x, y + h, r);
+        this.ctx.arcTo(x, y + h, x, y, r);
+        this.ctx.arcTo(x, y, x + w, y, r);
+        this.ctx.closePath();
+    }
+
     // Aceita cor, estilo de linha (sólida, tracejada, pontilhada) e espessura
     drawCurve(
         points: {x: number, y: number}[], 

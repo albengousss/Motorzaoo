@@ -56,7 +56,31 @@ let isShiftDown = false;
 let mouseX = 0; let mouseY = 0;
 let hoverX = false; let hoverY = false;
 
-let renderMemory_points: {mathX: number, mathY: number}[] = [];
+interface NotablePointData {
+    mathX: number;
+    mathY: number;
+    type: 'root' | 'intercept' | 'extremum' | 'intersect' | 'trace' | 'point' | 'curve' | 'y-intercept' | 'extrema';
+    color: string;
+    curveF?: (x: number) => number;
+    label?: string;
+    slope?: number;
+}
+
+interface PinnedPoint {
+    id: string;
+    mathX: number;
+    mathY: number;
+    color: string;
+    text?: string;
+    type: string;
+    curveF?: (x: number) => number;
+    showTangent?: boolean;
+    slope?: number;
+}
+
+let renderMemory_points: NotablePointData[] = [];
+let pinnedPoints: PinnedPoint[] = [];
+let hoveredNotablePoint: NotablePointData | null = null;
 let renderMemory_curves: {f: (x: number) => number, color: string}[] = [];
 let renderMemory_segments: {x1: number, y1: number, x2: number, y2: number, color: string}[] = [];
 let renderMemory_curve_points: {points: {x: number, y: number}[], color: string}[] = [];
@@ -1336,7 +1360,7 @@ function drawFrame() {
 
         if (item.isPoint && typeof item.pointX === 'number' && typeof item.pointY === 'number') {
             renderer.drawDiscretePoint(item.pointX, item.pointY, color, item.pointLabel);
-            renderMemory_points.push({ mathX: item.pointX, mathY: item.pointY });
+            renderMemory_points.push({ mathX: item.pointX, mathY: item.pointY, type: 'point', color, label: item.pointLabel });
         } else if (item.isEdo) {
             // Desenha o slope field
             const indep = item.indepVar || 'x';
@@ -1452,25 +1476,75 @@ function drawFrame() {
         }
     });
 
-    // --- ANÁLISE DE PONTOS NOTÁVEIS ---
+    // --- ANÁLISE DE PONTOS NOTÁVEIS (DESMOS STYLE) ---
     for (let i = 0; i < explicitCurves.length; i++) {
         const curve = explicitCurves[i];
         const points = MathAnalyzer.getNotablePoints(curve.f, Camera.xMin, Camera.xMax);
-        renderer.drawPoints(points, curve.color);
         
-        points.forEach(p => renderMemory_points.push({ mathX: p.x, mathY: p.y }));
+        points.forEach(p => {
+            const h = 1e-5;
+            const dfVal = (curve.f(p.x + h) - curve.f(p.x - h)) / (2 * h);
+            renderMemory_points.push({ 
+                mathX: p.x, 
+                mathY: p.y, 
+                type: p.type, 
+                color: curve.color, 
+                curveF: curve.f, 
+                slope: isFinite(dfVal) ? dfVal : undefined 
+            });
+        });
 
         for (let j = i + 1; j < explicitCurves.length; j++) {
             const other = explicitCurves[j];
             const intersects = MathAnalyzer.getIntersections(curve.f, other.f, Camera.xMin, Camera.xMax);
-            renderer.drawPoints(intersects, '#888888'); 
-            
-            intersects.forEach(p => renderMemory_points.push({ mathX: p.x, mathY: p.y }));
+            intersects.forEach(p => renderMemory_points.push({ 
+                mathX: p.x, 
+                mathY: p.y, 
+                type: 'intersect', 
+                color: '#64748b', 
+                curveF: curve.f 
+            }));
         }
     }
 
+    // Renderiza os pontos notáveis com o método dedicado de snapping
+    renderMemory_points.forEach(np => {
+        const isHovered = hoveredNotablePoint ? (Math.abs(hoveredNotablePoint.mathX - np.mathX) < 1e-4 && Math.abs(hoveredNotablePoint.mathY - np.mathY) < 1e-4) : false;
+        renderer.drawNotablePoint({
+            x: np.mathX,
+            y: np.mathY,
+            color: np.color,
+            isHovered,
+            type: np.type
+        });
+    });
+
+    // Renderiza etiquetas e pontos fixados (Pinned Points)
+    pinnedPoints.forEach(pp => {
+        if (pp.curveF) {
+            const curY = pp.curveF(pp.mathX);
+            if (!isNaN(curY) && isFinite(curY)) {
+                pp.mathY = curY;
+                const h = 1e-5;
+                const dfVal = (pp.curveF(pp.mathX + h) - pp.curveF(pp.mathX - h)) / (2 * h);
+                if (isFinite(dfVal)) pp.slope = dfVal;
+            }
+        }
+        const formatCoord = (val: number) => parseFloat(val.toFixed(4)).toString();
+        const text = `(${formatCoord(pp.mathX)}, ${formatCoord(pp.mathY)})`;
+        renderer.drawPinnedPointBadge({
+            x: pp.mathX,
+            y: pp.mathY,
+            text,
+            color: pp.color,
+            type: pp.type,
+            showTangent: pp.showTangent,
+            slope: pp.slope
+        });
+    });
+
     if (globalTracePoint) {
-        renderer.drawPoints([{x: globalTracePoint.x, y: globalTracePoint.y}], globalTracePoint.color);
+        renderer.drawDiscretePoint(globalTracePoint.x, globalTracePoint.y, globalTracePoint.color);
     }
 }
 
@@ -1531,6 +1605,8 @@ ExpressionManager.init(markExpressionsDirty);
     StateManager.giacDefinitions = {};
     StateManager.dependents = {};
     MathEngine.compiledFuncs = {};
+    pinnedPoints = [];
+    hoveredNotablePoint = null;
     ExpressionManager.addBlock();
     drawFrame();
 };
@@ -1837,7 +1913,7 @@ function updateHover() {
 }
 
 
-function getClosestCurvePoint(pixelX: number, pixelY: number, maxDist: number = 15): { mathX: number, mathY: number, px: number, py: number, color: string, dist: number } | null {
+function getClosestCurvePoint(pixelX: number, pixelY: number, maxDist: number = 15): { mathX: number, mathY: number, px: number, py: number, color: string, dist: number, curveF?: (x: number) => number, slope?: number } | null {
     let closest: any = null;
     let minDist = maxDist;
     const mathX = Camera.toMathX(pixelX);
@@ -1851,7 +1927,9 @@ function getClosestCurvePoint(pixelX: number, pixelY: number, maxDist: number = 
         const dist = Math.abs(pixelY - py);
         if (dist < minDist) {
             minDist = dist;
-            closest = { mathX, mathY: y, px: pixelX, py, color: curve.color, dist };
+            const h = 1e-5;
+            const dfVal = (curve.f(mathX + h) - curve.f(mathX - h)) / (2 * h);
+            closest = { mathX, mathY: y, px: pixelX, py, color: curve.color, dist, curveF: curve.f, slope: isFinite(dfVal) ? dfVal : undefined };
         }
     }
 
@@ -1943,9 +2021,71 @@ canvasEl.addEventListener('click', (e) => {
         const mx = e.clientX - rect.left;
         const my = e.clientY - rect.top;
         
-        const mathX = Camera.xMin + (mx / Camera.width) * (Camera.xMax - Camera.xMin);
-        const mathY = Camera.yMax - (my / Camera.height) * (Camera.yMax - Camera.yMin);
-        
+        // 1. Unpin if clicking near an existing pinned point/badge (within 18px)
+        const pinnedIdx = pinnedPoints.findIndex(pp => {
+            const px = Camera.toPixelX(pp.mathX);
+            const py = Camera.toPixelY(pp.mathY);
+            return Math.hypot(mx - px, my - py) < 18;
+        });
+        if (pinnedIdx !== -1) {
+            pinnedPoints.splice(pinnedIdx, 1);
+            scheduleFrame();
+            return;
+        }
+
+        // 2. Pin if clicking on a notable point (hoveredNotablePoint or within 16px)
+        let targetNotable = hoveredNotablePoint;
+        if (!targetNotable) {
+            for (const p of renderMemory_points) {
+                const px = Camera.toPixelX(p.mathX);
+                const py = Camera.toPixelY(p.mathY);
+                if (Math.hypot(mx - px, my - py) < 16) {
+                    targetNotable = p;
+                    break;
+                }
+            }
+        }
+        if (targetNotable) {
+            const existing = pinnedPoints.find(pp => Math.abs(pp.mathX - targetNotable!.mathX) < 1e-4 && Math.abs(pp.mathY - targetNotable!.mathY) < 1e-4);
+            if (existing) {
+                // If clicked again, toggle tangent line display
+                existing.showTangent = !existing.showTangent;
+            } else {
+                pinnedPoints.push({
+                    id: 'pin_' + Date.now() + Math.random().toString(36).slice(2, 6),
+                    mathX: targetNotable.mathX,
+                    mathY: targetNotable.mathY,
+                    color: targetNotable.color,
+                    type: targetNotable.type,
+                    curveF: targetNotable.curveF,
+                    slope: targetNotable.slope,
+                    showTangent: e.altKey || false
+                });
+            }
+            scheduleFrame();
+            return;
+        }
+
+        // 3. Pin point on curve if clicking on explicit or parametric curve
+        const closest = getClosestCurvePoint(mx, my, 16);
+        if (closest) {
+            pinnedPoints.push({
+                id: 'pin_' + Date.now() + Math.random().toString(36).slice(2, 6),
+                mathX: closest.mathX,
+                mathY: closest.mathY,
+                color: closest.color,
+                type: 'curve',
+                curveF: closest.curveF,
+                slope: closest.slope,
+                showTangent: e.altKey || false
+            });
+            scheduleFrame();
+            return;
+        }
+
+        // 4. Slope Field (EDO) Initial Condition on canvas click
+        const mathX = Camera.toMathX(mx);
+        const mathY = Camera.toMathY(my);
         const activeSlopeFields = validEquations.filter(eq => eq.isEdo);
         if (activeSlopeFields.length > 0) {
             const edoName = activeSlopeFields[0].name;
@@ -1991,11 +2131,15 @@ canvasEl.addEventListener('mousemove', (e) => {
         Camera.pan(dx, dy);
         scheduleFrame();
     } else if (isTracing) {
-        // Find closest point with a large maxDist to lock onto the curve
+        // Continuous trace locked onto curve while holding mouse
         const closest = getClosestCurvePoint(mouseX, mouseY, 2000);
         if (closest) {
             const formatCoord = (val: number) => parseFloat(val.toFixed(4)).toString();
-            tooltip.innerText = `(${formatCoord(closest.mathX)}, ${formatCoord(closest.mathY)})`;
+            let label = `(${formatCoord(closest.mathX)}, ${formatCoord(closest.mathY)})`;
+            if (typeof closest.slope === 'number' && isFinite(closest.slope)) {
+                label += ` | m=${parseFloat(closest.slope.toFixed(3))}`;
+            }
+            tooltip.innerText = label;
             tooltip.style.display = 'block';
             tooltip.style.left = (rect.left + closest.px) + 'px';
             tooltip.style.top = (rect.top + closest.py - 10) + 'px';
@@ -2007,51 +2151,85 @@ canvasEl.addEventListener('mousemove', (e) => {
             scheduleFrame();
         }
     } else {
-        let foundCollision = false;
-        let snapPixelX = 0; let snapPixelY = 0;
-        let labelText = '';
-
         const formatCoord = (val: number) => parseFloat(val.toFixed(4)).toString();
 
+        // 1. Magnetic Snapping on Notable Points (Roots, Extrema, Intercepts, Intersections)
+        let foundNotable: NotablePointData | null = null;
+        let snapDist = 16;
         for (const p of renderMemory_points) {
             const px = Camera.toPixelX(p.mathX);
             const py = Camera.toPixelY(p.mathY);
-            const dist = Math.hypot(mouseX - px, mouseY - py); 
-            
-            if (dist < 12) { 
-                foundCollision = true;
-                snapPixelX = px; snapPixelY = py;
-                labelText = `(${formatCoord(p.mathX)}, ${formatCoord(p.mathY)})`;
-                break;
+            const dist = Math.hypot(mouseX - px, mouseY - py);
+            if (dist < snapDist) {
+                snapDist = dist;
+                foundNotable = p;
             }
         }
 
-        if (!foundCollision) {
-            const closest = getClosestCurvePoint(mouseX, mouseY, 15);
-            if (closest) {
-                foundCollision = true;
-                snapPixelX = closest.px; snapPixelY = closest.py;
-                labelText = `(${formatCoord(closest.mathX)}, ${formatCoord(closest.mathY)})`;
-            }
-        }
+        if (foundNotable) {
+            const needRedraw = !hoveredNotablePoint || 
+                hoveredNotablePoint.mathX !== foundNotable.mathX || 
+                hoveredNotablePoint.mathY !== foundNotable.mathY;
+            hoveredNotablePoint = foundNotable;
+            if (needRedraw) scheduleFrame();
 
-        if (foundCollision) {
-            tooltip.innerText = labelText;
+            const snapPx = Camera.toPixelX(foundNotable.mathX);
+            const snapPy = Camera.toPixelY(foundNotable.mathY);
+
+            let typePrefix = '';
+            if (foundNotable.type === 'root') typePrefix = 'Raiz: ';
+            else if (foundNotable.type === 'y-intercept' || foundNotable.type === 'intercept') typePrefix = 'Intercepto: ';
+            else if (foundNotable.type === 'extrema' || foundNotable.type === 'extremum') typePrefix = 'Extremo: ';
+            else if (foundNotable.type === 'intersect') typePrefix = 'Interseção: ';
+
+            let label = `${typePrefix}(${formatCoord(foundNotable.mathX)}, ${formatCoord(foundNotable.mathY)})`;
+            if (typeof foundNotable.slope === 'number' && isFinite(foundNotable.slope)) {
+                label += ` | m=${parseFloat(foundNotable.slope.toFixed(3))}`;
+            }
+
+            tooltip.innerText = label;
             tooltip.style.display = 'block';
-            tooltip.style.left = (rect.left + snapPixelX) + 'px';
-            tooltip.style.top = (rect.top + snapPixelY - 10) + 'px';
-            tooltip.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
-            document.body.style.cursor = 'crosshair';
+            tooltip.style.left = (rect.left + snapPx) + 'px';
+            tooltip.style.top = (rect.top + snapPy - 12) + 'px';
+            tooltip.style.backgroundColor = foundNotable.color;
+            tooltip.style.color = '#fff';
+            document.body.style.cursor = 'pointer';
         } else {
-            tooltip.style.display = 'none';
-            document.body.style.cursor = 'default';
+            if (hoveredNotablePoint) {
+                hoveredNotablePoint = null;
+                scheduleFrame();
+            }
+
+            // 2. Smooth Curve Hover Tracing
+            const closest = getClosestCurvePoint(mouseX, mouseY, 14);
+            if (closest) {
+                let label = `(${formatCoord(closest.mathX)}, ${formatCoord(closest.mathY)})`;
+                if (typeof closest.slope === 'number' && isFinite(closest.slope)) {
+                    label += ` | m=${parseFloat(closest.slope.toFixed(3))}`;
+                }
+                tooltip.innerText = label;
+                tooltip.style.display = 'block';
+                tooltip.style.left = (rect.left + closest.px) + 'px';
+                tooltip.style.top = (rect.top + closest.py - 10) + 'px';
+                tooltip.style.backgroundColor = closest.color;
+                tooltip.style.color = '#fff';
+                document.body.style.cursor = 'crosshair';
+            } else {
+                tooltip.style.display = 'none';
+                document.body.style.cursor = 'default';
+            }
         }
     }
     lastX = e.clientX; lastY = e.clientY;
 });
 
-
-canvasEl.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+canvasEl.addEventListener('mouseleave', () => { 
+    tooltip.style.display = 'none'; 
+    if (hoveredNotablePoint) {
+        hoveredNotablePoint = null;
+        scheduleFrame();
+    }
+});
 
 canvasEl.addEventListener('wheel', (e) => {
     e.preventDefault();
