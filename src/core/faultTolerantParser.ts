@@ -77,6 +77,30 @@ export class FaultTolerantParser {
             }
         }
 
+        // Operador diferencial: d/dx, \frac{d}{dx}, etc. O 'd' nunca é variável livre!
+        const derivVarMatch = cleaned.match(/(?:\\frac\{\s*(?:\\mathrm\{d\}|d)\s*\}\{\s*(?:\\mathrm\{d\}|d)([a-zA-Z_][a-zA-Z0-9_]*)\s*\}|d\/d([a-zA-Z_][a-zA-Z0-9_]*)|(?:\(?d\)?\/\(?d([a-zA-Z_][a-zA-Z0-9_]*)\)?))\b/i);
+        if (derivVarMatch) {
+            const dVar = derivVarMatch[1] || derivVarMatch[2] || derivVarMatch[3];
+            if (dVar) boundSet.add(dVar.toLowerCase());
+        }
+
+        // Remove fragmentos de operadores diferenciais
+        cleaned = cleaned
+            .replace(/\\frac\{\s*(?:\\mathrm\{d\}|d)\s*\}\{\s*(?:\\mathrm\{d\}|d)([a-zA-Z_][a-zA-Z0-9_]*)\s*\}/gi, ' ')
+            .replace(/(?:^|[^a-zA-Z0-9_])\(?\s*d\s*\)?\s*\/\s*\(?\s*d(?:[a-zA-Z_][a-zA-Z0-9_]*)?\s*\)?/gi, ' ')
+            .replace(/\bd\/d(?:[a-zA-Z_][a-zA-Z0-9_]*)?\b/gi, ' ')
+            .replace(/\bddx\b/gi, ' ')
+            .replace(/\\differentialD/gi, ' ')
+            .replace(/\\mathrm\{d\}/gi, ' ')
+            .replace(/\\text\{d\}/gi, ' ')
+            .replace(/\\partial/gi, ' ');
+
+        // Remove comandos LaTeX de formatação (ex: \frac, \left, \right, \operatorname)
+        cleaned = cleaned.replace(/\\[a-zA-Z]+/g, ' ');
+
+        // Remove diferenciais no final de integrais (ex: dx, dt, dy)
+        cleaned = cleaned.replace(/\bd\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i, '');
+
         const freeVars = new Set<string>();
 
         // Regex para capturar:
@@ -131,6 +155,14 @@ export class FaultTolerantParser {
 
         if (!trimmedAscii && !trimmedLatex) {
             return { isIncomplete: false, warning: null };
+        }
+
+        // Operador diferencial incompleto: \frac{d}{dx} ou d/dx sem argumento
+        if (
+            /^(?:\\frac\{\s*(?:\\mathrm\{d\}|d)\s*\}\{\s*(?:\\mathrm\{d\}|d)[a-zA-Z_]?\s*\}|d\/d[a-zA-Z_]?|\(?d\)?\/\(?d[a-zA-Z_]?\)?)\s*$/i.test(trimmedLatex) ||
+            /^(?:d\/d[a-zA-Z_]?|\(?d\)?\/\(?d[a-zA-Z_]?\)?)\s*$/i.test(trimmedAscii)
+        ) {
+            return { isIncomplete: true, warning: 'Informe a função para derivar (ex: d/dx(x^2)).' };
         }
 
         // Raiz quadrada vazia: \sqrt{}

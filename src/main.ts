@@ -148,17 +148,47 @@ const casCommandsList = new Set([
 /** Substitui variáveis definidas pelo utilizador com o prefixo usr_ para o Giac */
 function prefixGiac(str: string): string {
     let res = str;
-    // Normalizações de matrizes e operadores estilo Desmos
-    res = res.replace(/([A-Za-z_][A-Za-z0-9_]*)\^\{?T\}?/g, 'tran($1)');
-    res = res.replace(/([A-Za-z_][A-Za-z0-9_]*)\^\{?-1\}?/g, 'inv($1)');
-    res = res.replace(/\btr\(([^)]+)\)/g, 'trace($1)');
+    // Transposta: A^T, A^{T}, A^{\top}, A^{\intercal}, A'
+    res = res.replace(/([A-Za-z_][A-Za-z0-9_]*)\^\{?(?:T|\\top|intercal)\}?/g, 'tran($1)');
+    res = res.replace(/([A-Za-z_][A-Za-z0-9_]*)'/g, 'tran($1)');
+
+    // Inversa: A^{-1}, A^-1, A^(-1)
+    res = res.replace(/([A-Za-z_][A-Za-z0-9_]*)\^\{?(?:-1|\(-1\)\}?|\^-1)/g, 'inv($1)');
+
+    // Aliases CAS comuns
+    res = res.replace(/\btr\(([^)]+)\)/gi, 'trace($1)');
+    res = res.replace(/\\?det\s*\(([^)]+)\)/gi, 'det($1)');
+    res = res.replace(/\bdeterminant\s*\(([^)]+)\)/gi, 'det($1)');
+    res = res.replace(/\breducedrowechelonform\s*\(([^)]+)\)/gi, 'rref($1)');
+    res = res.replace(/\bmatrixrank\s*\(([^)]+)\)/gi, 'rank($1)');
+    res = res.replace(/\binvert\s*\(([^)]+)\)/gi, 'inv($1)');
+    res = res.replace(/\btranspose\s*\(([^)]+)\)/gi, 'tran($1)');
+    res = res.replace(/\beigenvalues\s*\(([^)]+)\)/gi, 'eigenvalues($1)');
+    res = res.replace(/\beigenvectors\s*\(([^)]+)\)/gi, 'eigenvectors($1)');
+
+    // Multiplicação escalar implícita (ex: 2A -> 2*A, 3.5B -> 3.5*B)
+    res = res.replace(/(\d+(?:\.\d+)?)\s*([A-Za-z_][A-Za-z0-9_]*)/g, '$1*$2');
+
+    // Símbolos de multiplicação LaTeX e unicode
     res = res.replace(/\\cdot/g, '*');
     res = res.replace(/\\times/g, '*');
 
-    const vars = Object.keys(StateManager.giacDefinitions);
+    // Multiplicação matricial implícita entre variáveis matriciais: A B -> A * B ou AB -> A * B
+    const knownVars = Object.keys(StateManager.giacDefinitions);
+    for (const v1 of knownVars) {
+        for (const v2 of knownVars) {
+            res = res.replace(new RegExp(`(?:^|(?<=[^a-zA-Z0-9_]))${v1}\\s+${v2}(?=[^a-zA-Z0-9_]|$)`, 'g'), `${v1}*${v2}`);
+            if (v1.length === 1 && v2.length === 1 && v1 !== v2) {
+                res = res.replace(new RegExp(`(?:^|(?<=[^a-zA-Z0-9_]))${v1}${v2}(?=[^a-zA-Z0-9_]|$)`, 'g'), `${v1}*${v2}`);
+            }
+        }
+    }
+
+    const vars = [...knownVars];
     vars.sort((a, b) => b.length - a.length); // substitui as mais longas primeiro para evitar colisões
     for (const v of vars) {
-        res = res.replace(new RegExp(`\\b${v}\\b`, 'g'), `usr_${v}`);
+        // Substitui a variável sem engolir se já estiver prefixada com usr_
+        res = res.replace(new RegExp(`(?:^|(?<=[^a-zA-Z0-9_]))${v}(?=[^a-zA-Z0-9_]|$)`, 'g'), `usr_${v}`);
     }
     return res;
 }
@@ -398,13 +428,19 @@ function compileAllExpressions() {
             .replace(/[´`’′]/g, "'")
             .replace(/\^'+/g, m => m.replace(/\^/g, ''));
 
+        // Converter d/dx(expr) ou \frac{d}{dx}(expr) ou d/dx expr para diff(expr, x) ANTES de normalizar frações
+        cleanStr = cleanStr
+            .replace(/(?:\\frac\{\s*(?:\\mathrm\{d\}|d)\s*\}\{\s*(?:\\mathrm\{d\}|d)([a-zA-Z_])\s*\}|d\/d([a-zA-Z_])|(?:\(?\(?d\)?\/\(?d([a-zA-Z_])\)?\)?))\s*\(([^)]+)\)/gi,
+                (_m, v1, v2, v3, expr) => `diff(${expr.trim()}, ${v1 || v2 || v3})`
+            )
+            .replace(/(?:\\frac\{\s*(?:\\mathrm\{d\}|d)\s*\}\{\s*(?:\\mathrm\{d\}|d)([a-zA-Z_])\s*\}|d\/d([a-zA-Z_])|(?:\(?\(?d\)?\/\(?d([a-zA-Z_])\)?\)?))\s+([a-zA-Z0-9_]+(?:\([^)]*\))?)/gi,
+                (_m, v1, v2, v3, expr) => `diff(${expr.trim()}, ${v1 || v2 || v3})`
+            );
+
         // Normalização de frações (LaTeX \frac{a}{b} e AsciiMath frac(a)(b))
         cleanStr = cleanStr
             .replace(/frac\s*\(([^)]+)\)\s*\(([^)]+)\)/g, '(($1)/($2))')
             .replace(/\\frac\s*\{([^}]+)\}\s*\{([^}]+)\}/g, '(($1)/($2))');
-
-        // Convert d/dx(expr) to diff(expr, x)
-        cleanStr = cleanStr.replace(/(?:\\frac\{d\}\{d([a-zA-Z_])\}|d\/d([a-zA-Z_])|\(d\)\/\(d([a-zA-Z_])\))\s*\(([^)]+)\)/g, 'diff($4, $1$2$3)');
 
         // Normalização universal de diferenciais e integrais (LaTeX e MathLive)
         cleanStr = cleanStr
@@ -1058,19 +1094,23 @@ function compileAllExpressions() {
             const cleanMatStr = rightSideClean.replace(/\\/g, '');
             const isMatrix = cleanMatStr.startsWith('{') || cleanMatStr.startsWith('[') || 
                              cleanMatStr.startsWith('lbrace') || cleanMatStr.startsWith('matrix') ||
-                             rawLatex.includes('\\{') || rawLatex.includes('\\bmatrix') || rawLatex.includes('\\pmatrix');
+                             cleanMatStr.startsWith('begin{') ||
+                             rawLatex.includes('\\{') || rawLatex.includes('matrix}') || rawLatex.includes('\\bmatrix') || rawLatex.includes('\\pmatrix') || rawLatex.includes('\\begin{');
             
             if (isMatrix) {
-                // Se o rightSideClean tiver lbrace, vamos tentar usar o latex diretamente!
+                // Se o rightSideClean tiver lbrace ou begin{matrix}, vamos tentar usar o latex diretamente!
                 let giacMatrix = '';
-                if (cleanMatStr.startsWith('lbrace') || !cleanMatStr.includes('{')) {
+                if (cleanMatStr.startsWith('lbrace') || cleanMatStr.startsWith('begin{') || rawLatex.includes('\\begin{') || !cleanMatStr.includes('{')) {
                     // Limpar o LaTeX para Giac: \{ -> [ e \} -> ]
                     giacMatrix = rawLatex.replace(/\\left\\{/g, '[').replace(/\\right\\}/g, ']')
                                          .replace(/\\{/g, '[').replace(/\\}/g, ']')
                                          .replace(/\\left\[/g, '[').replace(/\\right\]/g, ']')
+                                         .replace(/\\begin\{(?:b|p|v|V)?matrix\}/g, '[')
+                                         .replace(/\\end\{(?:b|p|v|V)?matrix\}/g, ']')
+                                         .replace(/\\\\/g, '],[')
+                                         .replace(/&/g, ',')
+                                         .replace(/#/g, '')
                                          .replace(/=/g, '').replace(/[a-zA-Z_]+\s*/, ''); 
-                    // Isso é um fallback bruto, mas funciona melhor com o rawLatex limpo.
-                    // Garantimos que a string de matriz tenha colchetes:
                     const matchMat = giacMatrix.match(/\[.*\]/);
                     if (matchMat) giacMatrix = matchMat[0];
                 } else {
@@ -1084,11 +1124,15 @@ function compileAllExpressions() {
                     StateManager.giacDefinitions[varName] = giacDef;
                     StateManager.casSolutions = {}; // INVALIDE CACHE SO DEPENDENTS UPDATE!
                     MathEngine.askGiac(giacDef).then(res => {
-                        let formattedRes = res.replace(/"/g, '').replace(/list\[/g, '[').replace(/usr_/g, '').trim();
+                        let formattedRes = res.replace(/"/g, '')
+                                              .replace(/matrix\s*\[/g, '[')
+                                              .replace(/list\s*\[/g, '[')
+                                              .replace(/usr_/g, '')
+                                              .trim();
                         ExpressionManager.setResult(item.id, formattedRes.includes('Erro') ? `- Erro no cálculo` : `= ${formattedRes}`);
                     });
                 } else {
-                    ExpressionManager.setResult(item.id, `= [Matriz Registada]`);
+                    ExpressionManager.setResult(item.id, `= ${giacMatrix}`);
                 }
                 return; // Encerra o processamento, pois não queremos renderizar gráfico disto
             }
@@ -1265,18 +1309,11 @@ function compileAllExpressions() {
             // MODO CALCULADORA (Sem gráficos)
             const isPlot = expressaoPlot.includes('x') || expressaoPlot.includes('y') || expressaoPlot.includes('z');
             if (!isPlot && !isImplicit && !isDerivativePlot && !isExplicitY && !isExplicitZ) {
-                // Tenta PRIMEIRO a avaliação numérica direta local (ex: f(0, 2), 2 + 3, sin(pi/4))
-                const evalFunc = MathEngine.compile(ast);
-                const val = evalFunc(0, 0, StateManager.values);
-                if (!isNaN(val)) {
-                    ExpressionManager.setResult(item.id, '= ' + parseFloat(val.toFixed(4)).toString());
-                    ExpressionManager.setError(item.id, null);
-                    return;
-                }
-
                 const giacVars = Object.keys(StateManager.giacDefinitions);
-                const hasGiacVar = giacVars.some(v => new RegExp(`\\b${v}\\b`).test(expressaoPlot)) && !StateManager.values.hasOwnProperty(expressaoPlot);
-                const isMatrixArithmetic = expressaoPlot.includes('{') || expressaoPlot.includes('[') || /([A-Za-z_][A-Za-z0-9_]*)\^\{?[T\-1]\}?/.test(expressaoPlot) || /\b(rref|det|inv|tran|rank|trace|tr)\(/.test(expressaoPlot);
+                const hasGiacVar = giacVars.some(v => new RegExp(`(?:^|(?<=[^a-zA-Z0-9_]))${v}(?=[^a-zA-Z0-9_]|$)`).test(expressaoPlot)) && !StateManager.values.hasOwnProperty(expressaoPlot);
+                const isMatrixArithmetic = expressaoPlot.includes('{') || expressaoPlot.includes('[') ||
+                    /(?:^|(?<=[^a-zA-Z0-9_]))([A-Za-z_][A-Za-z0-9_]*)\^\{?(?:T|\\top|intercal|-1)\}?/.test(expressaoPlot) ||
+                    /\b(rref|det|inv|tran|transpose|rank|matrixrank|trace|tr|eigenvalues|eigenvectors)\s*\(/i.test(expressaoPlot);
 
                 if (hasGiacVar || isMatrixArithmetic) {
                     const currentQuery = expressaoPlot;
@@ -1294,10 +1331,14 @@ function compileAllExpressions() {
 
                         MathEngine.askGiac(giacQuery).then(res => {
                             StateManager.pendingCas[item.id] = false;
-                            let formattedRes = res.replace(/"/g, '').replace(/list\[/g, '[').replace(/usr_/g, '').trim();
+                            let formattedRes = res.replace(/"/g, '')
+                                                  .replace(/matrix\s*\[/g, '[')
+                                                  .replace(/list\s*\[/g, '[')
+                                                  .replace(/usr_/g, '')
+                                                  .trim();
                             
                             // If Giac returns an error, fallback to local eval if we can
-                            if (formattedRes.includes('Erro') || formattedRes.includes('undef')) {
+                            if (formattedRes.includes('Erro') || formattedRes.includes('undef') || formattedRes.includes('Bad Argument')) {
                                 formattedRes = 'Erro no cálculo';
                             }
                             
@@ -1308,6 +1349,21 @@ function compileAllExpressions() {
                         });
                     }
                     return;
+                }
+
+                // Tenta avaliação numérica direta local APENAS se todas as variáveis forem conhecidas em StateManager.values
+                if (ast) {
+                    const freeInAst = getFreeVariables(ast, ['x', 'y', 'z', 't', 'pi', 'e']);
+                    const hasUndefinedVar = freeInAst.some(v => StateManager.values[v] === undefined && !MathEngine.compiledFuncs[v]);
+                    if (!hasUndefinedVar) {
+                        const evalFunc = MathEngine.compile(ast);
+                        const val = evalFunc(0, 0, StateManager.values);
+                        if (!isNaN(val) && isFinite(val)) {
+                            ExpressionManager.setResult(item.id, '= ' + parseFloat(val.toFixed(4)).toString());
+                            ExpressionManager.setError(item.id, null);
+                            return;
+                        }
+                    }
                 }
                 
                 ExpressionManager.setResult(item.id, '');
@@ -2847,4 +2903,11 @@ if (canvas3dEl) {
             isPanning3D = false;
         }
     });
+}
+
+// Exposição global para interatividade e testes
+if (typeof window !== 'undefined') {
+    (window as any).StateManager = StateManager;
+    (window as any).ExpressionManager = ExpressionManager;
+    (window as any).MathEngine = MathEngine;
 }

@@ -75,13 +75,25 @@ assert(
   matrizVars
 );
 
-// Teste do regex de auto-substituição instantânea de matriz
-const matTriggerRegex = /^\s*(?:([a-zA-Z])\s*=\s*)?matri[xz]\s*$/i;
-assert(matTriggerRegex.test('matrix'), 'Matches standalone "matrix"');
-assert(matTriggerRegex.test('matriz'), 'Matches standalone "matriz"');
-const namedMatch = 'M = matrix'.match(matTriggerRegex);
-assert(namedMatch !== null && namedMatch[1] === 'M', 'Extracts matrix name from "M = matrix"');
-assert(!matTriggerRegex.test('sin(matrix)'), 'Does not match inline expression "sin(matrix)"');
+// Teste do regex de auto-substituição instantânea de matriz (com suporte a espaçamento do MathLive)
+function matchMatrixInput(rawAscii: string, rawLatex: string = ''): { isMatch: boolean; name?: string } {
+  const noSpaceAscii = rawAscii.replace(/\s+/g, '');
+  const cleanLatex = rawLatex.replace(/\\text\{([^}]+)\}/g, '$1').replace(/\\mathrm\{([^}]+)\}/g, '$1').replace(/\s+/g, '');
+  const match = noSpaceAscii.match(/^(?:([a-zA-Z])=)?matri[xz]$/i) ||
+                cleanLatex.match(/^(?:([a-zA-Z])=)?\\?matri[xz]$/i);
+  return {
+    isMatch: !!match,
+    name: match ? (match[1] ? match[1].toUpperCase() : undefined) : undefined
+  };
+}
+
+assert(matchMatrixInput('matrix').isMatch, 'Matches standalone "matrix"');
+assert(matchMatrixInput('matriz').isMatch, 'Matches standalone "matriz"');
+assert(matchMatrixInput('m a t r i x').isMatch, 'Matches spaced MathLive "m a t r i x"');
+assert(matchMatrixInput('m a t r i z').isMatch, 'Matches spaced MathLive "m a t r i z"');
+assert(matchMatrixInput('M = matrix').name === 'M', 'Extracts matrix name from "M = matrix"');
+assert(matchMatrixInput('A = m a t r i z').name === 'A', 'Extracts matrix name from spaced "A = m a t r i z"');
+assert(!matchMatrixInput('sin(matrix)').isMatch, 'Does not match inline expression "sin(matrix)"');
 
 // 2. FaultTolerantParser: Incomplete typing detection
 console.log('\n[TEST GROUP 2: Incomplete Expression Detection]');
@@ -151,34 +163,156 @@ try {
   assert(false, 'Tokenizer failed on subscript test', e);
 }
 
+// Testes do operador diferencial d/dx
+console.log('\n[TEST GROUP 1.1: Differential Operator (d/dx) Protection]');
+const ddxVars1 = FaultTolerantParser.detectFreeVariables('\\frac{d}{dx}(x)');
+assert(
+  !ddxVars1.includes('d') && !ddxVars1.includes('x'),
+  '\\frac{d}{dx}(x) does NOT propose "d" as a free slider variable',
+  ddxVars1
+);
+
+const ddxVars2 = FaultTolerantParser.detectFreeVariables('d/dx(x)');
+assert(
+  !ddxVars2.includes('d'),
+  'd/dx(x) does NOT propose "d" as a free slider variable',
+  ddxVars2
+);
+
+const ddxVars3 = FaultTolerantParser.detectFreeVariables('d/dx');
+assert(
+  !ddxVars3.includes('d'),
+  'Incomplete "d/dx" does NOT propose "d" as a free slider variable',
+  ddxVars3
+);
+
+const ddxVars4 = FaultTolerantParser.detectFreeVariables('\\frac{d}{dx}(a*x^2)');
+assert(
+  ddxVars4.includes('a') && !ddxVars4.includes('d') && !ddxVars4.includes('x'),
+  '\\frac{d}{dx}(a*x^2) detects parameter "a" and protects differential "d" and "x"',
+  ddxVars4
+);
+
+const ddxInc1 = FaultTolerantParser.checkIncompleteStatus('\\frac{d}{dx}');
+assert(
+  ddxInc1.isIncomplete === true,
+  'Detects empty \\frac{d}{dx} as incomplete',
+  ddxInc1
+);
+
+const ddxInc2 = FaultTolerantParser.checkIncompleteStatus('', 'd/dx');
+assert(
+  ddxInc2.isIncomplete === true,
+  'Detects standalone d/dx as incomplete',
+  ddxInc2
+);
+
 // 5. Matrix normalizations (Giac CAS transformations)
 console.log('\n[TEST GROUP 5: Giac Matrix Expression Normalizations]');
 
 function testPrefixGiac(input: string, knownMatrices: Set<string>): string {
   let s = input.trim();
-  // Transpose: A^T or A^{\top} or A'
-  s = s.replace(/([A-Za-z_][A-Za-z0-9_]*)\^\{?(?:T|\\top)\}?/g, 'tran($1)');
-  // Inverse: A^{-1}
+  // Transpose: A^T, A^{T}, A^{\top}, A^{\intercal}, A'
+  s = s.replace(/([A-Za-z_][A-Za-z0-9_]*)\^\{?(?:T|\\top|intercal)\}?/g, 'tran($1)');
+  s = s.replace(/([A-Za-z_][A-Za-z0-9_]*)'/g, 'tran($1)');
+
+  // Inverse: A^{-1}, A^-1
   s = s.replace(/([A-Za-z_][A-Za-z0-9_]*)\^\{?-1\}?/g, 'inv($1)');
-  // Determinant: det(A)
-  s = s.replace(/\bdet\s*\(([^)]+)\)/g, 'det($1)');
-  // Scalar mult: 2A -> 2*A
-  s = s.replace(/(\d+)\s*([A-Z][a-zA-Z0-9_]*)/g, '$1*$2');
+
+  // CAS aliases
+  s = s.replace(/\btr\(([^)]+)\)/gi, 'trace($1)');
+  s = s.replace(/\\?det\s*\(([^)]+)\)/gi, 'det($1)');
+  s = s.replace(/\bdeterminant\s*\(([^)]+)\)/gi, 'det($1)');
+  s = s.replace(/\breducedrowechelonform\s*\(([^)]+)\)/gi, 'rref($1)');
+  s = s.replace(/\bmatrixrank\s*\(([^)]+)\)/gi, 'rank($1)');
+  s = s.replace(/\binvert\s*\(([^)]+)\)/gi, 'inv($1)');
+  s = s.replace(/\btranspose\s*\(([^)]+)\)/gi, 'tran($1)');
+
+  // Scalar mult: 2A -> 2*A, 3.5B -> 3.5*B
+  s = s.replace(/(\d+(?:\.\d+)?)\s*([A-Za-z_][A-Za-z0-9_]*)/g, '$1*$2');
+
+  s = s.replace(/\\cdot/g, '*');
+  s = s.replace(/\\times/g, '*');
+
+  const sortedVars = Array.from(knownMatrices).sort((a, b) => b.length - a.length);
+  // Implicit matrix multiplication
+  for (const v1 of sortedVars) {
+    for (const v2 of sortedVars) {
+      s = s.replace(new RegExp(`(?:^|(?<=[^a-zA-Z0-9_]))${v1}\\s+${v2}(?=[^a-zA-Z0-9_]|$)`, 'g'), `${v1}*${v2}`);
+      if (v1.length === 1 && v2.length === 1 && v1 !== v2) {
+        s = s.replace(new RegExp(`(?:^|(?<=[^a-zA-Z0-9_]))${v1}${v2}(?=[^a-zA-Z0-9_]|$)`, 'g'), `${v1}*${v2}`);
+      }
+    }
+  }
+
+  for (const v of sortedVars) {
+    s = s.replace(new RegExp(`(?:^|(?<=[^a-zA-Z0-9_]))${v}(?=[^a-zA-Z0-9_]|$)`, 'g'), `usr_${v}`);
+  }
   return s;
 }
 
 const transRes = testPrefixGiac('A^T + B^{-1}', new Set(['A', 'B']));
 assert(
-  transRes === 'tran(A) + inv(B)',
-  'Transforms A^T and B^{-1} into CAS tran(A) and inv(B)',
+  transRes === 'tran(usr_A) + inv(usr_B)',
+  'Transforms A^T and B^{-1} into CAS tran(usr_A) and inv(usr_B)',
   transRes
+);
+
+const topRes = testPrefixGiac('A^{\\top}', new Set(['A']));
+assert(
+  topRes === 'tran(usr_A)',
+  'Transforms LaTeX A^{\\top} into tran(usr_A)',
+  topRes
+);
+
+const primeRes = testPrefixGiac("A'", new Set(['A']));
+assert(
+  primeRes === 'tran(usr_A)',
+  "Transforms A' into tran(usr_A)",
+  primeRes
 );
 
 const scalarRes = testPrefixGiac('2A + 3B', new Set(['A', 'B']));
 assert(
-  scalarRes === '2*A + 3*B',
-  'Transforms 2A + 3B into 2*A + 3*B',
+  scalarRes === '2*usr_A + 3*usr_B',
+  'Transforms 2A + 3B into 2*usr_A + 3*usr_B',
   scalarRes
+);
+
+const implicitMatRes = testPrefixGiac('A B + 2C', new Set(['A', 'B', 'C']));
+assert(
+  implicitMatRes === 'usr_A*usr_B + 2*usr_C',
+  'Transforms implicit matrix multiplication "A B" into "usr_A*usr_B"',
+  implicitMatRes
+);
+
+const detRes = testPrefixGiac('det(A)', new Set(['A']));
+assert(
+  detRes === 'det(usr_A)',
+  'Transforms det(A) into det(usr_A)',
+  detRes
+);
+
+const rrefRes = testPrefixGiac('rref(A)', new Set(['A']));
+assert(
+  rrefRes === 'rref(usr_A)',
+  'Transforms rref(A) into rref(usr_A)',
+  rrefRes
+);
+
+function cleanGiacMatrixOutput(raw: string): string {
+  return raw.replace(/"/g, '')
+            .replace(/matrix\s*\[/g, '[')
+            .replace(/list\s*\[/g, '[')
+            .replace(/usr_/g, '')
+            .trim();
+}
+
+const tranClean = cleanGiacMatrixOutput('matrix[[1, 3], [2, 4]]');
+assert(
+  tranClean === '[[1, 3], [2, 4]]',
+  'Cleans Giac "matrix[[" prefix into standard "[[1, 3], [2, 4]]"',
+  tranClean
 );
 
 // 6. Extreme Input Robustness

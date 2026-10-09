@@ -582,8 +582,6 @@ export class ExpressionManager {
             'times': '\\times',
             'div': '\\div',
             'e': 'e',
-            'matrix': '\\begin{bmatrix} #? & #? \\\\ #? & #? \\end{bmatrix}',
-            'matriz': '\\begin{bmatrix} #? & #? \\\\ #? & #? \\end{bmatrix}',
             'd/dx': '\\frac{d}{dx}',
             'ddx': '\\frac{d}{dx}',
             'diff': '\\frac{d}{dx}'
@@ -797,14 +795,76 @@ export class ExpressionManager {
 
         mf.addEventListener('input', () => {
             const rawAscii = (mf as any).getValue('ascii-math') || '';
+            const rawLatex = (mf as any).getValue('latex') || '';
 
-            // Auto-transformação Instantânea por Digitação (matrix, matriz, A = matrix)
-            const cleanAscii = rawAscii.trim();
-            const matrixMatch = cleanAscii.match(/^\s*(?:([a-zA-Z])\s*=\s*)?matri[xz]\s*$/i);
+            // Auto-transformação Instantânea por Digitação (matrix, matriz, A = matrix, M = matriz)
+            const noSpaceAscii = rawAscii.replace(/\s+/g, '');
+            const cleanLatex = rawLatex.replace(/\\text\{([^}]+)\}/g, '$1').replace(/\\mathrm\{([^}]+)\}/g, '$1').replace(/\s+/g, '');
+            const matrixMatch = noSpaceAscii.match(/^(?:([a-zA-Z])=)?matri[xz]$/i) ||
+                                cleanLatex.match(/^(?:([a-zA-Z])=)?\\?matri[xz]$/i);
             if (matrixMatch) {
                 const targetName = matrixMatch[1] ? matrixMatch[1].toUpperCase() : undefined;
                 this.convertBlockToMatrix(block.id, targetName);
                 return;
+            }
+
+            // Se o usuário inseriu ou colou uma matriz LaTeX (\begin{bmatrix}, \begin{pmatrix}, etc.) ou bracket notation [[1, 2], [3, 4]]
+            if (rawLatex.includes('\\begin{bmatrix}') || rawLatex.includes('\\begin{pmatrix}') || rawLatex.includes('\\begin{matrix}') || cleanLatex.startsWith('[[') || cleanLatex.includes('=[[')) {
+                const nameMatch = rawLatex.match(/^\s*([a-zA-Z])\s*=/);
+                const targetName = nameMatch ? nameMatch[1].toUpperCase() : undefined;
+                const matContentMatch = rawLatex.match(/\\begin\{(?:b|p|v|V)?matrix\}([\s\S]*?)\\end\{(?:b|p|v|V)?matrix\}/);
+                if (matContentMatch) {
+                    const rowStrs = matContentMatch[1].split(/\\\\/);
+                    const parsedData: string[][] = [];
+                    for (const rStr of rowStrs) {
+                        if (!rStr.trim()) continue;
+                        const colStrs = rStr.split('&');
+                        const rowArr = colStrs.map((c: string) => {
+                            const clean = c.replace(/#\?/g, '').replace(/#@/g, '').replace(/\\placeholder\{[^}]*\}/g, '').trim();
+                            return clean || '0';
+                        });
+                        if (rowArr.length > 0) parsedData.push(rowArr);
+                    }
+                    if (parsedData.length > 0) {
+                        const rCount = Math.min(8, parsedData.length);
+                        const cCount = Math.min(8, Math.max(...parsedData.map((r: string[]) => r.length)));
+                        for (const r of parsedData) {
+                            while (r.length < cCount) r.push('0');
+                        }
+                        this.addMatrix({ name: targetName, rows: rCount, cols: cCount, data: parsedData }, true, block.dataset.folderId, block);
+                        this.updateBlockNumbers();
+                        this.onUpdateCallback();
+                        HistoryManager.recordState(true);
+                        return;
+                    }
+                }
+
+                // Sintaxe de colchetes: [[1, 2], [3, 4]] ou A = [[1, 2], [3, 4]]
+                const bracketMatch = cleanLatex.match(/^(?:([a-zA-Z])=)?(\[\[.*\]\])$/);
+                if (bracketMatch) {
+                    const bTargetName = bracketMatch[1] ? bracketMatch[1].toUpperCase() : undefined;
+                    try {
+                        const rawInner = bracketMatch[2];
+                        const rowMatches = rawInner.slice(1, -1).split(/\],\s*\[/);
+                        const parsedGrid: string[][] = [];
+                        for (const rStr of rowMatches) {
+                            const cleanCells = rStr.replace(/[\[\]]/g, '').split(',').map((c: string) => c.trim() || '0');
+                            if (cleanCells.length > 0) parsedGrid.push(cleanCells);
+                        }
+                        if (parsedGrid.length > 0) {
+                            const rCount = Math.min(8, parsedGrid.length);
+                            const cCount = Math.min(8, Math.max(...parsedGrid.map(r => r.length)));
+                            for (const r of parsedGrid) {
+                                while (r.length < cCount) r.push('0');
+                            }
+                            this.addMatrix({ name: bTargetName, rows: rCount, cols: cCount, data: parsedGrid }, true, block.dataset.folderId, block);
+                            this.updateBlockNumbers();
+                            this.onUpdateCallback();
+                            HistoryManager.recordState(true);
+                            return;
+                        }
+                    } catch(e) {}
+                }
             }
 
             this.showAutocomplete(mf);
@@ -1094,25 +1154,42 @@ export class ExpressionManager {
             return btn;
         };
 
-        // Grade da Matriz com Parênteses / Colchetes Estilizados e Alça Interativa Desmos
+        // Grade da Matriz com Parênteses / Colchetes Estilizados, Bordas Arrastáveis e Alça Interativa
         const gridWrapper = document.createElement('div');
-        gridWrapper.className = 'flex items-center my-1 select-none overflow-x-auto relative';
+        gridWrapper.className = 'flex flex-col my-1 select-none overflow-visible relative';
+
+        const matrixBody = document.createElement('div');
+        matrixBody.className = 'flex items-stretch select-none relative';
 
         const bracketLeft = document.createElement('div');
-        bracketLeft.className = 'border-l-2 border-t-2 border-b-2 border-gray-800 w-2.5 self-stretch rounded-l-xs shrink-0 mr-1.5 my-0.5';
+        bracketLeft.className = 'border-l-2 border-t-2 border-b-2 border-gray-800 w-2.5 self-stretch rounded-l-xs shrink-0 mr-1.5 my-0.5 select-none pointer-events-none';
+
+        const gridCenterCol = document.createElement('div');
+        gridCenterCol.className = 'flex flex-col grow select-none';
 
         const gridContainer = document.createElement('div');
-        gridContainer.className = 'grid gap-1.5 py-1 px-1 grow';
+        gridContainer.className = 'grid gap-1.5 py-1 px-1 grow select-none';
+
+        // Borda inferior arrastável para alterar linhas
+        const bottomBorder = document.createElement('div');
+        bottomBorder.className = 'matrix-bottom-resizable w-full mt-0.5 select-none touch-none';
+        bottomBorder.title = 'Arraste a borda inferior para redimensionar linhas';
+
+        gridCenterCol.appendChild(gridContainer);
+        gridCenterCol.appendChild(bottomBorder);
 
         const rightBracketWrapper = document.createElement('div');
-        rightBracketWrapper.className = 'relative flex items-center self-stretch shrink-0';
+        rightBracketWrapper.className = 'relative flex items-center self-stretch shrink-0 select-none touch-none';
+        rightBracketWrapper.title = 'Arraste a borda para redimensionar colunas';
 
         const bracketRight = document.createElement('div');
-        bracketRight.className = 'border-r-2 border-t-2 border-b-2 border-gray-800 w-2.5 self-stretch rounded-r-xs shrink-0 ml-1.5 my-0.5';
+        bracketRight.className = 'bracket-right-resizable border-r-2 border-t-2 border-b-2 border-gray-800 w-4 self-stretch rounded-r-xs shrink-0 ml-1.5 my-0.5 select-none flex items-center justify-center touch-none';
+        bracketRight.title = 'Arraste a borda para redimensionar colunas';
+        bracketRight.innerHTML = `<span class="w-0.5 h-3.5 bg-gray-400 rounded-full opacity-60"></span>`;
 
         const dragHandle = document.createElement('div');
-        dragHandle.className = 'matrix-drag-handle';
-        dragHandle.title = 'Arraste para redimensionar (m × n)';
+        dragHandle.className = 'matrix-drag-handle touch-none';
+        dragHandle.title = 'Arraste o vértice para redimensionar linhas e colunas (m × n)';
 
         const dimTooltip = document.createElement('div');
         dimTooltip.className = 'matrix-dim-tooltip';
@@ -1122,29 +1199,50 @@ export class ExpressionManager {
         rightBracketWrapper.appendChild(dragHandle);
         rightBracketWrapper.appendChild(dimTooltip);
 
-        gridWrapper.appendChild(bracketLeft);
-        gridWrapper.appendChild(gridContainer);
-        gridWrapper.appendChild(rightBracketWrapper);
+        matrixBody.appendChild(bracketLeft);
+        matrixBody.appendChild(gridCenterCol);
+        matrixBody.appendChild(rightBracketWrapper);
+
+        gridWrapper.appendChild(matrixBody);
 
         let startX = 0;
         let startY = 0;
         let startRows = rows;
         let startCols = cols;
+        let activeDragEl: HTMLElement | null = null;
+        let resizeMode: 'both' | 'cols' | 'rows' = 'both';
+
+        const updateGiacDefinition = () => {
+            const curName = nameInput.value.trim().toUpperCase() || 'A';
+            const giacMatrix = `[[${cellValues.map((r: string[]) => r.map((c: string) => (c && c.trim()) || '0').join(', ')).join('], [')}]]`;
+            const giacDef = `usr_${curName}:=${giacMatrix}`;
+            StateManager.giacDefinitions[curName] = giacDef;
+            StateManager.casSolutions = {};
+            MathEngine.askGiac(giacDef);
+        };
 
         const onPointerMove = (e: PointerEvent) => {
             const dx = e.clientX - startX;
             const dy = e.clientY - startY;
 
-            // Cada 35px em X adiciona/remove coluna; cada 30px em Y adiciona/remove linha
-            const targetCols = Math.max(1, Math.min(6, startCols + Math.round(dx / 35)));
-            const targetRows = Math.max(1, Math.min(6, startRows + Math.round(dy / 30)));
+            // Cada ~38px horizontal = +1 coluna, cada ~30px vertical = +1 linha
+            let targetCols = startCols;
+            let targetRows = startRows;
+
+            if (resizeMode === 'both' || resizeMode === 'cols') {
+                targetCols = Math.max(1, Math.min(8, startCols + Math.round(dx / 38)));
+            }
+            if (resizeMode === 'both' || resizeMode === 'rows') {
+                targetRows = Math.max(1, Math.min(8, startRows + Math.round(dy / 30)));
+            }
 
             if (targetCols !== cols || targetRows !== rows) {
                 const newValues: string[][] = [];
                 for (let r = 0; r < targetRows; r++) {
                     newValues[r] = [];
                     for (let c = 0; c < targetCols; c++) {
-                        newValues[r][c] = cellValues[r]?.[c] !== undefined ? cellValues[r][c] : '0';
+                        const existing = cellValues[r]?.[c];
+                        newValues[r][c] = (existing !== undefined && existing !== null && existing.trim() !== '') ? existing.trim() : '0';
                     }
                 }
                 rows = targetRows;
@@ -1158,32 +1256,50 @@ export class ExpressionManager {
         };
 
         const onPointerUp = (e: PointerEvent) => {
-            try {
-                dragHandle.releasePointerCapture(e.pointerId);
-            } catch(err) {}
+            if (activeDragEl) {
+                try {
+                    activeDragEl.releasePointerCapture(e.pointerId);
+                } catch(err) {}
+                activeDragEl = null;
+            }
+            bracketRight.classList.remove('matrix-dragging');
+            bottomBorder.classList.remove('matrix-dragging');
+            dragHandle.classList.remove('matrix-dragging');
             dimTooltip.classList.remove('visible');
             window.removeEventListener('pointermove', onPointerMove);
             window.removeEventListener('pointerup', onPointerUp);
             window.removeEventListener('pointercancel', onPointerUp);
+            updateGiacDefinition();
+            this.onUpdateCallback();
             HistoryManager.recordState(true);
         };
 
-        dragHandle.addEventListener('pointerdown', (e: PointerEvent) => {
+        const startResize = (mode: 'both' | 'cols' | 'rows') => (e: PointerEvent) => {
             e.preventDefault();
             e.stopPropagation();
             startX = e.clientX;
             startY = e.clientY;
             startRows = rows;
             startCols = cols;
+            resizeMode = mode;
+            activeDragEl = (e.currentTarget as HTMLElement) || dragHandle;
             try {
-                dragHandle.setPointerCapture(e.pointerId);
+                activeDragEl.setPointerCapture(e.pointerId);
             } catch(err) {}
+            if (mode === 'both' || mode === 'cols') bracketRight.classList.add('matrix-dragging');
+            if (mode === 'both' || mode === 'rows') bottomBorder.classList.add('matrix-dragging');
+            dragHandle.classList.add('matrix-dragging');
             dimTooltip.innerText = `${rows} × ${cols}`;
             dimTooltip.classList.add('visible');
             window.addEventListener('pointermove', onPointerMove);
             window.addEventListener('pointerup', onPointerUp);
             window.addEventListener('pointercancel', onPointerUp);
-        });
+        };
+
+        dragHandle.addEventListener('pointerdown', startResize('both'));
+        bracketRight.addEventListener('pointerdown', startResize('cols'));
+        rightBracketWrapper.addEventListener('pointerdown', startResize('cols'));
+        bottomBorder.addEventListener('pointerdown', startResize('rows'));
 
         const focusCell = (r: number, c: number) => {
             const target = gridContainer.querySelector(`.matrix-cell[data-r="${r}"][data-c="${c}"]`) as HTMLInputElement;
@@ -1199,45 +1315,93 @@ export class ExpressionManager {
             dimBadge.innerText = `${rows}×${cols}`;
             dimTooltip.innerText = `${rows} × ${cols}`;
             gridContainer.innerHTML = '';
-            gridContainer.style.gridTemplateColumns = `repeat(${cols}, minmax(36px, 1fr))`;
+            gridContainer.style.gridTemplateColumns = `repeat(${cols}, minmax(38px, 1fr))`;
 
             for (let r = 0; r < rows; r++) {
                 if (!cellValues[r]) cellValues[r] = [];
                 for (let c = 0; c < cols; c++) {
-                    const val = cellValues[r][c] !== undefined ? cellValues[r][c] : '0';
+                    const rawVal = cellValues[r][c];
+                    const val = (rawVal !== undefined && rawVal !== null && rawVal.trim() !== '') ? rawVal.trim() : '0';
+                    cellValues[r][c] = val;
                     const cell = document.createElement('input');
                     cell.type = 'text';
-                    cell.className = 'matrix-cell text-center text-xs font-mono font-medium py-1 px-1 rounded border border-transparent hover:border-purple-300 focus:border-purple-600 focus:bg-white outline-none transition-all shadow-2xs w-10 h-7 bg-transparent';
+                    cell.placeholder = '0';
+                    cell.className = 'matrix-cell text-center text-xs font-mono font-medium py-1 px-1 rounded border border-gray-200 hover:border-purple-300 focus:border-purple-600 focus:bg-white outline-none transition-all shadow-2xs w-11 h-7.5 bg-white/70';
                     cell.dataset.r = r.toString();
                     cell.dataset.c = c.toString();
                     cell.value = val;
 
+                    cell.onfocus = () => {
+                        cell.select();
+                    };
+
+                    // Autocomplete instantâneo com 0 quando o usuário apaga (Backspace / Delete)
+                    cell.onkeydown = (e: KeyboardEvent) => {
+                        if (e.key === 'Backspace' || e.key === 'Delete') {
+                            const isAllSelected = (cell.selectionStart === 0 && cell.selectionEnd === cell.value.length);
+                            if (isAllSelected || cell.value.length <= 1) {
+                                e.preventDefault();
+                                cell.value = '0';
+                                cellValues[r][c] = '0';
+                                cell.select();
+                                updateGiacDefinition();
+                                this.onUpdateCallback();
+                                HistoryManager.recordState(false);
+                                return;
+                            }
+                        } else if (e.key === 'ArrowRight' && cell.selectionStart === cell.value.length) {
+                            if (cell.value.trim() === '') { cell.value = '0'; cellValues[r][c] = '0'; }
+                            if (c < cols - 1) focusCell(r, c + 1);
+                            else if (r < rows - 1) focusCell(r + 1, 0);
+                        } else if (e.key === 'ArrowLeft' && cell.selectionEnd === 0) {
+                            if (cell.value.trim() === '') { cell.value = '0'; cellValues[r][c] = '0'; }
+                            if (c > 0) focusCell(r, c - 1);
+                            else if (r > 0) focusCell(r - 1, cols - 1);
+                        } else if (e.key === 'ArrowDown') {
+                            if (cell.value.trim() === '') { cell.value = '0'; cellValues[r][c] = '0'; }
+                            if (r < rows - 1) focusCell(r + 1, c);
+                        } else if (e.key === 'ArrowUp') {
+                            if (cell.value.trim() === '') { cell.value = '0'; cellValues[r][c] = '0'; }
+                            if (r > 0) focusCell(r - 1, c);
+                        } else if (e.key === 'Tab') {
+                            if (cell.value.trim() === '') { cell.value = '0'; cellValues[r][c] = '0'; }
+                        } else if (e.key === 'Enter') {
+                            e.preventDefault();
+                            if (cell.value.trim() === '') {
+                                cell.value = '0';
+                                cellValues[r][c] = '0';
+                            }
+                            if (c < cols - 1) {
+                                focusCell(r, c + 1);
+                            } else if (r < rows - 1) {
+                                focusCell(r + 1, 0);
+                            } else if (rows < 8) {
+                                addRow();
+                                setTimeout(() => focusCell(r + 1, 0), 10);
+                            }
+                        }
+                    };
+
                     cell.oninput = () => {
-                        cellValues[r][c] = cell.value.trim() || '0';
+                        if (cell.value.trim() === '') {
+                            cell.value = '0';
+                            cellValues[r][c] = '0';
+                            cell.select();
+                        } else {
+                            cellValues[r][c] = cell.value.trim();
+                        }
                         updateGiacDefinition();
                         this.onUpdateCallback();
                         HistoryManager.recordState(false);
                     };
 
-                    cell.onkeydown = (e: KeyboardEvent) => {
-                        if (e.key === 'ArrowRight' && cell.selectionStart === cell.value.length) {
-                            if (c < cols - 1) focusCell(r, c + 1);
-                            else if (r < rows - 1) focusCell(r + 1, 0);
-                        } else if (e.key === 'ArrowLeft' && cell.selectionEnd === 0) {
-                            if (c > 0) focusCell(r, c - 1);
-                            else if (r > 0) focusCell(r - 1, cols - 1);
-                        } else if (e.key === 'ArrowDown') {
-                            if (r < rows - 1) focusCell(r + 1, c);
-                        } else if (e.key === 'ArrowUp') {
-                            if (r > 0) focusCell(r - 1, c);
-                        } else if (e.key === 'Enter') {
-                            e.preventDefault();
-                            if (r < rows - 1) {
-                                focusCell(r + 1, c);
-                            } else if (rows < 6) {
-                                addRow();
-                                setTimeout(() => focusCell(r + 1, c), 10);
-                            }
+                    cell.onblur = () => {
+                        if (cell.value.trim() === '') {
+                            cell.value = '0';
+                            cellValues[r][c] = '0';
+                            updateGiacDefinition();
+                            this.onUpdateCallback();
+                            HistoryManager.recordState(false);
                         }
                     };
 
@@ -1248,7 +1412,7 @@ export class ExpressionManager {
         };
 
         const addRow = () => {
-            if (rows >= 6) return;
+            if (rows >= 8) return;
             rows++;
             cellValues.push(new Array(cols).fill('0'));
             renderGrid();
@@ -1266,7 +1430,7 @@ export class ExpressionManager {
         };
 
         const addCol = () => {
-            if (cols >= 6) return;
+            if (cols >= 8) return;
             cols++;
             cellValues.forEach((row: string[]) => row.push('0'));
             renderGrid();
@@ -1321,13 +1485,45 @@ export class ExpressionManager {
             chip.innerText = label;
             chip.onclick = () => {
                 const curName = nameInput.value.trim().toUpperCase() || 'A';
-                const giacMatrix = `[[${cellValues.map((r: string[]) => r.join(', ')).join('], [')}]]`;
+                const giacMatrix = `[[${cellValues.map((r: string[]) => r.map((c: string) => (c && c.trim()) || '0').join(', ')).join('], [')}]]`;
                 resultDisplay.innerText = 'Calculando...';
                 resultDisplay.classList.remove('hidden');
 
                 MathEngine.askGiac(`${giacCmd}(${giacMatrix})`).then(res => {
-                    const cleanRes = res.replace(/"/g, '').replace(/list\[/g, '[').trim();
+                    const cleanRes = res.replace(/"/g, '')
+                                        .replace(/matrix\s*\[/g, '[')
+                                        .replace(/list\s*\[/g, '[')
+                                        .trim();
                     const win = window as any;
+
+                    // Se a resposta for uma matriz, renderiza com colchetes KaTeX
+                    const isMatRes = cleanRes.startsWith('[[') && cleanRes.endsWith(']]');
+                    if (isMatRes && win.katex) {
+                        try {
+                            const rowStrings = cleanRes.slice(1, -1).split(/\],\s*\[/);
+                            const katexRows = rowStrings.map((r: string) => {
+                                const cells = r.replace(/[\[\]]/g, '').split(',').map((c: string) => c.trim());
+                                return cells.join(' & ');
+                            }).join(' \\\\ ');
+                            const katexMatrix = `\\begin{bmatrix} ${katexRows} \\end{bmatrix}`;
+                            const html = win.katex.renderToString(`${cmd}(${curName}) = ${katexMatrix}`, { throwOnError: false });
+                            resultDisplay.innerHTML = `<div class="flex items-center justify-between"><span>${html}</span><button class="add-as-block-btn text-[10px] text-purple-600 hover:underline cursor-pointer ml-2 shrink-0 font-bold">+ Bloco</button></div>`;
+                            const addBlockBtn = resultDisplay.querySelector('.add-as-block-btn');
+                            if (addBlockBtn) {
+                                addBlockBtn.addEventListener('click', (e) => {
+                                    e.stopPropagation();
+                                    const parsedGrid = rowStrings.map((r: string) => r.replace(/[\[\]]/g, '').split(',').map((c: string) => c.trim()));
+                                    this.addMatrix({
+                                        rows: parsedGrid.length,
+                                        cols: parsedGrid[0]?.length || 1,
+                                        data: parsedGrid
+                                    });
+                                });
+                            }
+                            return;
+                        } catch(e) {}
+                    }
+
                     if (win.katex) {
                         try {
                             const html = win.katex.renderToString(`${cmd}(${curName}) = ${cleanRes}`, { throwOnError: false });
@@ -1364,16 +1560,8 @@ export class ExpressionManager {
         block.appendChild(grabZone);
         block.appendChild(contentZone);
 
-        const updateGiacDefinition = () => {
-            const curName = nameInput.value.trim().toUpperCase() || 'A';
-            const giacMatrix = `[[${cellValues.map((r: string[]) => r.join(', ')).join('], [')}]]`;
-            const giacDef = `usr_${curName}:=${giacMatrix}`;
-            StateManager.giacDefinitions[curName] = giacDef;
-            StateManager.casSolutions = {};
-            MathEngine.askGiac(giacDef);
-        };
-
         renderGrid();
+        updateGiacDefinition();
         this.setupBlockDrag(block, grabZone);
         if (replaceBlock && replaceBlock.parentNode) {
             replaceBlock.parentNode.replaceChild(block, replaceBlock);
@@ -2132,6 +2320,7 @@ export class ExpressionManager {
 
                 let mathStr = result.trim();
                 if (mathStr.startsWith('= ')) mathStr = mathStr.substring(2);
+                mathStr = mathStr.replace(/^matrix\s*\[/g, '[').replace(/^list\s*\[/g, '[');
 
                 // Detectar se o resultado é uma matriz: [[1, 2], [3, 4]]
                 const matrixMatch = mathStr.match(/^\[\s*\[(.*)\]\s*\]$/);
@@ -2144,7 +2333,19 @@ export class ExpressionManager {
                         }).join(' \\\\ ');
                         const katexMatrix = `\\begin{bmatrix} ${katexRows} \\end{bmatrix}`;
                         const html = win.katex.renderToString(katexMatrix, { throwOnError: false });
-                        resDisplay.innerHTML = '= ' + html;
+                        resDisplay.innerHTML = `<div class="flex items-center justify-between"><span>= ${html}</span><button class="add-as-block-btn text-[10px] text-purple-600 hover:underline cursor-pointer ml-2 shrink-0 font-bold" title="Adicionar como novo bloco de matriz">+ Bloco</button></div>`;
+                        const addBlockBtn = resDisplay.querySelector('.add-as-block-btn');
+                        if (addBlockBtn) {
+                            addBlockBtn.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                const parsedGrid = rowStrings.map((r: string) => r.replace(/[\[\]]/g, '').split(',').map((c: string) => c.trim()));
+                                this.addMatrix({
+                                    rows: parsedGrid.length,
+                                    cols: parsedGrid[0]?.length || 1,
+                                    data: parsedGrid
+                                });
+                            });
+                        }
                         return;
                     } catch(e) {}
                 }

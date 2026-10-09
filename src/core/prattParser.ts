@@ -34,6 +34,7 @@ export class PrattParser {
 
     nud(token: Token): any {
         if (token.type === TokenTypes.NUMBER) return parseFloat(token.value);
+        if (token.type === TokenTypes.DIFFERENTIAL) return "d";
         if (token.type === TokenTypes.SUBTRACTION) return ["Negate", this.parseExpression(14)];
         
         if (token.type === TokenTypes.PARENTHESIS_LEFT) {
