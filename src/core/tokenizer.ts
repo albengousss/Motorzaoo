@@ -14,6 +14,7 @@ const TokenSpec: Array<[RegExp, string | null]> = [
     [/^\\?(?:int|integrate)(?![a-zA-Z])/, TokenTypes.INTEGRAL],
     [/^\\?(?:lim|limit)(?![a-zA-Z])/, TokenTypes.LIMIT],
     [/^->/, TokenTypes.ARROW],
+    [/^\\?[a-zA-Z][a-zA-Z0-9]*_(?:\{[a-zA-Z0-9]+\}|\([a-zA-Z0-9]+\)|[a-zA-Z0-9]+)/, TokenTypes.IDENTIFIER],
     [/^_/, TokenTypes.UNDERSCORE],
     [/^\bd\b/, TokenTypes.DIFFERENTIAL],
     [/^\\?[a-zA-Z_][a-zA-Z0-9_\{\}]*/, TokenTypes.IDENTIFIER],
@@ -70,6 +71,16 @@ export class Tokenizer {
         this.cursor = 0;
     }
 
+    tokenize(str?: string): Token[] {
+        if (str !== undefined) this.init(str);
+        const tokens: Token[] = [];
+        while (this.hasMoreTokens()) {
+            const tok = this.getNextToken();
+            if (tok) tokens.push(tok);
+        }
+        return tokens;
+    }
+
     hasMoreTokens(): boolean { return this.cursor < this.string.length; }
 
     getNextToken(): Token | null {
@@ -81,8 +92,8 @@ export class Tokenizer {
             if (match) {
                 this.cursor += match[0].length;
                 if (type === null) return this.getNextToken();
-                // Limpa as barras invertidas do MathLive
-                if (type === TokenTypes.IDENTIFIER) return { type, value: match[0].replace('\\', '') };
+                // Limpa as barras invertidas e delimitadores de subscrito do MathLive
+                if (type === TokenTypes.IDENTIFIER) return { type, value: match[0].replace(/[\{\}\\\(\)]/g, '') };
                 return { type, value: match[0] };
             }
         }

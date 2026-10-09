@@ -8,20 +8,203 @@
   --color-border: #dadce0;
 }
 
+/* ═════════════════════════════════════════════════════════════
+   DESMOS-STYLE MATH-FIELD: TRANSPARÊNCIA E ZERO RUÍDO VISUAL
+═════════════════════════════════════════════════════════════ */
 
+math-field {
+  --contains-highlight-background: transparent !important;
+  --contains-highlight-background-color: transparent !important;
+  --highlight-background: transparent !important;
+  --highlight-color: transparent !important;
+  --placeholder-color: transparent !important;
+  --placeholder-opacity: 0 !important;
+  --prompt-border: none !important;
+  --prompt-background: transparent !important;
+  --prompt-highlight-color: transparent !important;
+  --prompt-color: transparent !important;
+  --error-background: transparent !important;
+  --error-color: inherit !important;
+  --caret-color: #1f2937 !important;
+  --selection-background-color: rgba(66, 133, 244, 0.25) !important;
+}
 
-math-field::part(error) {
+math-field::part(error),
+math-field::part(placeholder),
+math-field::part(container),
+math-field::part(prompt) {
   background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
   color: inherit !important;
 }
-math-field {
-    --error-background: transparent;
-    --error-color: inherit;
-    --contains-highlight-background: rgba(0, 0, 0, 0.02);
-    --contains-highlight-background-color: rgba(0, 0, 0, 0.02);
+
+/* Inibe caixas pontilhadas e fundos azuis residuais no MathLive */
+.ML__contains-highlight, 
+.ML__highlight, 
+.ML__placeholder, 
+.ML__prompt, 
+.ML__empty,
+[data-placeholder] {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
 }
 
-/* Estilização refinada do teclado virtual estilo Desmos */
+/* ═════════════════════════════════════════════════════════════
+   MATRIZ INTERATIVA DESMOS COM ALÇA NO VÉRTICE (DRAG HANDLE)
+═════════════════════════════════════════════════════════════ */
+
+.matrix-block-container {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  user-select: none;
+}
+
+.matrix-bracket {
+  font-family: KaTeX_Size3, KaTeX_Main, serif;
+  font-size: 2.2rem;
+  line-height: 1;
+  font-weight: 200;
+  color: #1e293b;
+  pointer-events: none;
+}
+
+.matrix-grid-table {
+  display: grid;
+  gap: 3px;
+  padding: 2px 4px;
+}
+
+.matrix-cell-input {
+  width: 38px;
+  height: 28px;
+  text-align: center;
+  font-family: KaTeX_Math, monospace;
+  font-size: 13px;
+  color: #1e293b;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  outline: none;
+  transition: all 0.12s ease;
+}
+
+.matrix-cell-input:hover {
+  border-color: #cbd5e1;
+  background: rgba(248, 250, 252, 0.8);
+}
+
+.matrix-cell-input:focus {
+  border-color: #3b82f6;
+  background: #ffffff;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+
+/* Alça de redimensionamento no vértice inferior direito */
+.matrix-drag-handle {
+  position: absolute;
+  bottom: -2px;
+  right: -3px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background-color: #2563eb;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  cursor: nwse-resize;
+  z-index: 20;
+  touch-action: none;
+  transition: transform 0.1s ease, background-color 0.15s ease;
+}
+
+.matrix-drag-handle:hover,
+.matrix-drag-handle:active {
+  transform: scale(1.3);
+  background-color: #1d4ed8;
+}
+
+/* Badge flutuante de dimensões m x n ao arrastar */
+.matrix-dim-tooltip {
+  position: absolute;
+  bottom: -26px;
+  right: -10px;
+  background-color: #1e293b;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 30;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.matrix-dim-tooltip.visible {
+  opacity: 1;
+}
+
+/* ═════════════════════════════════════════════════════════════
+   AVISO DISCRETO DE MARGEM ESTILO DESMOS (ZERO LAYOUT SHIFT)
+═════════════════════════════════════════════════════════════ */
+
+.block-warning-trigger {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+.warning-popover-tooltip {
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  background-color: #1e293b;
+  color: #f8fafc;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  padding: 6px 10px;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 60;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.warning-popover-tooltip::before {
+  content: '';
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  border-width: 5px;
+  border-style: solid;
+  border-color: transparent #1e293b transparent transparent;
+}
+
+.block-warning-trigger:hover .warning-popover-tooltip {
+  opacity: 1;
+}
+
+/* ═════════════════════════════════════════════════════════════
+   TECLADO VIRTUAL E ANIMAÇÕES
+═════════════════════════════════════════════════════════════ */
+
 math-virtual-keyboard::part(keycap) {
   border-radius: 7px !important;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.07) !important;
@@ -33,7 +216,6 @@ math-virtual-keyboard::part(keycap):active {
   transform: scale(0.95) !important;
 }
 
-/* Transição suave da gaveta de funções no celular */
 #sidebar {
   transition: margin-bottom 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }

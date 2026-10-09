@@ -38,14 +38,23 @@
       :root, math-field, body {
         --contains-highlight-background: transparent !important;
         --highlight-background: transparent !important;
-        --selection-background-color: rgba(100, 160, 255, 0.3) !important;
+        --selection-background-color: rgba(66, 133, 244, 0.25) !important;
         --placeholder-color: transparent !important;
+        --placeholder-opacity: 0 !important;
+        --prompt-border: none !important;
+        --prompt-background: transparent !important;
+        --prompt-highlight-color: transparent !important;
+        --caret-color: #1f2937 !important;
       }
       math-field::part(container) { background-color: transparent !important; }
       math-field:focus-within { background-color: transparent !important; outline: none !important; }
-      .ML__contains-highlight, .ML__highlight, .ML__selection, .ML__focused { background: transparent !important; background-color: transparent !important; }
-      math-field { --placeholder-color: #a0a0a0 !important; --placeholder-opacity: 0.5 !important; --caret-color: #202124 !important; }
-      math-field::part(placeholder), .ML__placeholder { background: transparent !important; }
+      .ML__contains-highlight, .ML__highlight, .ML__selection, .ML__focused, .ML__placeholder, .ML__prompt, .ML__empty {
+        background: transparent !important;
+        background-color: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+      }
+      math-field::part(placeholder), math-field::part(prompt), .ML__placeholder { background: transparent !important; border: none !important; }
       /* Evita que o scroll da lista arraste a página no mobile */
       #expressions-list { overscroll-behavior: contain; }
     </style>

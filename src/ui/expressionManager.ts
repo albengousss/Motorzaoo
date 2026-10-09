@@ -422,8 +422,20 @@ export class ExpressionManager {
         numberSpan.className = 'block-number';
         numberSpan.style.cssText = `font-size: 14px; font-weight: bold; color: ${blockColor}; cursor: grab;`;
         numberSpan.innerText = this.blockCounter.toString();
+
+        const warningTrigger = document.createElement('div');
+        warningTrigger.className = 'block-warning-trigger hidden';
+        warningTrigger.innerHTML = `
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2.5">
+                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            <div class="warning-popover-tooltip"></div>
+        `;
         
         visibilityBtn.appendChild(numberSpan);
+        visibilityBtn.appendChild(warningTrigger);
 
         // Long press detection para dispositivos touch e mouse
         let longPressTimer: any = null;
@@ -474,31 +486,24 @@ export class ExpressionManager {
         const contentZone = document.createElement('div');
         contentZone.className = 'flex flex-col grow overflow-hidden';
         const topRow = document.createElement('div');
-        topRow.className = 'flex items-start px-2 py-3 gap-2 overflow-hidden min-h-[56px]';
+        topRow.className = 'flex items-center px-2 py-2 gap-2 overflow-hidden min-h-[50px] relative';
 
         const mathContainer = document.createElement('div');
-        mathContainer.className = 'flex flex-col grow overflow-hidden pt-1';
+        mathContainer.className = 'flex items-center grow overflow-hidden min-w-0';
 
         const mf = document.createElement('math-field');
         mf.className = 'border-none outline-none text-lg bg-transparent w-full';
         
         const resultSpan = document.createElement('div');
-        resultSpan.className = 'result-display text-gray-400 text-sm font-semibold overflow-x-auto w-full shrink text-left mt-1 hidden select-text';
+        resultSpan.className = 'result-display text-gray-800 text-sm font-semibold shrink-0 ml-auto mr-1 hidden select-text flex items-center gap-1.5 transition-all';
 
         const delBtn = document.createElement('button');
-        delBtn.innerHTML = '<i data-lucide="x" class="w-5 h-5"></i>';
-        delBtn.className = 'bg-transparent border-none text-gray-400 cursor-pointer text-base py-1 px-3 shrink-0 ml-auto transition-all opacity-40 hover:opacity-100 hover:text-gray-800 outline-none';
-
-        const errorBadge = document.createElement('div');
-        errorBadge.className = 'error-badge hidden flex items-center justify-center w-6 h-6 rounded-full bg-amber-50 hover:bg-amber-100 text-amber-600 cursor-pointer shrink-0 mt-1 transition-all';
-        errorBadge.title = 'Aviso na expressão';
-        errorBadge.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
+        delBtn.innerHTML = '<i data-lucide="x" class="w-4 h-4"></i>';
+        delBtn.className = 'bg-transparent border-none text-gray-400 cursor-pointer p-1 shrink-0 ml-auto transition-all opacity-40 hover:opacity-100 hover:text-gray-800 outline-none';
 
         mathContainer.appendChild(mf);
-        mathContainer.appendChild(resultSpan);
-
         topRow.appendChild(mathContainer);
-        topRow.appendChild(errorBadge);
+        topRow.appendChild(resultSpan);
         topRow.appendChild(delBtn);
         contentZone.appendChild(topRow);
 
@@ -587,7 +592,34 @@ export class ExpressionManager {
         mathField.style.setProperty('--highlight-color', 'transparent');
         mathField.style.setProperty('--placeholder-color', 'transparent');
         mathField.style.setProperty('--placeholder-opacity', '0');
-        mathField.style.setProperty('--selection-background-color', 'rgba(180, 200, 255, 0.4)');
+        mathField.style.setProperty('--prompt-border', 'none');
+        mathField.style.setProperty('--prompt-background', 'transparent');
+        mathField.style.setProperty('--prompt-highlight-color', 'transparent');
+        mathField.style.setProperty('--selection-background-color', 'rgba(66, 133, 244, 0.25)');
+
+        const injectCleanStyles = () => {
+            if (mf.shadowRoot && !mf.shadowRoot.querySelector('#clean-desmos-styles')) {
+                const styleEl = document.createElement('style');
+                styleEl.id = 'clean-desmos-styles';
+                styleEl.textContent = `
+                    .ML__placeholder, .ML__prompt, .ML__empty, [data-placeholder] {
+                        border: none !important;
+                        background: transparent !important;
+                        background-color: transparent !important;
+                        outline: none !important;
+                        box-shadow: none !important;
+                        color: transparent !important;
+                    }
+                    .ML__contains-highlight, .ML__highlight {
+                        background: transparent !important;
+                        background-color: transparent !important;
+                    }
+                `;
+                mf.shadowRoot.appendChild(styleEl);
+            }
+        };
+        setTimeout(injectCleanStyles, 20);
+        mf.addEventListener('focus', injectCleanStyles);
 
         const sliderInput = sliderRow.querySelector('.slider-input') as HTMLInputElement;
         const minInput = sliderRow.querySelector('.min-val') as HTMLInputElement;
@@ -1015,9 +1047,9 @@ export class ExpressionManager {
             return btn;
         };
 
-        // Grade da Matriz com Parênteses / Colchetes Estilizados
+        // Grade da Matriz com Parênteses / Colchetes Estilizados e Alça Interativa Desmos
         const gridWrapper = document.createElement('div');
-        gridWrapper.className = 'flex items-center my-1 select-none overflow-x-auto';
+        gridWrapper.className = 'flex items-center my-1 select-none overflow-x-auto relative';
 
         const bracketLeft = document.createElement('div');
         bracketLeft.className = 'border-l-2 border-t-2 border-b-2 border-gray-800 w-2.5 self-stretch rounded-l-xs shrink-0 mr-1.5 my-0.5';
@@ -1025,12 +1057,86 @@ export class ExpressionManager {
         const gridContainer = document.createElement('div');
         gridContainer.className = 'grid gap-1.5 py-1 px-1 grow';
 
+        const rightBracketWrapper = document.createElement('div');
+        rightBracketWrapper.className = 'relative flex items-center self-stretch shrink-0';
+
         const bracketRight = document.createElement('div');
         bracketRight.className = 'border-r-2 border-t-2 border-b-2 border-gray-800 w-2.5 self-stretch rounded-r-xs shrink-0 ml-1.5 my-0.5';
 
+        const dragHandle = document.createElement('div');
+        dragHandle.className = 'matrix-drag-handle';
+        dragHandle.title = 'Arraste para redimensionar (m × n)';
+
+        const dimTooltip = document.createElement('div');
+        dimTooltip.className = 'matrix-dim-tooltip';
+        dimTooltip.innerText = `${rows} × ${cols}`;
+
+        rightBracketWrapper.appendChild(bracketRight);
+        rightBracketWrapper.appendChild(dragHandle);
+        rightBracketWrapper.appendChild(dimTooltip);
+
         gridWrapper.appendChild(bracketLeft);
         gridWrapper.appendChild(gridContainer);
-        gridWrapper.appendChild(bracketRight);
+        gridWrapper.appendChild(rightBracketWrapper);
+
+        let startX = 0;
+        let startY = 0;
+        let startRows = rows;
+        let startCols = cols;
+
+        const onPointerMove = (e: PointerEvent) => {
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+
+            // Cada 35px em X adiciona/remove coluna; cada 30px em Y adiciona/remove linha
+            const targetCols = Math.max(1, Math.min(6, startCols + Math.round(dx / 35)));
+            const targetRows = Math.max(1, Math.min(6, startRows + Math.round(dy / 30)));
+
+            if (targetCols !== cols || targetRows !== rows) {
+                const newValues: string[][] = [];
+                for (let r = 0; r < targetRows; r++) {
+                    newValues[r] = [];
+                    for (let c = 0; c < targetCols; c++) {
+                        newValues[r][c] = cellValues[r]?.[c] !== undefined ? cellValues[r][c] : '0';
+                    }
+                }
+                rows = targetRows;
+                cols = targetCols;
+                cellValues = newValues;
+                renderGrid();
+                dimTooltip.innerText = `${rows} × ${cols}`;
+                dimTooltip.classList.add('visible');
+                this.onUpdateCallback();
+            }
+        };
+
+        const onPointerUp = (e: PointerEvent) => {
+            try {
+                dragHandle.releasePointerCapture(e.pointerId);
+            } catch(err) {}
+            dimTooltip.classList.remove('visible');
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', onPointerUp);
+            window.removeEventListener('pointercancel', onPointerUp);
+            HistoryManager.recordState(true);
+        };
+
+        dragHandle.addEventListener('pointerdown', (e: PointerEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            startX = e.clientX;
+            startY = e.clientY;
+            startRows = rows;
+            startCols = cols;
+            try {
+                dragHandle.setPointerCapture(e.pointerId);
+            } catch(err) {}
+            dimTooltip.innerText = `${rows} × ${cols}`;
+            dimTooltip.classList.add('visible');
+            window.addEventListener('pointermove', onPointerMove);
+            window.addEventListener('pointerup', onPointerUp);
+            window.addEventListener('pointercancel', onPointerUp);
+        });
 
         const focusCell = (r: number, c: number) => {
             const target = gridContainer.querySelector(`.matrix-cell[data-r="${r}"][data-c="${c}"]`) as HTMLInputElement;
@@ -1044,6 +1150,7 @@ export class ExpressionManager {
             block.dataset.rows = rows.toString();
             block.dataset.cols = cols.toString();
             dimBadge.innerText = `${rows}×${cols}`;
+            dimTooltip.innerText = `${rows} × ${cols}`;
             gridContainer.innerHTML = '';
             gridContainer.style.gridTemplateColumns = `repeat(${cols}, minmax(36px, 1fr))`;
 
@@ -1053,7 +1160,7 @@ export class ExpressionManager {
                     const val = cellValues[r][c] !== undefined ? cellValues[r][c] : '0';
                     const cell = document.createElement('input');
                     cell.type = 'text';
-                    cell.className = 'matrix-cell text-center text-xs font-mono font-medium py-1 px-1 rounded border border-gray-200 bg-white hover:border-purple-300 focus:border-purple-600 focus:ring-1 focus:ring-purple-300 outline-none transition-all shadow-2xs';
+                    cell.className = 'matrix-cell text-center text-xs font-mono font-medium py-1 px-1 rounded border border-transparent hover:border-purple-300 focus:border-purple-600 focus:bg-white outline-none transition-all shadow-2xs w-10 h-7 bg-transparent';
                     cell.dataset.r = r.toString();
                     cell.dataset.c = c.toString();
                     cell.value = val;
@@ -1710,7 +1817,8 @@ export class ExpressionManager {
         tablePoints?: { x: number, y: number, rowIndex: number, tableBlockId: string }[],
         connectLines?: boolean,
         isMatrix?: boolean,
-        matrixName?: string
+        matrixName?: string,
+        latex?: string
     }[] {
         const blocks = Array.from(this.container.children);
         const exprs: {
@@ -1724,7 +1832,8 @@ export class ExpressionManager {
             tablePoints?: { x: number, y: number, rowIndex: number, tableBlockId: string }[],
             connectLines?: boolean,
             isMatrix?: boolean,
-            matrixName?: string
+            matrixName?: string,
+            latex?: string
         }[] = [];
 
         // Mapa de visibilidade das pastas
@@ -1813,7 +1922,8 @@ export class ExpressionManager {
             const mf = block.querySelector('math-field');
             if (mf) {
                 const ascii = mf.getValue('ascii-math');
-                if (ascii) exprs.push({ id: block.id, rawAscii: ascii, visible, color, lineStyle, lineWidth });
+                const latex = mf.getValue('latex');
+                if (ascii || latex) exprs.push({ id: block.id, rawAscii: ascii || '', latex: latex || '', visible, color, lineStyle, lineWidth });
             }
         });
         return exprs;
@@ -1834,10 +1944,10 @@ export class ExpressionManager {
             return;
         }
 
-        chipsRow.innerHTML = `<span class="font-medium text-gray-500">adicionar controle:</span>`;
+        chipsRow.innerHTML = `<span class="font-medium text-gray-500">adicionar controle deslizante:</span>`;
         freeVars.forEach(v => {
             const btn = document.createElement('button');
-            btn.className = 'px-2 py-0.5 rounded bg-white hover:bg-blue-600 hover:text-white border border-blue-200 text-blue-600 font-semibold shadow-xs transition-all cursor-pointer';
+            btn.className = 'px-2 py-0.5 rounded bg-white hover:bg-blue-600 hover:text-white border border-gray-200 hover:border-blue-500 text-blue-600 font-semibold shadow-2xs transition-all cursor-pointer text-xs';
             btn.innerText = v;
             btn.onclick = (e) => {
                 e.stopPropagation();
@@ -1848,8 +1958,8 @@ export class ExpressionManager {
 
         if (freeVars.length > 1) {
             const allBtn = document.createElement('button');
-            allBtn.className = 'px-2 py-0.5 rounded bg-blue-500 hover:bg-blue-600 text-white font-semibold shadow-xs transition-all cursor-pointer';
-            allBtn.innerText = 'todos';
+            allBtn.className = 'px-2 py-0.5 rounded bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white border border-blue-200 font-semibold shadow-2xs transition-all cursor-pointer text-xs';
+            allBtn.innerText = 'tudo';
             allBtn.onclick = (e) => {
                 e.stopPropagation();
                 freeVars.forEach(v => onAddSlider(v));
@@ -1861,20 +1971,38 @@ export class ExpressionManager {
     }
 
     /**
-     * Exibe ou oculta o indicador de erro sutil com tooltip na linha da expressão
+     * Exibe ou oculta o indicador de erro sutil com tooltip na margem esquerda (Estilo Desmos)
      */
     static setError(blockId: string, errorMsg: string | null) {
         const block = document.getElementById(blockId);
         if (!block) return;
-        const errorBadge = block.querySelector('.error-badge') as HTMLElement;
-        if (!errorBadge) return;
+        const numberSpan = block.querySelector('.block-number') as HTMLElement;
+        const warningTrigger = block.querySelector('.block-warning-trigger') as HTMLElement;
+        const visibilityBtn = block.querySelector('.visibility-toggle') as HTMLElement;
+        const tooltipEl = block.querySelector('.warning-popover-tooltip') as HTMLElement;
 
         if (errorMsg) {
-            errorBadge.title = `Aviso: ${errorMsg}`;
-            errorBadge.classList.remove('hidden');
+            if (numberSpan) numberSpan.style.display = 'none';
+            if (warningTrigger) {
+                warningTrigger.classList.remove('hidden');
+                if (tooltipEl) tooltipEl.innerText = errorMsg;
+            }
+            if (visibilityBtn) {
+                visibilityBtn.style.borderColor = '#d97706';
+                visibilityBtn.style.background = '#fef3c7';
+            }
         } else {
-            errorBadge.classList.add('hidden');
-            errorBadge.title = '';
+            if (numberSpan) numberSpan.style.display = '';
+            if (warningTrigger) {
+                warningTrigger.classList.add('hidden');
+                if (tooltipEl) tooltipEl.innerText = '';
+            }
+            if (visibilityBtn) {
+                const curColor = block.dataset.color || '#2d70b3';
+                const isVisible = visibilityBtn.dataset.visible === 'true';
+                visibilityBtn.style.borderColor = curColor;
+                visibilityBtn.style.background = isVisible ? `${curColor}20` : 'transparent';
+            }
         }
     }
 
@@ -1927,27 +2055,43 @@ export class ExpressionManager {
         if (block) {
             const resDisplay = block.querySelector('.result-display') as HTMLElement;
             if (resDisplay) {
-                if (!result) {
+                if (!result || result.includes('Sintaxe Inválida') || result.includes('incompleta')) {
                     resDisplay.classList.add('hidden');
-                } else {
-                    resDisplay.classList.remove('hidden');
-                    resDisplay.title = result;
-                    const win = window as any;
-                    if (win.katex && result.startsWith('= ')) {
-                        try {
-                            const mathStr = result.substring(2);
-                            if (mathStr.includes('Erro') || mathStr.includes('indefinido') || mathStr.includes('carregar')) {
-                                resDisplay.innerText = result;
-                            } else {
-                                const html = win.katex.renderToString(mathStr, { throwOnError: false });
-                                resDisplay.innerHTML = '= <span style="display:inline-block; vertical-align: middle;">' + html + '</span>';
-                            }
-                        } catch(e) {
-                            resDisplay.innerText = result;
-                        }
-                    } else {
-                        resDisplay.innerText = result;
+                    resDisplay.innerHTML = '';
+                    return;
+                }
+                resDisplay.classList.remove('hidden');
+                resDisplay.title = result;
+                const win = window as any;
+
+                let mathStr = result.trim();
+                if (mathStr.startsWith('= ')) mathStr = mathStr.substring(2);
+
+                // Detectar se o resultado é uma matriz: [[1, 2], [3, 4]]
+                const matrixMatch = mathStr.match(/^\[\s*\[(.*)\]\s*\]$/);
+                if (matrixMatch && win.katex) {
+                    try {
+                        const rowStrings = mathStr.slice(1, -1).split(/\],\s*\[/);
+                        const katexRows = rowStrings.map((r: string) => {
+                            const cells = r.replace(/[\[\]]/g, '').split(',').map((c: string) => c.trim());
+                            return cells.join(' & ');
+                        }).join(' \\\\ ');
+                        const katexMatrix = `\\begin{bmatrix} ${katexRows} \\end{bmatrix}`;
+                        const html = win.katex.renderToString(katexMatrix, { throwOnError: false });
+                        resDisplay.innerHTML = '= ' + html;
+                        return;
+                    } catch(e) {}
+                }
+
+                if (win.katex && !mathStr.includes('Erro') && !mathStr.includes('indefinido') && !mathStr.includes('carregar')) {
+                    try {
+                        const html = win.katex.renderToString(mathStr, { throwOnError: false });
+                        resDisplay.innerHTML = '= <span style="display:inline-block; vertical-align: middle;">' + html + '</span>';
+                    } catch(e) {
+                        resDisplay.innerText = `= ${mathStr}`;
                     }
+                } else {
+                    resDisplay.innerText = `= ${mathStr}`;
                 }
             }
         }

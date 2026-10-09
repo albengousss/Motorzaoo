@@ -1,6 +1,7 @@
 import 'mathlive';
 import './style.css';
 import { PrattParser } from './core/prattParser';
+import { FaultTolerantParser } from './core/faultTolerantParser';
 import { StateManager } from './core/stateManager';
 import { HistoryManager } from './core/historyManager';
 
@@ -147,6 +148,13 @@ const casCommandsList = new Set([
 /** Substitui variáveis definidas pelo utilizador com o prefixo usr_ para o Giac */
 function prefixGiac(str: string): string {
     let res = str;
+    // Normalizações de matrizes e operadores estilo Desmos
+    res = res.replace(/([A-Za-z_][A-Za-z0-9_]*)\^\{?T\}?/g, 'tran($1)');
+    res = res.replace(/([A-Za-z_][A-Za-z0-9_]*)\^\{?-1\}?/g, 'inv($1)');
+    res = res.replace(/\btr\(([^)]+)\)/g, 'trace($1)');
+    res = res.replace(/\\cdot/g, '*');
+    res = res.replace(/\\times/g, '*');
+
     const vars = Object.keys(StateManager.giacDefinitions);
     vars.sort((a, b) => b.length - a.length); // substitui as mais longas primeiro para evitar colisões
     for (const v of vars) {
@@ -1221,25 +1229,26 @@ function compileAllExpressions() {
             // MODO CALCULADORA (Sem gráficos)
             const isPlot = expressaoPlot.includes('x') || expressaoPlot.includes('y') || expressaoPlot.includes('z');
             if (!isPlot && !isImplicit && !isDerivativePlot && !isExplicitY && !isExplicitZ) {
-                // Tenta PRIMEIRO a avaliação numérica direta local (ex: f(0, 2), 2 + 3, sin(pi/4), f(2, 3, 1, 0, 2))
+                // Tenta PRIMEIRO a avaliação numérica direta local (ex: f(0, 2), 2 + 3, sin(pi/4))
                 const evalFunc = MathEngine.compile(ast);
                 const val = evalFunc(0, 0, StateManager.values);
                 if (!isNaN(val)) {
                     ExpressionManager.setResult(item.id, '= ' + parseFloat(val.toFixed(4)).toString());
+                    ExpressionManager.setError(item.id, null);
                     return;
                 }
 
                 const giacVars = Object.keys(StateManager.giacDefinitions);
                 const hasGiacVar = giacVars.some(v => new RegExp(`\\b${v}\\b`).test(expressaoPlot)) && !StateManager.values.hasOwnProperty(expressaoPlot);
-                const isMatrixArithmetic = expressaoPlot.includes('{') || expressaoPlot.includes('[');
+                const isMatrixArithmetic = expressaoPlot.includes('{') || expressaoPlot.includes('[') || /([A-Za-z_][A-Za-z0-9_]*)\^\{?[T\-1]\}?/.test(expressaoPlot) || /\b(rref|det|inv|tran|rank|trace|tr)\(/.test(expressaoPlot);
 
                 if (hasGiacVar || isMatrixArithmetic) {
                     const currentQuery = expressaoPlot;
                     const cached = StateManager.casSolutions[item.id];
                     if (cached && cached.query === currentQuery) {
                         ExpressionManager.setResult(item.id, cached.result.includes('Erro') ? `- Erro no cálculo` : `= ${cached.result}`);
+                        ExpressionManager.setError(item.id, null);
                     } else if (!StateManager.pendingCas[item.id]) {
-                        ExpressionManager.setResult(item.id, 'Calculando...');
                         StateManager.pendingCas[item.id] = true;
                         
                         let giacQuery = prefixGiac(expressaoPlot).replace(/\\left\\{/g, '[').replace(/\\right\\}/g, ']')
@@ -1258,6 +1267,7 @@ function compileAllExpressions() {
                             
                             StateManager.casSolutions[item.id] = { query: currentQuery, result: formattedRes, ast: null };
                             ExpressionManager.setResult(item.id, formattedRes.includes('Erro') ? `- Erro no cálculo` : `= ${formattedRes}`);
+                            ExpressionManager.setError(item.id, null);
                             scheduleFrame();
                         });
                     }
@@ -1296,7 +1306,7 @@ function compileAllExpressions() {
                         const params = funcDeclMatch[2].split(',').map(s => s.trim());
                         boundForSliders.push(...params, funcDeclMatch[1]);
                     }
-                    const free = getFreeVariables(ast, boundForSliders);
+                    const free = FaultTolerantParser.detectFreeVariables(ascii, [...boundForSliders, ...Object.keys(StateManager.values)]);
                     const missingSliders = free.filter(v => StateManager.values[v] === undefined && !MathEngine.compiledFuncs[v]);
                     if (missingSliders.length > 0) {
                         ExpressionManager.setSliderSuggestions(item.id, missingSliders, (varName) => {
@@ -1313,9 +1323,33 @@ function compileAllExpressions() {
                 ExpressionManager.setSliderSuggestions(item.id, [], () => {});
             }
         } catch (e: any) {
-            // Em vez de engolir o erro silenciosamente, avisa o utilizador no ecrã e no badge
-            ExpressionManager.setResult(item.id, '⚠ Sintaxe Inválida');
-            ExpressionManager.setError(item.id, e?.message || 'Expressão incompleta ou sintaxe inválida');
+            // Em vez de engolir o erro com tarjas feias na tela, limpa o result display e sinaliza na margem esquerda (Estilo Desmos)
+            ExpressionManager.setResult(item.id, '');
+            const inc = FaultTolerantParser.checkIncompleteStatus(item.latex || '', ascii);
+            if (ascii.trim().length === 0) {
+                ExpressionManager.setError(item.id, null);
+                ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+            } else if (inc.isIncomplete) {
+                ExpressionManager.setError(item.id, inc.warning);
+            } else {
+                ExpressionManager.setError(item.id, 'Expressão incompleta');
+            }
+
+            // Tenta detectar parâmetros livres para sugestão de sliders mesmo em estado intermediário (ex: 'sqr' ou 'a*x')
+            try {
+                const free = FaultTolerantParser.detectFreeVariables(ascii, Object.keys(StateManager.values));
+                const missingSliders = free.filter(v => StateManager.values[v] === undefined && !MathEngine.compiledFuncs[v]);
+                if (missingSliders.length > 0) {
+                    ExpressionManager.setSliderSuggestions(item.id, missingSliders, (varName) => {
+                        ExpressionManager.addExpression(`${varName} = 1`);
+                        scheduleFrame();
+                    });
+                } else {
+                    ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                }
+            } catch(err) {
+                ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+            }
         }
     });
 
