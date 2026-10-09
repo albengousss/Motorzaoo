@@ -25,6 +25,7 @@ export class FaultTolerantParser {
         'det', 'determinant', 'inv', 'invert', 'tran', 'transpose',
         'rref', 'reducedrowechelonform', 'rank', 'matrixrank',
         'trace', 'tr', 'eigenvalues', 'eigenvectors',
+        'matrix', 'matriz', 'ddx', 'dx',
         'solve', 'nsolve', 'factor', 'expand', 'simplify'
     ]);
 

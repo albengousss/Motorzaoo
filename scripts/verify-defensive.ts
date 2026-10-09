@@ -61,6 +61,28 @@ assert(
   logVars
 );
 
+const matrixVars = FaultTolerantParser.detectFreeVariables('matrix');
+assert(
+  matrixVars.length === 0,
+  'Does NOT decompose reserved word "matrix" into free variables',
+  matrixVars
+);
+
+const matrizVars = FaultTolerantParser.detectFreeVariables('matriz');
+assert(
+  matrizVars.length === 0,
+  'Does NOT decompose reserved word "matriz" into free variables',
+  matrizVars
+);
+
+// Teste do regex de auto-substituição instantânea de matriz
+const matTriggerRegex = /^\s*(?:([a-zA-Z])\s*=\s*)?matri[xz]\s*$/i;
+assert(matTriggerRegex.test('matrix'), 'Matches standalone "matrix"');
+assert(matTriggerRegex.test('matriz'), 'Matches standalone "matriz"');
+const namedMatch = 'M = matrix'.match(matTriggerRegex);
+assert(namedMatch !== null && namedMatch[1] === 'M', 'Extracts matrix name from "M = matrix"');
+assert(!matTriggerRegex.test('sin(matrix)'), 'Does not match inline expression "sin(matrix)"');
+
 // 2. FaultTolerantParser: Incomplete typing detection
 console.log('\n[TEST GROUP 2: Incomplete Expression Detection]');
 

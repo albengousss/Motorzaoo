@@ -17,28 +17,30 @@ math-field {
   --contains-highlight-background-color: transparent !important;
   --highlight-background: transparent !important;
   --highlight-color: transparent !important;
-  --placeholder-color: transparent !important;
-  --placeholder-opacity: 0 !important;
+  --placeholder-color: #94a3b8 !important;
+  --placeholder-opacity: 0.6 !important;
   --prompt-border: none !important;
   --prompt-background: transparent !important;
   --prompt-highlight-color: transparent !important;
   --prompt-color: transparent !important;
+  --box-placeholder-color: #94a3b8 !important;
   --error-background: transparent !important;
   --error-color: inherit !important;
   --caret-color: #1f2937 !important;
-  --selection-background-color: rgba(66, 133, 244, 0.25) !important;
+  --selection-background-color: transparent !important;
+  --_selection-background-color: transparent !important;
 }
 
 math-field::part(error),
 math-field::part(placeholder),
 math-field::part(container),
+math-field::part(selection),
 math-field::part(prompt) {
   background: transparent !important;
   background-color: transparent !important;
   border: none !important;
   outline: none !important;
   box-shadow: none !important;
-  color: inherit !important;
 }
 
 /* Inibe caixas pontilhadas e fundos azuis residuais no MathLive */
@@ -47,6 +49,9 @@ math-field::part(prompt) {
 .ML__placeholder, 
 .ML__prompt, 
 .ML__empty,
+.ML__selection,
+.ML__selected,
+.ML__box-placeholder,
 [data-placeholder] {
   background: transparent !important;
   background-color: transparent !important;

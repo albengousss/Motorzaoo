@@ -280,6 +280,38 @@ function compileAllExpressions() {
     const activeVars: string[] = [];
     const definedUserFunctionNames = new Set<string>();
 
+    // Ciclo de Vida Automático de Sliders (Estilo Desmos):
+    // 1. Coleta todas as variáveis livres em uso nas expressões regulares
+    const activelyNeededFreeVars = new Set<string>();
+    rawData.forEach(item => {
+        const blockEl = document.getElementById(item.id);
+        if (blockEl && blockEl.dataset.autoSlider) return;
+        const raw = item.rawAscii || '';
+        if (raw && !item.isMatrix && !item.isTable) {
+            const free = FaultTolerantParser.detectFreeVariables(raw);
+            free.forEach(v => activelyNeededFreeVars.add(v));
+        }
+    });
+
+    // 2. Remove automaticamente qualquer slider auto-gerado que não seja mais referenciado por nenhuma fórmula
+    const allBlocks = Array.from(ExpressionManager.container.children) as HTMLElement[];
+    let removedAutoSlider = false;
+    allBlocks.forEach(block => {
+        const autoVar = block.dataset.autoSlider;
+        if (autoVar) {
+            if (!activelyNeededFreeVars.has(autoVar)) {
+                block.remove();
+                delete StateManager.values[autoVar];
+                delete StateManager.asts[autoVar];
+                delete StateManager.giacDefinitions[autoVar];
+                removedAutoSlider = true;
+            }
+        }
+    });
+    if (removedAutoSlider) {
+        ExpressionManager.updateBlockNumbers();
+    }
+
     rawData.forEach(item => {
         if (item.isTable) {
             if (item.tablePoints && item.tablePoints.length > 0) {
@@ -318,6 +350,7 @@ function compileAllExpressions() {
             ExpressionManager.setResult(item.id, '');
             ExpressionManager.setError(item.id, null);
             ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+            ExpressionManager.processBlockState(item.id, '', {});
             return;
         }
         // =========================================================
@@ -1109,6 +1142,9 @@ function compileAllExpressions() {
                     return; 
                 }
             }
+        } else {
+            // Se esta linha não é uma atribuição, esconde qualquer slider residual que possa ter estado nela
+            ExpressionManager.processBlockState(item.id, '', {});
         }
 
         // 5. GRÁFICOS (Implícitas, Explícitas e Derivadas Diretas)
@@ -1310,7 +1346,7 @@ function compileAllExpressions() {
                     const missingSliders = free.filter(v => StateManager.values[v] === undefined && !MathEngine.compiledFuncs[v]);
                     if (missingSliders.length > 0) {
                         ExpressionManager.setSliderSuggestions(item.id, missingSliders, (varName) => {
-                            ExpressionManager.addExpression(`${varName} = 1`);
+                            ExpressionManager.addExpression(`${varName} = 1`, false, varName, item.id);
                             scheduleFrame();
                         });
                     } else {
@@ -1325,6 +1361,7 @@ function compileAllExpressions() {
         } catch (e: any) {
             // Em vez de engolir o erro com tarjas feias na tela, limpa o result display e sinaliza na margem esquerda (Estilo Desmos)
             ExpressionManager.setResult(item.id, '');
+            ExpressionManager.processBlockState(item.id, '', {});
             const inc = FaultTolerantParser.checkIncompleteStatus(item.latex || '', ascii);
             if (ascii.trim().length === 0) {
                 ExpressionManager.setError(item.id, null);
@@ -1341,7 +1378,7 @@ function compileAllExpressions() {
                 const missingSliders = free.filter(v => StateManager.values[v] === undefined && !MathEngine.compiledFuncs[v]);
                 if (missingSliders.length > 0) {
                     ExpressionManager.setSliderSuggestions(item.id, missingSliders, (varName) => {
-                        ExpressionManager.addExpression(`${varName} = 1`);
+                        ExpressionManager.addExpression(`${varName} = 1`, false, varName, item.id);
                         scheduleFrame();
                     });
                 } else {

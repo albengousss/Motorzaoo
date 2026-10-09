@@ -387,13 +387,19 @@ export class ExpressionManager {
         });
     }
 
-    static addBlock(autoFocus: boolean = true, initialValue: string = '', folderId?: string): string {
+    static addBlock(autoFocus: boolean = true, initialValue: string = '', folderId?: string, autoSliderVar?: string, parentBlockId?: string): string {
         this.blockCounter++;
         const blockId = 'expr-block-' + this.blockCounter;
 
         const block = document.createElement('div');
         block.id = blockId;
         block.dataset.type = 'expression';
+        if (autoSliderVar) {
+            block.dataset.autoSlider = autoSliderVar;
+        }
+        if (parentBlockId) {
+            block.dataset.parentBlockId = parentBlockId;
+        }
         if (folderId) {
             block.dataset.folderId = folderId;
             block.className = 'flex border-b border-gray-100 bg-white transition-colors duration-200 relative group pl-3 border-l-4 border-l-blue-300';
@@ -575,7 +581,12 @@ export class ExpressionManager {
             'cdot': '\\cdot',
             'times': '\\times',
             'div': '\\div',
-            'e': 'e'
+            'e': 'e',
+            'matrix': '\\begin{bmatrix} #? & #? \\\\ #? & #? \\end{bmatrix}',
+            'matriz': '\\begin{bmatrix} #? & #? \\\\ #? & #? \\end{bmatrix}',
+            'd/dx': '\\frac{d}{dx}',
+            'ddx': '\\frac{d}{dx}',
+            'diff': '\\frac{d}{dx}'
         };
         const currentBindings = mathField.keybindings || [];
         mathField.keybindings = [
@@ -590,36 +601,60 @@ export class ExpressionManager {
         mathField.style.setProperty('--contains-highlight-background', 'transparent');
         mathField.style.setProperty('--highlight-background', 'transparent');
         mathField.style.setProperty('--highlight-color', 'transparent');
-        mathField.style.setProperty('--placeholder-color', 'transparent');
-        mathField.style.setProperty('--placeholder-opacity', '0');
+        mathField.style.setProperty('--placeholder-color', '#94a3b8');
+        mathField.style.setProperty('--placeholder-opacity', '0.6');
+        mathField.style.setProperty('--box-placeholder-color', '#94a3b8');
         mathField.style.setProperty('--prompt-border', 'none');
         mathField.style.setProperty('--prompt-background', 'transparent');
         mathField.style.setProperty('--prompt-highlight-color', 'transparent');
-        mathField.style.setProperty('--selection-background-color', 'rgba(66, 133, 244, 0.25)');
+        mathField.style.setProperty('--selection-background-color', 'transparent');
+        mathField.style.setProperty('--_selection-background-color', 'transparent');
 
         const injectCleanStyles = () => {
-            if (mf.shadowRoot && !mf.shadowRoot.querySelector('#clean-desmos-styles')) {
-                const styleEl = document.createElement('style');
-                styleEl.id = 'clean-desmos-styles';
+            if (mf.shadowRoot) {
+                let styleEl = mf.shadowRoot.querySelector('#clean-desmos-styles') as HTMLStyleElement;
+                if (!styleEl) {
+                    styleEl = document.createElement('style');
+                    styleEl.id = 'clean-desmos-styles';
+                    mf.shadowRoot.appendChild(styleEl);
+                }
                 styleEl.textContent = `
+                    :host {
+                        --selection-background-color: transparent !important;
+                        --_selection-background-color: transparent !important;
+                        --box-placeholder-color: #94a3b8 !important;
+                        --_box-placeholder-color: #94a3b8 !important;
+                    }
+                    .ML__selection, 
+                    .ML__selected,
+                    .ML__focused .ML__empty-line-anchor.ML__selected::after {
+                        background: transparent !important;
+                        background-color: transparent !important;
+                    }
                     .ML__placeholder, .ML__prompt, .ML__empty, [data-placeholder] {
                         border: none !important;
                         background: transparent !important;
                         background-color: transparent !important;
                         outline: none !important;
                         box-shadow: none !important;
-                        color: transparent !important;
+                    }
+                    .ML__box-placeholder {
+                        color: #94a3b8 !important;
+                        border-color: #94a3b8 !important;
+                        background: transparent !important;
+                        background-color: transparent !important;
                     }
                     .ML__contains-highlight, .ML__highlight {
                         background: transparent !important;
                         background-color: transparent !important;
                     }
                 `;
-                mf.shadowRoot.appendChild(styleEl);
             }
         };
-        setTimeout(injectCleanStyles, 20);
+        setTimeout(injectCleanStyles, 10);
+        setTimeout(injectCleanStyles, 80);
         mf.addEventListener('focus', injectCleanStyles);
+        mf.addEventListener('input', injectCleanStyles);
 
         const sliderInput = sliderRow.querySelector('.slider-input') as HTMLInputElement;
         const minInput = sliderRow.querySelector('.min-val') as HTMLInputElement;
@@ -761,6 +796,17 @@ export class ExpressionManager {
         });
 
         mf.addEventListener('input', () => {
+            const rawAscii = (mf as any).getValue('ascii-math') || '';
+
+            // Auto-transformação Instantânea por Digitação (matrix, matriz, A = matrix)
+            const cleanAscii = rawAscii.trim();
+            const matrixMatch = cleanAscii.match(/^\s*(?:([a-zA-Z])\s*=\s*)?matri[xz]\s*$/i);
+            if (matrixMatch) {
+                const targetName = matrixMatch[1] ? matrixMatch[1].toUpperCase() : undefined;
+                this.convertBlockToMatrix(block.id, targetName);
+                return;
+            }
+
             this.showAutocomplete(mf);
             this.onUpdateCallback();
             HistoryManager.recordState(false);
@@ -944,7 +990,8 @@ export class ExpressionManager {
     static addMatrix(
         matrixData?: { name?: string; rows?: number; cols?: number; data?: string[][] },
         autoFocus: boolean = true,
-        folderId?: string
+        folderId?: string,
+        replaceBlock?: HTMLElement
     ): string {
         this.blockCounter++;
         const blockId = 'matrix-block-' + this.blockCounter;
@@ -1328,7 +1375,11 @@ export class ExpressionManager {
 
         renderGrid();
         this.setupBlockDrag(block, grabZone);
-        this.container.appendChild(block);
+        if (replaceBlock && replaceBlock.parentNode) {
+            replaceBlock.parentNode.replaceChild(block, replaceBlock);
+        } else {
+            this.container.appendChild(block);
+        }
         if ((window as any).lucide) (window as any).lucide.createIcons({ root: block });
 
         this.updateBlockNumbers();
@@ -1340,6 +1391,20 @@ export class ExpressionManager {
         }
 
         return blockId;
+    }
+
+    /**
+     * Converte instantaneamente um bloco de expressão em um bloco de Matriz Visual Interativa (Desmos style)
+     */
+    static convertBlockToMatrix(blockId: string, name?: string): string | null {
+        const targetBlock = document.getElementById(blockId);
+        if (!targetBlock) return null;
+        const folderId = targetBlock.dataset.folderId;
+        const mid = this.addMatrix({ name: name || this.getNextMatrixName() }, true, folderId, targetBlock);
+        this.updateBlockNumbers();
+        this.onUpdateCallback();
+        HistoryManager.recordState(true);
+        return mid;
     }
 
     static addTable(
@@ -1782,16 +1847,17 @@ export class ExpressionManager {
         this.updateBlockNumbers();
     }
 
-    static addExpression(asciiValue: string, autoFocus: boolean = false): string {
-        const blockId = this.addBlock(autoFocus);
+    static addExpression(asciiValue: string, autoFocus: boolean = false, autoSliderVar?: string, parentBlockId?: string): string {
+        const blockId = this.addBlock(autoFocus, asciiValue, undefined, autoSliderVar, parentBlockId);
         const block = document.getElementById(blockId);
         if (block) {
             const mf = block.querySelector('math-field');
             if (mf) {
-                (mf as any).setValue(asciiValue, { suppressChangeNotifications: true });
+                (mf as any).setValue(asciiValue);
             }
         }
         this.updateBlockNumbers();
+        this.onUpdateCallback();
         HistoryManager.recordState(true);
         return blockId;
     }
