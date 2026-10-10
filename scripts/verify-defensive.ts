@@ -1,5 +1,6 @@
 import { FaultTolerantParser } from '../src/core/faultTolerantParser.js';
 import { Tokenizer, TokenTypes } from '../src/core/tokenizer.js';
+import { MathEngine } from '../src/core/mathEngine.js';
 
 console.log('--- STARTING DEFENSIVE EDGE CASE TESTS ---');
 
@@ -262,12 +263,12 @@ function testPrefixGiac(input: string, knownMatrices: Set<string>): string {
   s = s.replace(/([A-Za-z_][A-Za-z0-9_]*)\^\{?(?:T|\\top|intercal)\}?/g, 'tran($1)');
   s = s.replace(/([A-Za-z_][A-Za-z0-9_]*)'/g, 'tran($1)');
 
-  // Inverse: (A*B)^{-1}, A^{-1}, A^-1, A^(-1)
-  s = s.replace(/\(([^)]+)\)\^\{?\s*(?:-1|\(-1\))\s*\}?/g, 'inv($1)');
-  s = s.replace(/([A-Za-z_][A-Za-z0-9_]*)\^\{?\s*(?:-1|\(-1\))\s*\}?/g, 'inv($1)');
+  // Inverse: (A*B)^{-1}, A^{-1}, A^-1, A^(-1), A^({-1})
+  s = s.replace(/\(([^)]+)\)\^[\{\(]*\s*(?:-1|\(-1\))\s*[\}\)]*/g, 'inv($1)');
+  s = s.replace(/([A-Za-z_][A-Za-z0-9_]*)\^[\{\(]*\s*(?:-1|\(-1\))\s*[\}\)]*/g, 'inv($1)');
 
   // CAS aliases
-  s = s.replace(/\btr\(([^)]+)\)/gi, 'trace($1)');
+  s = s.replace(/\btr\s*\(([^)]+)\)/gi, 'trace($1)');
   s = s.replace(/\\?det\s*\(([^)]+)\)/gi, 'det($1)');
   s = s.replace(/\bdeterminant\s*\(([^)]+)\)/gi, 'det($1)');
   s = s.replace(/\breducedrowechelonform\s*\(([^)]+)\)/gi, 'rref($1)');
@@ -285,15 +286,15 @@ function testPrefixGiac(input: string, knownMatrices: Set<string>): string {
   // Implicit matrix multiplication
   for (const v1 of sortedVars) {
     for (const v2 of sortedVars) {
-      s = s.replace(new RegExp(`(?:^|(?<=[^a-zA-Z0-9_]))${v1}\\s+${v2}(?=[^a-zA-Z0-9_]|$)`, 'g'), `${v1}*${v2}`);
+      s = s.replace(new RegExp(`(?:^|(?<=[^a-zA-Z_]))${v1}\\s+${v2}(?=[^a-zA-Z_]|$)`, 'g'), `${v1}*${v2}`);
       if (v1.length === 1 && v2.length === 1 && v1 !== v2) {
-        s = s.replace(new RegExp(`(?:^|(?<=[^a-zA-Z0-9_]))${v1}${v2}(?=[^a-zA-Z0-9_]|$)`, 'g'), `${v1}*${v2}`);
+        s = s.replace(new RegExp(`(?:^|(?<=[^a-zA-Z_]))${v1}${v2}(?=[^a-zA-Z_]|$)`, 'g'), `${v1}*${v2}`);
       }
     }
   }
 
   for (const v of sortedVars) {
-    s = s.replace(new RegExp(`(?:^|(?<=[^a-zA-Z0-9_]))${v}(?=[^a-zA-Z0-9_]|$)`, 'g'), `usr_${v}`);
+    s = s.replace(new RegExp(`(?:^|(?<=[^a-zA-Z_]))${v}(?=[^a-zA-Z_]|$)`, 'g'), `usr_${v}`);
   }
   return s;
 }
@@ -395,6 +396,42 @@ assert(
   tranClean === '[[1, 3], [2, 4]]',
   'Cleans Giac "matrix[[" prefix into standard "[[1, 3], [2, 4]]"',
   tranClean
+);
+
+const invCurlyParen = testPrefixGiac('B^({-1})', new Set(['B']));
+assert(
+  invCurlyParen === 'inv(usr_B)',
+  'Transforms complex inverse B^({-1}) into inv(usr_B)',
+  invCurlyParen
+);
+
+(global as any).window = { StateManager: { giacDefinitions: { B: 'usr_B:=[[1,2],[3,4]]' } } };
+const formatPowerInv = MathEngine.formatForGiac(['Power', 'B', ['Negate', 1]]);
+assert(
+  formatPowerInv === 'inv(usr_B)',
+  'formatForGiac converts Power with -1 exponent to inv(usr_B)',
+  formatPowerInv
+);
+
+const spacedDetFree = FaultTolerantParser.detectFreeVariables('d e t ( B )', ['B']);
+assert(
+  spacedDetFree.length === 0,
+  'detectFreeVariables does not treat spaced "d e t" as free variables',
+  JSON.stringify(spacedDetFree)
+);
+
+const spacedRrefFree = FaultTolerantParser.detectFreeVariables('r r e f ( B )', ['B']);
+assert(
+  spacedRrefFree.length === 0,
+  'detectFreeVariables does not treat spaced "r r e f" as free variables',
+  JSON.stringify(spacedRrefFree)
+);
+
+const spacedTraceFree = FaultTolerantParser.detectFreeVariables('t r a c e ( B )', ['B']);
+assert(
+  spacedTraceFree.length === 0,
+  'detectFreeVariables does not treat spaced "t r a c e" as free variables',
+  JSON.stringify(spacedTraceFree)
 );
 
 // 6. Extreme Input Robustness

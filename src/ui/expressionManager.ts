@@ -593,13 +593,12 @@ export class ExpressionManager {
             'd/dx': '\\frac{d}{dx}',
             'ddx': '\\frac{d}{dx}',
             'diff': '\\frac{d}{dx}',
-            'det': '\\det\\left(#?\\right)',
-            'rref': '\\operatorname{rref}\\left(#?\\right)',
-            'trace': '\\operatorname{trace}\\left(#?\\right)',
-            'tr': '\\operatorname{tr}\\left(#?\\right)',
-            'rank': '\\operatorname{rank}\\left(#?\\right)',
-            'transpose': '\\operatorname{transpose}\\left(#?\\right)',
-            'inv': '\\operatorname{inv}\\left(#?\\right)'
+            'det': '\\det',
+            'rref': '\\operatorname{rref}',
+            'trace': '\\operatorname{trace}',
+            'rank': '\\operatorname{rank}',
+            'transpose': '\\operatorname{transpose}',
+            'inv': '\\operatorname{inv}'
         };
         const currentBindings = mathField.keybindings || [];
         mathField.keybindings = [
@@ -1574,7 +1573,10 @@ export class ExpressionManager {
                     if (addBlockBtn) {
                         addBlockBtn.addEventListener('click', (e) => {
                             e.stopPropagation();
-                            this.addExpression(`${cmd}(${curName})`, true);
+                            let exprToAdd = `${cmd}(${curName})`;
+                            if (cmd === 'inv') exprToAdd = `${curName}^{-1}`;
+                            else if (cmd === 'tran') exprToAdd = `${curName}^T`;
+                            this.addExpression(exprToAdd, true);
                         });
                     }
                 });

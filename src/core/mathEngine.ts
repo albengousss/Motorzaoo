@@ -135,7 +135,17 @@ export class MathEngine {
             if (op === 'Subtract') return `(${this.formatForGiac(ast[1])} - ${this.formatForGiac(ast[2])})`;
             if (op === 'Multiply') return `(${this.formatForGiac(ast[1])} * ${this.formatForGiac(ast[2])})`;
             if (op === 'Divide') return `(${this.formatForGiac(ast[1])} / ${this.formatForGiac(ast[2])})`;
-            if (op === 'Power') return `(${this.formatForGiac(ast[1])})^(${this.formatForGiac(ast[2])})`;
+            if (op === 'Power') {
+                const base = this.formatForGiac(ast[1]);
+                const exp = ast[2];
+                if (exp === -1 || (Array.isArray(exp) && exp[0] === 'Negate' && exp[1] === 1)) {
+                    return `inv(${base})`;
+                }
+                if (exp === 'T' || exp === 'top' || exp === 'intercal') {
+                    return `tran(${base})`;
+                }
+                return `(${base})^(${this.formatForGiac(exp)})`;
+            }
             if (op === 'Negate') return `(-${this.formatForGiac(ast[1])})`;
             if (op === 'List') return `[${ast.slice(1).map((x: any) => this.formatForGiac(x)).join(',')}]`;
             

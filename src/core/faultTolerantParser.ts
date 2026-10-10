@@ -103,8 +103,17 @@ export class FaultTolerantParser {
         // Operadores de matriz: transposta (^T, ^\top, ') e inversa (^-1) não são variáveis livres!
         cleaned = cleaned
             .replace(/\^\{?(?:T|\\top|intercal)\}?/gi, ' ')
-            .replace(/\^\{?\s*(?:-1|\(-1\))\s*\}?/g, ' ')
+            .replace(/\^[\{\(]*\s*(?:-1|\(-1\))\s*[\}\)]*/g, ' ')
             .replace(/'/g, ' ');
+
+        // Funções reservadas e operadores matriciais espaçados pelo MathLive (det, rref, trace, rank, etc.)
+        const spacedCasFuncs = [
+            'rref', 'det', 'trace', 'rank', 'tran', 'transpose', 'inv', 'invert', 'matrix', 'matriz'
+        ];
+        spacedCasFuncs.forEach(fn => {
+            const regex = new RegExp(fn.split('').join('\\s*'), 'gi');
+            cleaned = cleaned.replace(regex, ' ');
+        });
 
         // Remove comandos LaTeX de formatação (ex: \frac, \left, \right, \operatorname)
         cleaned = cleaned.replace(/\\[a-zA-Z]+/g, ' ');
