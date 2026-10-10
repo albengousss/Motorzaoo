@@ -309,6 +309,23 @@ math-virtual-keyboard::part(keycap):active {
   transition: border-color 0.12s ease, background-color 0.12s ease;
 }
 
+.matrix-grid-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(124, 58, 237, 0.25) transparent;
+}
+
+.matrix-grid-scroll::-webkit-scrollbar {
+  height: 4px;
+}
+
+.matrix-grid-scroll::-webkit-scrollbar-thumb {
+  background: rgba(124, 58, 237, 0.25);
+  border-radius: 4px;
+}
+
 #toggle-keyboard-btn {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
 }

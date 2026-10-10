@@ -1144,7 +1144,7 @@ export class ExpressionManager {
         grabZone.appendChild(visibilityBtn);
 
         const contentZone = document.createElement('div');
-        contentZone.className = 'flex flex-col grow overflow-hidden px-2 py-3 gap-2';
+        contentZone.className = 'flex flex-col grow overflow-visible px-2 py-3 gap-2 min-w-0';
 
         // Header do Bloco: Nome, Dimensões e Controles de Redimensionamento (+L, -L, +C, -C)
         const headerRow = document.createElement('div');
@@ -1190,7 +1190,7 @@ export class ExpressionManager {
 
         // Grade da Matriz com Parênteses / Colchetes Estilizados, Bordas Arrastáveis e Alça Interativa
         const gridWrapper = document.createElement('div');
-        gridWrapper.className = 'flex flex-col my-1 select-none overflow-visible relative self-start w-fit';
+        gridWrapper.className = 'flex flex-col my-1 pb-3 pr-3 select-none relative self-start w-fit overflow-visible';
 
         const matrixBody = document.createElement('div');
         matrixBody.className = 'flex items-stretch select-none relative inline-flex w-fit';
@@ -1247,23 +1247,28 @@ export class ExpressionManager {
         let resizeMode: 'both' | 'cols' | 'rows' = 'both';
 
         const computeCellWidth = () => {
-            const availWidth = (contentZone.clientWidth > 0 ? contentZone.clientWidth : 280) - 48;
+            const sidebar = document.getElementById('sidebar');
+            const measuredWidth = contentZone.clientWidth > 0
+                ? contentZone.clientWidth
+                : (sidebar && sidebar.clientWidth > 0 ? sidebar.clientWidth - 56 : 280);
+            const availWidth = measuredWidth - 58;
             const gap = 6;
             const gapsTotal = Math.max(0, cols - 1) * gap;
             const fitWidth = Math.floor((availWidth - gapsTotal) / cols);
-            return Math.max(26, Math.min(46, fitWidth));
+            // Escala suavemente entre 20px (para 8 colunas ou barras estreitas) e 56px (barras largas)
+            return Math.max(20, Math.min(56, fitWidth));
         };
 
         const updateCellVisuals = () => {
             const cellW = computeCellWidth();
-            const cellH = Math.max(24, Math.min(30, Math.round(cellW * 0.72)));
+            const cellH = Math.max(22, Math.min(34, Math.round(cellW * 0.72)));
             gridContainer.style.gridTemplateColumns = `repeat(${cols}, ${cellW}px)`;
             const cells = gridContainer.querySelectorAll<HTMLInputElement>('.matrix-cell');
             cells.forEach((cell) => {
                 cell.style.width = `${cellW}px`;
                 cell.style.height = `${cellH}px`;
-                cell.style.fontSize = cellW < 32 ? '11px' : '12px';
-                cell.style.padding = cellW < 32 ? '2px 1px' : '4px 2px';
+                cell.style.fontSize = cellW < 28 ? '10px' : (cellW < 36 ? '11px' : '12px');
+                cell.style.padding = cellW < 28 ? '1px 1px' : (cellW < 36 ? '2px 1px' : '4px 2px');
             });
         };
         (block as any)._updateCellVisuals = updateCellVisuals;
@@ -1282,8 +1287,8 @@ export class ExpressionManager {
             const dy = e.clientY - startY;
 
             const curCellW = computeCellWidth();
-            const colStep = Math.max(28, curCellW + 6);
-            const rowStep = 34;
+            const colStep = Math.max(22, curCellW + 6);
+            const rowStep = 32;
 
             let targetCols = startCols;
             let targetRows = startRows;
@@ -1350,7 +1355,7 @@ export class ExpressionManager {
 
             const dx = e.clientX - startX;
             const curCellW = computeCellWidth();
-            const colStep = Math.max(28, curCellW + 6);
+            const colStep = Math.max(22, curCellW + 6);
             const finalCols = startCols + Math.round(dx / colStep);
 
             if ((resizeMode === 'both' || resizeMode === 'cols') && finalCols <= 0) {
@@ -1674,6 +1679,7 @@ export class ExpressionManager {
         } else {
             this.container.appendChild(block);
         }
+        updateCellVisuals();
         if ((window as any).lucide) (window as any).lucide.createIcons({ root: block });
 
         this.updateBlockNumbers();

@@ -2202,14 +2202,24 @@ const collapseSidebarBtn = document.getElementById('collapse-sidebar-btn');
 let savedSidebarWidth = 380;
 let isDraggingSidebarResizer = false;
 
-function collapseDesktopSidebar() {
+function collapseDesktopSidebar(fromDrag: boolean = false) {
     if (window.innerWidth <= 768) return;
     const currentW = sidebarEl.getBoundingClientRect().width;
-    if (currentW > 120) savedSidebarWidth = currentW;
+    if (currentW > 100) savedSidebarWidth = currentW;
     sidebarEl.style.width = '0px';
     sidebarEl.style.display = 'none';
-    if (sidebarResizer) sidebarResizer.style.display = 'none';
+    if (sidebarResizer) {
+        sidebarResizer.style.display = 'none';
+        sidebarResizer.classList.remove('bg-purple-600', 'w-2', 'is-dragging');
+    }
     if (sidebarExpandTab) sidebarExpandTab.style.display = 'flex';
+
+    if (fromDrag || isDraggingSidebarResizer) {
+        isDraggingSidebarResizer = false;
+        document.body.classList.remove('select-none');
+        document.body.style.cursor = '';
+    }
+
     resizeAll();
     drawFrame();
     ExpressionManager.updateAllMatrixSizes();
@@ -2250,7 +2260,8 @@ if (sidebarResizer) {
         const maxAllowedWidth = Math.floor(window.innerWidth * 0.75);
 
         if (newWidth < minCollapseThreshold) {
-            collapseDesktopSidebar();
+            try { sidebarResizer.releasePointerCapture(e.pointerId); } catch(err) {}
+            collapseDesktopSidebar(true);
             return;
         }
 
@@ -2259,7 +2270,7 @@ if (sidebarResizer) {
             if (sidebarExpandTab) sidebarExpandTab.style.display = 'none';
         }
 
-        const clampedWidth = Math.min(maxAllowedWidth, Math.max(160, newWidth));
+        const clampedWidth = Math.min(maxAllowedWidth, Math.max(100, newWidth));
         sidebarEl.style.width = `${clampedWidth}px`;
         savedSidebarWidth = clampedWidth;
 
