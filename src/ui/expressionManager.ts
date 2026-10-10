@@ -1246,6 +1246,28 @@ export class ExpressionManager {
         let activeDragEl: HTMLElement | null = null;
         let resizeMode: 'both' | 'cols' | 'rows' = 'both';
 
+        const computeCellWidth = () => {
+            const availWidth = (contentZone.clientWidth > 0 ? contentZone.clientWidth : 280) - 48;
+            const gap = 6;
+            const gapsTotal = Math.max(0, cols - 1) * gap;
+            const fitWidth = Math.floor((availWidth - gapsTotal) / cols);
+            return Math.max(26, Math.min(46, fitWidth));
+        };
+
+        const updateCellVisuals = () => {
+            const cellW = computeCellWidth();
+            const cellH = Math.max(24, Math.min(30, Math.round(cellW * 0.72)));
+            gridContainer.style.gridTemplateColumns = `repeat(${cols}, ${cellW}px)`;
+            const cells = gridContainer.querySelectorAll<HTMLInputElement>('.matrix-cell');
+            cells.forEach((cell) => {
+                cell.style.width = `${cellW}px`;
+                cell.style.height = `${cellH}px`;
+                cell.style.fontSize = cellW < 32 ? '11px' : '12px';
+                cell.style.padding = cellW < 32 ? '2px 1px' : '4px 2px';
+            });
+        };
+        (block as any)._updateCellVisuals = updateCellVisuals;
+
         const updateGiacDefinition = () => {
             const curName = nameInput.value.trim().toUpperCase() || 'A';
             const giacMatrix = `[[${cellValues.map((r: string[]) => r.map((c: string) => (c && c.trim()) || '0').join(', ')).join('], [')}]]`;
@@ -1259,16 +1281,36 @@ export class ExpressionManager {
             const dx = e.clientX - startX;
             const dy = e.clientY - startY;
 
-            // Cada ~50px horizontal = +1 coluna, cada ~36px vertical = +1 linha
+            const curCellW = computeCellWidth();
+            const colStep = Math.max(28, curCellW + 6);
+            const rowStep = 34;
+
             let targetCols = startCols;
             let targetRows = startRows;
 
             if (resizeMode === 'both' || resizeMode === 'cols') {
-                targetCols = Math.max(1, Math.min(8, startCols + Math.round(dx / 50)));
+                targetCols = startCols + Math.round(dx / colStep);
             }
             if (resizeMode === 'both' || resizeMode === 'rows') {
-                targetRows = Math.max(1, Math.min(8, startRows + Math.round(dy / 36)));
+                targetRows = startRows + Math.round(dy / rowStep);
             }
+
+            // Arrasto além da barra para a esquerda:
+            // Mostra indicação visual de remoção / desaparecimento
+            if (targetCols <= 0) {
+                dimTooltip.innerText = 'Remover matriz';
+                dimTooltip.classList.add('visible', 'matrix-remove-hint');
+                matrixBody.style.opacity = '0.35';
+                matrixBody.style.filter = 'grayscale(80%)';
+                return;
+            } else {
+                matrixBody.style.opacity = '1';
+                matrixBody.style.filter = 'none';
+                dimTooltip.classList.remove('matrix-remove-hint');
+            }
+
+            targetCols = Math.min(8, Math.max(1, targetCols));
+            targetRows = Math.min(8, Math.max(1, targetRows));
 
             if (targetCols !== cols || targetRows !== rows) {
                 const newValues: string[][] = [];
@@ -1299,10 +1341,30 @@ export class ExpressionManager {
             bracketRight.classList.remove('matrix-dragging');
             bottomBorder.classList.remove('matrix-dragging');
             dragHandle.classList.remove('matrix-dragging');
-            dimTooltip.classList.remove('visible');
+            dimTooltip.classList.remove('visible', 'matrix-remove-hint');
+            matrixBody.style.opacity = '1';
+            matrixBody.style.filter = 'none';
             window.removeEventListener('pointermove', onPointerMove);
             window.removeEventListener('pointerup', onPointerUp);
             window.removeEventListener('pointercancel', onPointerUp);
+
+            const dx = e.clientX - startX;
+            const curCellW = computeCellWidth();
+            const colStep = Math.max(28, curCellW + 6);
+            const finalCols = startCols + Math.round(dx / colStep);
+
+            if ((resizeMode === 'both' || resizeMode === 'cols') && finalCols <= 0) {
+                // Arrastou além da barra: a matriz some!
+                const currentName = nameInput.value.trim().toUpperCase() || defaultName;
+                delete StateManager.giacDefinitions[currentName];
+                delete StateManager.casSolutions[currentName];
+                block.remove();
+                this.updateBlockNumbers();
+                HistoryManager.recordState(true);
+                this.onUpdateCallback();
+                return;
+            }
+
             updateGiacDefinition();
             this.onUpdateCallback();
             HistoryManager.recordState(true);
@@ -1349,7 +1411,10 @@ export class ExpressionManager {
             dimBadge.innerText = `${rows}×${cols}`;
             dimTooltip.innerText = `${rows} × ${cols}`;
             gridContainer.innerHTML = '';
-            gridContainer.style.gridTemplateColumns = `repeat(${cols}, 44px)`;
+            
+            const cellW = computeCellWidth();
+            const cellH = Math.max(24, Math.min(30, Math.round(cellW * 0.72)));
+            gridContainer.style.gridTemplateColumns = `repeat(${cols}, ${cellW}px)`;
 
             for (let r = 0; r < rows; r++) {
                 if (!cellValues[r]) cellValues[r] = [];
@@ -1360,7 +1425,11 @@ export class ExpressionManager {
                     const cell = document.createElement('input');
                     cell.type = 'text';
                     cell.placeholder = '0';
-                    cell.className = 'matrix-cell text-center text-xs font-mono font-medium py-1 px-1 rounded border border-gray-200 hover:border-purple-300 focus:border-purple-600 focus:bg-white outline-none transition-all shadow-2xs w-11 h-7.5 bg-white/70';
+                    cell.className = 'matrix-cell text-center font-mono font-medium py-1 px-1 rounded border border-gray-200 hover:border-purple-300 focus:border-purple-600 focus:bg-white outline-none transition-all shadow-2xs bg-white/70';
+                    cell.style.width = `${cellW}px`;
+                    cell.style.height = `${cellH}px`;
+                    cell.style.fontSize = cellW < 32 ? '11px' : '12px';
+                    cell.style.padding = cellW < 32 ? '2px 1px' : '4px 2px';
                     cell.dataset.r = r.toString();
                     cell.dataset.c = c.toString();
                     cell.value = val;
@@ -2399,5 +2468,18 @@ export class ExpressionManager {
                 }
             }
         }
+    }
+
+    /**
+     * Recalcula em tempo real os tamanhos visuais das células de todas as matrizes
+     * de acordo com a largura atual da barra lateral e sua borda arrastável.
+     */
+    static updateAllMatrixSizes(): void {
+        const matrixBlocks = document.querySelectorAll<HTMLElement>('div[data-type="matrix"]');
+        matrixBlocks.forEach((block) => {
+            if (typeof (block as any)._updateCellVisuals === 'function') {
+                (block as any)._updateCellVisuals();
+            }
+        });
     }
 }

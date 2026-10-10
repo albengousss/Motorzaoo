@@ -73,7 +73,7 @@
     <!-- ═══════════════════════════════════════
          SIDEBAR — Painel de Expressões
     ══════════════════════════════════════════ -->
-    <div id="sidebar" class="w-full md:w-[380px] md:min-w-[240px] md:resize-x bg-white border-t md:border-t-0 md:border-r border-gray-200 shadow-lg flex flex-col shrink-0 overflow-hidden z-10 h-[42vh] md:h-auto">
+    <div id="sidebar" class="w-full md:w-[380px] bg-white border-t md:border-t-0 md:border-r border-gray-200 shadow-lg flex flex-col shrink-0 overflow-hidden z-10 h-[42vh] md:h-auto relative">
 
       <div id="sidebar-header" class="bg-white px-3 py-2 border-b border-gray-100 flex justify-between items-center shadow-[0_2px_4px_rgba(0,0,0,0.02)] touch-none select-none shrink-0">
         <div class="flex items-center justify-between w-full relative">
@@ -83,13 +83,16 @@
                 <span class="text-sm font-semibold text-gray-800 tracking-tight">motor<span class="font-light text-gray-400">-calc</span></span>
             </div>
             
-            <!-- Ferramental Superior: Undo, Redo e Mobile Collapse -->
+            <!-- Ferramental Superior: Undo, Redo e Mobile/Desktop Collapse -->
             <div class="flex items-center gap-1 mt-2 md:mt-0">
                 <button id="undo-btn" title="Desfazer (Ctrl+Z)" class="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed" disabled>
                     <i data-lucide="undo-2" class="w-4 h-4"></i>
                 </button>
                 <button id="redo-btn" title="Refazer (Ctrl+Y)" class="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed" disabled>
                     <i data-lucide="redo-2" class="w-4 h-4"></i>
+                </button>
+                <button id="collapse-sidebar-btn" class="hidden md:flex items-center justify-center w-7 h-7 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-all cursor-pointer" title="Recolher Painel Lateral">
+                    <i data-lucide="chevrons-left" class="w-4 h-4"></i>
                 </button>
                 <button id="toggle-sidebar-mobile-btn" class="flex md:hidden items-center justify-center w-7 h-7 text-gray-500 hover:text-blue-600 rounded-md transition-colors" title="Recolher / Expandir Painel">
                     <i data-lucide="chevron-down" id="sidebar-chevron-icon" class="w-4 h-4"></i>
@@ -130,6 +133,16 @@
       <!-- Sliders Dinâmicos -->
       <div id="sliders-container" class="px-3 pb-3 shrink-0"></div>
     </div>
+
+    <!-- Borda arrastável da barra lateral (Desktop) -->
+    <div id="sidebar-resizer" class="hidden md:flex items-center justify-center w-1.5 hover:w-2 bg-gray-200 hover:bg-purple-500 active:bg-purple-600 cursor-col-resize z-20 transition-all select-none touch-none shrink-0 group relative" title="Arraste a borda para redimensionar a barra lateral">
+      <div class="w-0.5 h-7 bg-gray-400 group-hover:bg-white group-active:bg-white rounded-full transition-colors pointer-events-none"></div>
+    </div>
+
+    <!-- Botão flutuante para restaurar a barra lateral quando recolhida -->
+    <button id="sidebar-expand-tab" class="fixed left-0 top-14 z-30 hidden bg-white hover:bg-purple-50 border border-gray-200 border-l-0 shadow-md py-2 px-1.5 rounded-r-lg text-gray-600 hover:text-purple-600 cursor-pointer transition-all flex items-center justify-center group" title="Expandir barra lateral">
+      <i data-lucide="chevron-right" class="w-4 h-4 group-hover:translate-x-0.5 transition-transform text-purple-600"></i>
+    </button>
 
     <!-- ═══════════════════════════════════════
          ÁREA DO GRÁFICO

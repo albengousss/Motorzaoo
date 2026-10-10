@@ -1881,6 +1881,8 @@ function drawFrame() {
 }
 
 ExpressionManager.init(markExpressionsDirty);
+(window as any).ExpressionManager = ExpressionManager;
+(window as any).StateManager = StateManager;
 
 // ─── HANDLERS GLOBAIS DOS BOTÕES DO HUD ───────────────────────────────────────
 
@@ -2191,6 +2193,119 @@ window.addEventListener('touchend', () => {
         drawFrame();
     }
 });
+
+// --- CONTROLE DE REDIMENSIONAMENTO E COLAPSO DA BARRA LATERAL (Desktop & Mobile) ---
+const sidebarResizer = document.getElementById('sidebar-resizer');
+const sidebarExpandTab = document.getElementById('sidebar-expand-tab');
+const collapseSidebarBtn = document.getElementById('collapse-sidebar-btn');
+
+let savedSidebarWidth = 380;
+let isDraggingSidebarResizer = false;
+
+function collapseDesktopSidebar() {
+    if (window.innerWidth <= 768) return;
+    const currentW = sidebarEl.getBoundingClientRect().width;
+    if (currentW > 120) savedSidebarWidth = currentW;
+    sidebarEl.style.width = '0px';
+    sidebarEl.style.display = 'none';
+    if (sidebarResizer) sidebarResizer.style.display = 'none';
+    if (sidebarExpandTab) sidebarExpandTab.style.display = 'flex';
+    resizeAll();
+    drawFrame();
+    ExpressionManager.updateAllMatrixSizes();
+}
+
+function expandDesktopSidebar() {
+    if (window.innerWidth <= 768) return;
+    sidebarEl.style.display = 'flex';
+    const restoreW = Math.max(220, Math.min(Math.floor(window.innerWidth * 0.75), savedSidebarWidth || 380));
+    sidebarEl.style.width = `${restoreW}px`;
+    if (sidebarResizer) sidebarResizer.style.display = 'flex';
+    if (sidebarExpandTab) sidebarExpandTab.style.display = 'none';
+    resizeAll();
+    drawFrame();
+    setTimeout(() => {
+        resizeAll();
+        drawFrame();
+        ExpressionManager.updateAllMatrixSizes();
+    }, 20);
+}
+
+if (sidebarResizer) {
+    sidebarResizer.addEventListener('pointerdown', (e) => {
+        if (window.innerWidth <= 768) return;
+        e.preventDefault();
+        e.stopPropagation();
+        isDraggingSidebarResizer = true;
+        sidebarResizer.setPointerCapture(e.pointerId);
+        document.body.classList.add('select-none');
+        document.body.style.cursor = 'col-resize';
+        sidebarResizer.classList.add('bg-purple-600', 'w-2', 'is-dragging');
+    });
+
+    sidebarResizer.addEventListener('pointermove', (e) => {
+        if (!isDraggingSidebarResizer) return;
+        const newWidth = e.clientX;
+        const minCollapseThreshold = 100; // Arrastou além da barra para a esquerda: a barra e a matriz somem!
+        const maxAllowedWidth = Math.floor(window.innerWidth * 0.75);
+
+        if (newWidth < minCollapseThreshold) {
+            collapseDesktopSidebar();
+            return;
+        }
+
+        if (sidebarEl.style.display === 'none') {
+            sidebarEl.style.display = 'flex';
+            if (sidebarExpandTab) sidebarExpandTab.style.display = 'none';
+        }
+
+        const clampedWidth = Math.min(maxAllowedWidth, Math.max(160, newWidth));
+        sidebarEl.style.width = `${clampedWidth}px`;
+        savedSidebarWidth = clampedWidth;
+
+        resizeAll();
+        drawFrame();
+        ExpressionManager.updateAllMatrixSizes();
+    });
+
+    const stopDraggingResizer = (e: PointerEvent) => {
+        if (!isDraggingSidebarResizer) return;
+        isDraggingSidebarResizer = false;
+        try { sidebarResizer.releasePointerCapture(e.pointerId); } catch(err) {}
+        document.body.classList.remove('select-none');
+        document.body.style.cursor = '';
+        sidebarResizer.classList.remove('bg-purple-600', 'w-2', 'is-dragging');
+        resizeAll();
+        drawFrame();
+        ExpressionManager.updateAllMatrixSizes();
+    };
+
+    sidebarResizer.addEventListener('pointerup', stopDraggingResizer);
+    sidebarResizer.addEventListener('pointercancel', stopDraggingResizer);
+}
+
+if (sidebarExpandTab) {
+    sidebarExpandTab.addEventListener('click', (e) => {
+        e.stopPropagation();
+        expandDesktopSidebar();
+    });
+}
+
+if (collapseSidebarBtn) {
+    collapseSidebarBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        collapseDesktopSidebar();
+    });
+}
+
+// Observa mudanças de dimensões da sidebar em tempo real (window resize, devtools, orientation, etc.)
+if (sidebarEl) {
+    const sidebarObserver = new ResizeObserver(() => {
+        ExpressionManager.updateAllMatrixSizes();
+    });
+    sidebarObserver.observe(sidebarEl);
+}
+
 
 // --- CONTROLE DE TECLADO VIRTUAL E GAVETA MOBILE (Estilo Desmos) ---
 setTimeout(() => {

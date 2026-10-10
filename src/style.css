@@ -270,6 +270,43 @@ math-virtual-keyboard::part(keycap):active {
 
 #sidebar {
   transition: margin-bottom 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  min-width: 0;
+}
+
+#sidebar-resizer {
+  user-select: none;
+  touch-action: none;
+  cursor: col-resize;
+}
+
+#sidebar-resizer:hover {
+  background-color: rgba(124, 58, 237, 0.15);
+}
+
+#sidebar-resizer:active,
+#sidebar-resizer.is-dragging {
+  background-color: #7c3aed !important;
+}
+
+#sidebar-expand-tab {
+  user-select: none;
+  cursor: pointer;
+  box-shadow: 2px 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+#sidebar-expand-tab:hover {
+  transform: translateX(2px);
+  background-color: #f5f3ff;
+}
+
+.matrix-dim-tooltip.matrix-remove-hint {
+  background-color: #dc2626 !important;
+  color: #ffffff !important;
+  font-weight: 800;
+}
+
+.matrix-cell {
+  transition: border-color 0.12s ease, background-color 0.12s ease;
 }
 
 #toggle-keyboard-btn {
