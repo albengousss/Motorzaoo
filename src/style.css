@@ -164,13 +164,11 @@ math-field::part(prompt) {
 
 /* Borda inferior arrastável para linhas */
 .matrix-bottom-resizable {
-  height: 8px;
+  height: 6px;
   cursor: ns-resize;
   touch-action: none;
-  border-bottom: 2px solid #1e293b;
-  border-left: 2px solid #1e293b;
-  border-right: 2px solid #1e293b;
-  border-radius: 0 0 4px 4px;
+  border-bottom: 2px solid #cbd5e1;
+  border-radius: 2px;
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
 }
 

@@ -12,6 +12,19 @@ export class ExpressionManager {
 
     static autocompleteDiv = document.createElement('div');
     static casDocs: Record<string, string[]> = {
+        'det': ['det( <Matriz> )'],
+        'rref': ['rref( <Matriz> )'],
+        'trace': ['trace( <Matriz> )', 'tr( <Matriz> )'],
+        'tr': ['tr( <Matriz> )'],
+        'rank': ['rank( <Matriz> )'],
+        'transpose': ['transpose( <Matriz> )', 'A^T', 'A\''],
+        'inv': ['inv( <Matriz> )', 'A^{-1}'],
+        'Determinant': ['det( <Matriz> )'],
+        'ReducedRowEchelonForm': ['rref( <Matriz> )'],
+        'MatrixRank': ['rank( <Matriz> )'],
+        'Invert': ['inv( <Matriz> )'],
+        'Transpose': ['transpose( <Matriz> )'],
+        'Trace': ['trace( <Matriz> )'],
         'Integral': ['Integral( <Função>, <Variável> )', 'Integral( <Função>, <Variável>, <Início>, <Fim> )'],
         'IntegralSymbolic': ['IntegralSymbolic( <Função>, <Variável> )'],
         'IntegralBetween': ['IntegralBetween( <Função f>, <Função g>, <Início>, <Fim> )', 'IntegralBetween( <Função f>, <Função g>, <Variável>, <Início>, <Fim> )'],
@@ -29,9 +42,6 @@ export class ExpressionManager {
         'Limit': ['Limit( <Função>, <Variável>, <Valor> )'],
         'Solutions': ['Solutions( <Equação> )'],
         'NSolve': ['NSolve( <Equação> )'],
-        'MatrixRank': ['MatrixRank( <Matriz> )'],
-        'Invert': ['Invert( <Matriz> )'],
-        'Determinant': ['Determinant( <Matriz> )'],
         'Eigenvalues': ['Eigenvalues( <Matriz> )'],
         'Eigenvectors': ['Eigenvectors( <Matriz> )'],
         'LUDecomposition': ['LUDecomposition( <Matriz> )'],
@@ -46,9 +56,7 @@ export class ExpressionManager {
         'Cross': ['Cross( <Vetor>, <Vetor> )'],
         'Length': ['Length( <Vetor> )'],
         'QRDecomposition': ['QRDecomposition( <Matriz> )'],
-        'ReducedRowEchelonForm': ['ReducedRowEchelonForm( <Matriz> )'],
         'SVD': ['SVD( <Matriz> )'],
-        'Transpose': ['Transpose( <Matriz> )'],
         'UnitVector': ['UnitVector( <Vetor> )']
     };
 
@@ -584,10 +592,19 @@ export class ExpressionManager {
             'e': 'e',
             'd/dx': '\\frac{d}{dx}',
             'ddx': '\\frac{d}{dx}',
-            'diff': '\\frac{d}{dx}'
+            'diff': '\\frac{d}{dx}',
+            'det': '\\det\\left(#?\\right)',
+            'rref': '\\operatorname{rref}\\left(#?\\right)',
+            'trace': '\\operatorname{trace}\\left(#?\\right)',
+            'tr': '\\operatorname{tr}\\left(#?\\right)',
+            'rank': '\\operatorname{rank}\\left(#?\\right)',
+            'transpose': '\\operatorname{transpose}\\left(#?\\right)',
+            'inv': '\\operatorname{inv}\\left(#?\\right)'
         };
         const currentBindings = mathField.keybindings || [];
         mathField.keybindings = [
+            { key: '#', ifMode: 'math', command: ['insert', '\\#'] },
+            { key: 'shift+[Digit3]', ifMode: 'math', command: ['insert', '\\#'] },
             { key: '/', ifMode: 'math', command: ['insert', '\\frac{#@}{#?}'] },
             { key: '[Slash]', ifMode: 'math', command: ['insert', '\\frac{#@}{#?}'] },
             { key: '[NumpadDivide]', ifMode: 'math', command: ['insert', '\\frac{#@}{#?}'] },
@@ -797,14 +814,33 @@ export class ExpressionManager {
             const rawAscii = (mf as any).getValue('ascii-math') || '';
             const rawLatex = (mf as any).getValue('latex') || '';
 
-            // Auto-transformação Instantânea por Digitação (matrix, matriz, A = matrix, M = matriz)
+            // Auto-transformação Instantânea por Digitação (matrix, matriz, A = matrix, #24, B = #24, #33, #13)
             const noSpaceAscii = rawAscii.replace(/\s+/g, '');
-            const cleanLatex = rawLatex.replace(/\\text\{([^}]+)\}/g, '$1').replace(/\\mathrm\{([^}]+)\}/g, '$1').replace(/\s+/g, '');
+            const cleanLatex = rawLatex
+                .replace(/\\text\{([^}]+)\}/g, '$1')
+                .replace(/\\mathrm\{([^}]+)\}/g, '$1')
+                .replace(/\\operatorname\{([^}]+)\}/g, '$1')
+                .replace(/\\#/g, '#')
+                .replace(/[{}]/g, '')
+                .replace(/\s+/g, '');
+
+            // 1. Atalho Desmos #ab (ex: #24 cria 2x4, #33 cria 3x3, #13 cria 1x3, B = #24)
+            const hashMatch = noSpaceAscii.match(/^(?:([a-zA-Z])=)?#([1-8])(?:x|X|\*|\\times)?([1-8])$/i) ||
+                              cleanLatex.match(/^(?:([a-zA-Z])=)?#([1-8])(?:x|X|\*|\\times)?([1-8])$/i);
+            if (hashMatch) {
+                const targetName = hashMatch[1] ? hashMatch[1].toUpperCase() : undefined;
+                const rCount = parseInt(hashMatch[2]);
+                const cCount = parseInt(hashMatch[3]);
+                this.convertBlockToMatrix(block.id, targetName, rCount, cCount);
+                return;
+            }
+
+            // 2. Atalho Desmos 'matrix' / 'matriz' (cria matriz 2x2 padrão, ex: matrix, A = matrix)
             const matrixMatch = noSpaceAscii.match(/^(?:([a-zA-Z])=)?matri[xz]$/i) ||
                                 cleanLatex.match(/^(?:([a-zA-Z])=)?\\?matri[xz]$/i);
             if (matrixMatch) {
                 const targetName = matrixMatch[1] ? matrixMatch[1].toUpperCase() : undefined;
-                this.convertBlockToMatrix(block.id, targetName);
+                this.convertBlockToMatrix(block.id, targetName, 2, 2);
                 return;
             }
 
@@ -1057,12 +1093,11 @@ export class ExpressionManager {
         const blockId = 'matrix-block-' + this.blockCounter;
 
         const defaultName = matrixData?.name || this.getNextMatrixName();
-        let rows = matrixData?.rows || 2;
-        let cols = matrixData?.cols || 2;
-        let cellValues = matrixData?.data ? JSON.parse(JSON.stringify(matrixData.data)) : [
-            ['1', '0'],
-            ['0', '1']
-        ];
+        let rows = Math.min(8, Math.max(1, matrixData?.rows || 2));
+        let cols = Math.min(8, Math.max(1, matrixData?.cols || 2));
+        let cellValues = matrixData?.data ? JSON.parse(JSON.stringify(matrixData.data)) : Array.from({ length: rows }, (_, r) =>
+            Array.from({ length: cols }, (_, c) => (rows === cols && r === c ? '1' : '0'))
+        );
 
         const block = document.createElement('div');
         block.id = blockId;
@@ -1156,19 +1191,19 @@ export class ExpressionManager {
 
         // Grade da Matriz com Parênteses / Colchetes Estilizados, Bordas Arrastáveis e Alça Interativa
         const gridWrapper = document.createElement('div');
-        gridWrapper.className = 'flex flex-col my-1 select-none overflow-visible relative';
+        gridWrapper.className = 'flex flex-col my-1 select-none overflow-visible relative self-start w-fit';
 
         const matrixBody = document.createElement('div');
-        matrixBody.className = 'flex items-stretch select-none relative';
+        matrixBody.className = 'flex items-stretch select-none relative inline-flex w-fit';
 
         const bracketLeft = document.createElement('div');
         bracketLeft.className = 'border-l-2 border-t-2 border-b-2 border-gray-800 w-2.5 self-stretch rounded-l-xs shrink-0 mr-1.5 my-0.5 select-none pointer-events-none';
 
         const gridCenterCol = document.createElement('div');
-        gridCenterCol.className = 'flex flex-col grow select-none';
+        gridCenterCol.className = 'flex flex-col select-none w-fit';
 
         const gridContainer = document.createElement('div');
-        gridContainer.className = 'grid gap-1.5 py-1 px-1 grow select-none';
+        gridContainer.className = 'grid gap-1.5 py-1 px-1 select-none w-fit';
 
         // Borda inferior arrastável para alterar linhas
         const bottomBorder = document.createElement('div');
@@ -1225,15 +1260,15 @@ export class ExpressionManager {
             const dx = e.clientX - startX;
             const dy = e.clientY - startY;
 
-            // Cada ~38px horizontal = +1 coluna, cada ~30px vertical = +1 linha
+            // Cada ~50px horizontal = +1 coluna, cada ~36px vertical = +1 linha
             let targetCols = startCols;
             let targetRows = startRows;
 
             if (resizeMode === 'both' || resizeMode === 'cols') {
-                targetCols = Math.max(1, Math.min(8, startCols + Math.round(dx / 38)));
+                targetCols = Math.max(1, Math.min(8, startCols + Math.round(dx / 50)));
             }
             if (resizeMode === 'both' || resizeMode === 'rows') {
-                targetRows = Math.max(1, Math.min(8, startRows + Math.round(dy / 30)));
+                targetRows = Math.max(1, Math.min(8, startRows + Math.round(dy / 36)));
             }
 
             if (targetCols !== cols || targetRows !== rows) {
@@ -1315,7 +1350,7 @@ export class ExpressionManager {
             dimBadge.innerText = `${rows}×${cols}`;
             dimTooltip.innerText = `${rows} × ${cols}`;
             gridContainer.innerHTML = '';
-            gridContainer.style.gridTemplateColumns = `repeat(${cols}, minmax(38px, 1fr))`;
+            gridContainer.style.gridTemplateColumns = `repeat(${cols}, 44px)`;
 
             for (let r = 0; r < rows; r++) {
                 if (!cellValues[r]) cellValues[r] = [];
@@ -1547,12 +1582,12 @@ export class ExpressionManager {
             return chip;
         };
 
-        actionsRow.appendChild(createCasChip('det', 'Determinant', 'det'));
-        actionsRow.appendChild(createCasChip('A⁻¹', 'Invert', 'inv'));
-        actionsRow.appendChild(createCasChip('Aᵀ', 'Transpose', 'tran'));
-        actionsRow.appendChild(createCasChip('rref', 'ReducedRowEchelonForm', 'rref'));
-        actionsRow.appendChild(createCasChip('rank', 'MatrixRank', 'rank'));
-        actionsRow.appendChild(createCasChip('tr', 'Trace', 'trace'));
+        actionsRow.appendChild(createCasChip('det', 'det', 'det'));
+        actionsRow.appendChild(createCasChip('A⁻¹', 'inv', 'inv'));
+        actionsRow.appendChild(createCasChip('Aᵀ', 'tran', 'tran'));
+        actionsRow.appendChild(createCasChip('rref', 'rref', 'rref'));
+        actionsRow.appendChild(createCasChip('rank', 'rank', 'rank'));
+        actionsRow.appendChild(createCasChip('tr', 'trace', 'trace'));
 
         contentZone.appendChild(actionsRow);
         contentZone.appendChild(resultDisplay);
@@ -1584,11 +1619,11 @@ export class ExpressionManager {
     /**
      * Converte instantaneamente um bloco de expressão em um bloco de Matriz Visual Interativa (Desmos style)
      */
-    static convertBlockToMatrix(blockId: string, name?: string): string | null {
+    static convertBlockToMatrix(blockId: string, name?: string, rows: number = 2, cols: number = 2): string | null {
         const targetBlock = document.getElementById(blockId);
         if (!targetBlock) return null;
         const folderId = targetBlock.dataset.folderId;
-        const mid = this.addMatrix({ name: name || this.getNextMatrixName() }, true, folderId, targetBlock);
+        const mid = this.addMatrix({ name: name || this.getNextMatrixName(), rows, cols }, true, folderId, targetBlock);
         this.updateBlockNumbers();
         this.onUpdateCallback();
         HistoryManager.recordState(true);

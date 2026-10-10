@@ -107,9 +107,9 @@ export class MathEngine {
     
     static readonly GIAC_COMMANDS = [
         'limit', 'int', 'integrate', 'diff', 'desolve', 'applymatrix', 'characteristicpolynomial', 
-        'determinant', 'eigenvalues', 'eigenvectors', 'identity', 'invert', 
-        'jordandiagonalization', 'matrixrank', 'qrdecomposition', 
-        'reducedrowechelonform', 'svd', 'transpose', 'cross', 'dot'
+        'determinant', 'det', 'eigenvalues', 'eigenvectors', 'identity', 'invert', 'inv',
+        'jordandiagonalization', 'matrixrank', 'rank', 'qrdecomposition', 
+        'reducedrowechelonform', 'rref', 'svd', 'transpose', 'tran', 'trace', 'tr', 'cross', 'dot'
     ];
 
     static isGiacCommand(ast: any): boolean {
@@ -121,7 +121,14 @@ export class MathEngine {
 
     static formatForGiac(ast: any): string {
         if (typeof ast === 'number') return ast.toString();
-        if (typeof ast === 'string') return ast;
+        if (typeof ast === 'string') {
+            const clean = ast.replace(/[\{\}\\]/g, '');
+            const defs = (typeof window !== 'undefined' && (window as any).StateManager?.giacDefinitions) || {};
+            if (defs[clean] || defs[clean.toUpperCase()]) {
+                return `usr_${clean.toUpperCase()}`;
+            }
+            return clean;
+        }
         if (Array.isArray(ast)) {
             const op = ast[0];
             if (op === 'Add') return `(${this.formatForGiac(ast[1])} + ${this.formatForGiac(ast[2])})`;
@@ -149,11 +156,19 @@ export class MathEngine {
                 const target = this.formatForGiac(ast[3]);
                 return `limit(${expr}, ${variable}, ${target})`;
             }
-                     // Function call: se for função do utilizador registrada no Giac, prefixa com usr_
+            // Function call: se for função do utilizador registrada no Giac, prefixa com usr_
             if (this.userFunctions[op]) {
                 return `usr_${op}(${ast.slice(1).map((x: any) => this.formatForGiac(x)).join(', ')})`;
             }
-            return `${op.toLowerCase()}(${ast.slice(1).map((x: any) => this.formatForGiac(x)).join(', ')})`;
+            const opLower = op.toLowerCase();
+            let giacOp = opLower;
+            if (opLower === 'reducedrowechelonform') giacOp = 'rref';
+            else if (opLower === 'matrixrank') giacOp = 'rank';
+            else if (opLower === 'determinant') giacOp = 'det';
+            else if (opLower === 'invert') giacOp = 'inv';
+            else if (opLower === 'transpose') giacOp = 'tran';
+            else if (opLower === 'tr') giacOp = 'trace';
+            return `${giacOp}(${ast.slice(1).map((x: any) => this.formatForGiac(x)).join(', ')})`;
         }
         return '';
     }

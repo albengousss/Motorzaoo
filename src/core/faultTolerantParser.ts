@@ -62,7 +62,12 @@ export class FaultTolerantParser {
         // Remove definições à esquerda do sinal de igual caso seja função ou atribuição
         // Ex: f(x) = ... ou a = ...
         const funcDecl = cleaned.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\(([^)]+)\)\s*=/);
-        const boundSet = new Set<string>([...this.PROTECTED_IDENTIFIERS, ...boundVariables]);
+        const boundSet = new Set<string>([
+            ...this.PROTECTED_IDENTIFIERS,
+            ...boundVariables,
+            ...boundVariables.map(v => v.toLowerCase()),
+            ...boundVariables.map(v => v.toUpperCase())
+        ]);
 
         if (funcDecl) {
             boundSet.add(funcDecl[1].toLowerCase());
@@ -94,6 +99,12 @@ export class FaultTolerantParser {
             .replace(/\\mathrm\{d\}/gi, ' ')
             .replace(/\\text\{d\}/gi, ' ')
             .replace(/\\partial/gi, ' ');
+
+        // Operadores de matriz: transposta (^T, ^\top, ') e inversa (^-1) não são variáveis livres!
+        cleaned = cleaned
+            .replace(/\^\{?(?:T|\\top|intercal)\}?/gi, ' ')
+            .replace(/\^\{?\s*(?:-1|\(-1\))\s*\}?/g, ' ')
+            .replace(/'/g, ' ');
 
         // Remove comandos LaTeX de formatação (ex: \frac, \left, \right, \operatorname)
         cleaned = cleaned.replace(/\\[a-zA-Z]+/g, ' ');

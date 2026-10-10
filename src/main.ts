@@ -127,14 +127,14 @@ const casCommandsList = new Set([
     'solveode', 'nsolveode',
     'taylorpolynomial', 'laplace', 'inverselaplace',
     'dimension', 'dot', 'cross', 'unitvector', 'unitperpendicularvector', 'perpendicularvector',
-    'transpose', 'matrixrank', 'reducedrowechelonform', 'invert', 'characteristicpolynomial', 'minimalpolynomial',
+    'transpose', 'tran', 'matrixrank', 'rank', 'reducedrowechelonform', 'rref', 'invert', 'inv', 'characteristicpolynomial', 'minimalpolynomial',
     'eigenvalues', 'eigenvectors', 'jordandiagonalization', 'qrdecomposition', 'svd', 'ludecomposition',
     'isprime', 'nextprime', 'previousprime', 'primefactors', 'factors',
     'divisors', 'divisorslist', 'divisorssum',
     'gcd', 'lcm', 'extendedgcd',
     'div', 'mod', 'division', 'modularexponent', 'mixednumber', 'rationalize',
     'binomialdist', 'pascal', 'hypergeometric', 'poisson', 'zipf', 'normal', 'cauchy', 'exponential', 'weibull', 'gamma', 'chisquared', 'tdistribution',
-    'determinant', 'applymatrix',
+    'determinant', 'det', 'trace', 'tr', 'applymatrix',
     'samplesd', 'covariance', 'variance', 'samplevariance',
     'mean', 'median', 'unique', 'frequency',
     'fitpoly', 'fitpow', 'fitexp', 'fitsin', 'fitlog', 'normalize',
@@ -148,14 +148,20 @@ const casCommandsList = new Set([
 /** Substitui variáveis definidas pelo utilizador com o prefixo usr_ para o Giac */
 function prefixGiac(str: string): string {
     let res = str;
-    // Transposta: A^T, A^{T}, A^{\top}, A^{\intercal}, A'
+    // Remove delimitadores de LaTeX residuais de operadores e textos
+    res = res.replace(/\\operatorname\{([^}]+)\}/gi, '$1').replace(/\\mathrm\{([^}]+)\}/gi, '$1').replace(/\\text\{([^}]+)\}/gi, '$1');
+
+    // Transposta: (A+B)^T, (A+B)', A^T, A^{T}, A^{\top}, A^{\intercal}, A'
+    res = res.replace(/\(([^)]+)\)\^\{?(?:T|\\top|intercal)\}?/g, 'tran($1)');
+    res = res.replace(/\(([^)]+)\)'/g, 'tran($1)');
     res = res.replace(/([A-Za-z_][A-Za-z0-9_]*)\^\{?(?:T|\\top|intercal)\}?/g, 'tran($1)');
     res = res.replace(/([A-Za-z_][A-Za-z0-9_]*)'/g, 'tran($1)');
 
-    // Inversa: A^{-1}, A^-1, A^(-1)
-    res = res.replace(/([A-Za-z_][A-Za-z0-9_]*)\^\{?(?:-1|\(-1\)\}?|\^-1)/g, 'inv($1)');
+    // Inversa: (A*B)^{-1}, A^{-1}, A^-1, A^(-1)
+    res = res.replace(/\(([^)]+)\)\^\{?\s*(?:-1|\(-1\))\s*\}?/g, 'inv($1)');
+    res = res.replace(/([A-Za-z_][A-Za-z0-9_]*)\^\{?\s*(?:-1|\(-1\))\s*\}?/g, 'inv($1)');
 
-    // Aliases CAS comuns
+    // Aliases CAS comuns e comandos puros do Desmos
     res = res.replace(/\btr\(([^)]+)\)/gi, 'trace($1)');
     res = res.replace(/\\?det\s*\(([^)]+)\)/gi, 'det($1)');
     res = res.replace(/\bdeterminant\s*\(([^)]+)\)/gi, 'det($1)');
@@ -163,8 +169,8 @@ function prefixGiac(str: string): string {
     res = res.replace(/\bmatrixrank\s*\(([^)]+)\)/gi, 'rank($1)');
     res = res.replace(/\binvert\s*\(([^)]+)\)/gi, 'inv($1)');
     res = res.replace(/\btranspose\s*\(([^)]+)\)/gi, 'tran($1)');
-    res = res.replace(/\beigenvalues\s*\(([^)]+)\)/gi, 'eigenvalues($1)');
-    res = res.replace(/\beigenvectors\s*\(([^)]+)\)/gi, 'eigenvectors($1)');
+    res = res.replace(/\beigenvalues\s*\(([^)]+)\)/gi, 'eigenvals($1)');
+    res = res.replace(/\beigenvectors\s*\(([^)]+)\)/gi, 'eigenvects($1)');
 
     // Multiplicação escalar implícita (ex: 2A -> 2*A, 3.5B -> 3.5*B)
     res = res.replace(/(\d+(?:\.\d+)?)\s*([A-Za-z_][A-Za-z0-9_]*)/g, '$1*$2');
@@ -318,7 +324,10 @@ function compileAllExpressions() {
         if (blockEl && blockEl.dataset.autoSlider) return;
         const raw = item.rawAscii || '';
         if (raw && !item.isMatrix && !item.isTable) {
-            const free = FaultTolerantParser.detectFreeVariables(raw);
+            const free = FaultTolerantParser.detectFreeVariables(raw, [
+                ...Object.keys(StateManager.values),
+                ...Object.keys(StateManager.giacDefinitions)
+            ]);
             free.forEach(v => activelyNeededFreeVars.add(v));
         }
     });
@@ -397,11 +406,23 @@ function compileAllExpressions() {
             .replace(/×/g, '*');
 
         // Consertar letras espaçadas geradas quando o utilizador escreve manualmente no teclado
-        const spacedFuncs = ['s i n', 'c o s', 't a n', 's e c', 'c s c', 'c o s s e c', 'c o t', 'c o t a n', 'a r c s i n', 'a r c c o s', 'a r c t a n', 'l o g', 'l n', 'e x p'];
+        const spacedFuncs = [
+            's i n', 'c o s', 't a n', 's e c', 'c s c', 'c o s s e c', 'c o t', 'c o t a n', 
+            'a r c s i n', 'a r c c o s', 'a r c t a n', 'l o g', 'l n', 'e x p',
+            'r r e f', 'd e t', 't r a c e', 'r a n k', 't r a n', 't r a n s p o s e',
+            'i n v', 'i n v e r t', 'd e t e r m i n a n t', 'm a t r i x r a n k', 
+            'r e d u c e d r o w e c h e l o n f o r m'
+        ];
         spacedFuncs.forEach(func => {
-            const regex = new RegExp(func.split('').join('\\s*'), 'g');
+            const regex = new RegExp(func.split('').join('\\s*'), 'gi');
             cleanStr = cleanStr.replace(regex, func.replace(/\s+/g, ''));
         });
+
+        // Limpa wrappers de texto e operadores LaTeX que o MathLive gera
+        cleanStr = cleanStr
+            .replace(/\\operatorname\{([^}]+)\}/gi, '$1')
+            .replace(/\\mathrm\{([^}]+)\}/gi, '$1')
+            .replace(/\\text\{([^}]+)\}/gi, '$1');
 
         // Normalização de nomes de funções com subscrito (ex: f_{jose}(x), f_(1)(x), f_1(x))
         cleanStr = cleanStr.replace(/([a-zA-Z_][a-zA-Z0-9_]*)_[\{\(]([a-zA-Z0-9_]+)[\}\)]\s*(?=\()/g, '$1_$2');
@@ -639,14 +660,16 @@ function compileAllExpressions() {
             const cmdName = genericCasMatch[2].toLowerCase();
             const cmdArgs = genericCasMatch[3];
             const currentQuery = assignTarget ? `${assignTarget}=${cmdName}(${cmdArgs})` : `${cmdName}(${cmdArgs})`;
-                    if (cmdArgs.trim() === '') {
-                        ExpressionManager.setResult(item.id, '');
-                        return;
-                    }
+            ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+            if (cmdArgs.trim() === '') {
+                ExpressionManager.setResult(item.id, '');
+                return;
+            }
 
             const cached = StateManager.casSolutions[item.id];
             if (cached && cached.query === currentQuery) {
                 ExpressionManager.setResult(item.id, cached.result.includes('Erro') ? `- Erro no cálculo` : `= ${cached.result}`);
+                ExpressionManager.setSliderSuggestions(item.id, [], () => {});
                 
                 if (cached.ast) {
                     validEquations.push({ color: item.color, id: item.id, ast: cached.ast, isImplicit: false, isEdo: false, name: cached.name || '', operator: '=', isDerivative: false, isHidden: !item.visible, variable: cached.variable });
@@ -687,8 +710,7 @@ function compileAllExpressions() {
                         }
                     } catch (_) {}
 
-                    // Mapeia comandos GeoGebra para Giac nativo!
-                    // Converte sintaxe de matriz GeoGebra {{1,2},{3,4}} para sintaxe Giac [[1,2],[3,4]]
+                    // Mapeia comandos para Giac nativo!
                     const giacArgs = prefixGiac(expandedArgs.replace(/\{/g, '[').replace(/\}/g, ']'));
 
                     let giacCommand = `${cmdName}(${giacArgs})`;
@@ -713,12 +735,13 @@ function compileAllExpressions() {
                     else if (cmdName === 'cross') giacCommand = `cross_point(${giacArgs})`; 
                     else if (cmdName === 'dot') giacCommand = `dot_product(${giacArgs})`;
                     else if (cmdName === 'primefactors') giacCommand = `ifactors(${giacArgs})`;
-                    else if (cmdName === 'matrixrank') giacCommand = `rank(${giacArgs})`;
-                    else if (cmdName === 'reducedrowechelonform') giacCommand = `rref(${giacArgs})`;
-                    else if (cmdName === 'determinant') giacCommand = `det(${giacArgs})`;
+                    else if (cmdName === 'matrixrank' || cmdName === 'rank') giacCommand = `rank(${giacArgs})`;
+                    else if (cmdName === 'reducedrowechelonform' || cmdName === 'rref') giacCommand = `rref(${giacArgs})`;
+                    else if (cmdName === 'determinant' || cmdName === 'det') giacCommand = `det(${giacArgs})`;
+                    else if (cmdName === 'trace' || cmdName === 'tr') giacCommand = `trace(${giacArgs})`;
                     else if (cmdName === 'eigenvalues') giacCommand = `eigenvals(${giacArgs})`;
                     else if (cmdName === 'eigenvectors') giacCommand = `eigenvects(${giacArgs})`;
-                    else if (cmdName === 'invert') giacCommand = `inv(${giacArgs})`;
+                    else if (cmdName === 'invert' || cmdName === 'inv') giacCommand = `inv(${giacArgs})`;
                     else if (cmdName === 'ludecomposition') giacCommand = `lu(${giacArgs})`;
                     else if (cmdName === 'lcm') giacCommand = `lcm(${giacArgs})`;
                     else if (cmdName === 'jordandiagonalization') giacCommand = `jordan(${giacArgs})`;
@@ -726,7 +749,7 @@ function compileAllExpressions() {
                     else if (cmdName === 'minimalpolynomial') giacCommand = `pmin(${giacArgs})`;
                     else if (cmdName === 'dimension') giacCommand = `dim(${giacArgs})`;
                     else if (cmdName === 'length') giacCommand = `abs(${giacArgs})`;
-                    else if (cmdName === 'transpose') giacCommand = `tran(${giacArgs})`;
+                    else if (cmdName === 'transpose' || cmdName === 'tran') giacCommand = `tran(${giacArgs})`;
                     else if (cmdName === 'unitvector') giacCommand = `normalize(${giacArgs})`;
                     else if (cmdName === 'svd') giacCommand = `svd(${giacArgs})`;
                     else if (cmdName === 'qrdecomposition') giacCommand = `qr(${giacArgs})`;
@@ -742,15 +765,13 @@ function compileAllExpressions() {
                     }
                     else if (cmdName === 'nsolveode') giacCommand = `desolve(${giacArgs})`;
 
-                                const noSimplifyCmds = ['simplify', 'factor', 'expand', 'nsolve', 'nsolutions', 'solutions', 'solve', 'limit', 'limitabove', 'limitbelow', 'cross', 'dot', 'primefactors', 'matrixrank', 'qrdecomposition', 'laplace', 'applymatrix', 'nsolveode', 'desolve'];
-                                if (!noSimplifyCmds.includes(cmdName)) {
-                                    giacCommand = `simplify(${giacCommand})`;
-                                }
+                    const noSimplifyCmds = ['simplify', 'factor', 'expand', 'nsolve', 'nsolutions', 'solutions', 'solve', 'limit', 'limitabove', 'limitbelow', 'cross', 'dot', 'primefactors', 'matrixrank', 'rank', 'reducedrowechelonform', 'rref', 'determinant', 'det', 'trace', 'tr', 'invert', 'inv', 'transpose', 'tran', 'qrdecomposition', 'laplace', 'applymatrix', 'nsolveode', 'desolve'];
+                    if (!noSimplifyCmds.includes(cmdName)) {
+                        giacCommand = `simplify(${giacCommand})`;
+                    }
                     
                     if (assignTarget) {
-                    
                         giacCommand = `${assignTarget}:=${giacCommand}`;
-                    
                     }
                     
                     MathEngine.askGiac(giacCommand).then(res => {
@@ -761,9 +782,10 @@ function compileAllExpressions() {
                         } else if (res.includes('Erro') || res.includes('ausente') || res.includes('Mock')) {
                             StateManager.casSolutions[item.id] = { query: currentQuery, result: 'Erro no cálculo' };
                             ExpressionManager.setResult(item.id, `- Erro no cálculo`);
+                            ExpressionManager.setSliderSuggestions(item.id, [], () => {});
                         } else {
                             // Limpa as aspas do Giac e espaços extras
-                            let cleanResult = res.replace(/"/g, '').replace(/list\[/g, '[').replace(/usr_/g, '').trim();
+                            let cleanResult = res.replace(/"/g, '').replace(/matrix\s*\[/g, '[').replace(/list\s*\[/g, '[').replace(/usr_/g, '').trim();
                             const arrowMatchClean = cleanResult.match(/^(?:\(?[a-zA-Z_]+\)?\s*->\s*)(.*)/);
                             if (arrowMatchClean) cleanResult = arrowMatchClean[1];
                             
@@ -780,7 +802,7 @@ function compileAllExpressions() {
                                   ast = new PrattParser(cleanResult).parseExpression();
                                   
                                   // Comandos que não devem virar funções plotáveis
-                                  const nonPlottingCmds = ['determinant', 'dot', 'cross', 'length', 'dimension', 'matrixrank', 'lcm', 'gcd', 'nsolve', 'nsolutions', 'solutions', 'solve', 'limit', 'limitabove', 'limitbelow'];
+                                  const nonPlottingCmds = ['determinant', 'det', 'dot', 'cross', 'length', 'dimension', 'matrixrank', 'rank', 'reducedrowechelonform', 'rref', 'trace', 'tr', 'invert', 'inv', 'transpose', 'tran', 'lcm', 'gcd', 'nsolve', 'nsolutions', 'solutions', 'solve', 'limit', 'limitabove', 'limitbelow'];
                                   
                                   // Se for apenas um número ou uma lista/matriz, não precisamos transformar numa função plotável
                                   let isJustNumber = false;
@@ -1316,11 +1338,13 @@ function compileAllExpressions() {
                     /\b(rref|det|inv|tran|transpose|rank|matrixrank|trace|tr|eigenvalues|eigenvectors)\s*\(/i.test(expressaoPlot);
 
                 if (hasGiacVar || isMatrixArithmetic) {
+                    ExpressionManager.setSliderSuggestions(item.id, [], () => {});
                     const currentQuery = expressaoPlot;
                     const cached = StateManager.casSolutions[item.id];
                     if (cached && cached.query === currentQuery) {
                         ExpressionManager.setResult(item.id, cached.result.includes('Erro') ? `- Erro no cálculo` : `= ${cached.result}`);
                         ExpressionManager.setError(item.id, null);
+                        ExpressionManager.setSliderSuggestions(item.id, [], () => {});
                     } else if (!StateManager.pendingCas[item.id]) {
                         StateManager.pendingCas[item.id] = true;
                         
@@ -1345,6 +1369,7 @@ function compileAllExpressions() {
                             StateManager.casSolutions[item.id] = { query: currentQuery, result: formattedRes, ast: null };
                             ExpressionManager.setResult(item.id, formattedRes.includes('Erro') ? `- Erro no cálculo` : `= ${formattedRes}`);
                             ExpressionManager.setError(item.id, null);
+                            ExpressionManager.setSliderSuggestions(item.id, [], () => {});
                             scheduleFrame();
                         });
                     }
@@ -1361,6 +1386,7 @@ function compileAllExpressions() {
                         if (!isNaN(val) && isFinite(val)) {
                             ExpressionManager.setResult(item.id, '= ' + parseFloat(val.toFixed(4)).toString());
                             ExpressionManager.setError(item.id, null);
+                            ExpressionManager.setSliderSuggestions(item.id, [], () => {});
                             return;
                         }
                     }
@@ -1392,14 +1418,19 @@ function compileAllExpressions() {
             // Detecção de parâmetros livres para sugestão de sliders (Estilo Desmos)
             try {
                 if (ast && !isEdo) {
-                    let boundForSliders = ['x', 'y', 'z', 't', 'pi', 'e'];
+                    let boundForSliders = ['x', 'y', 'z', 't', 'pi', 'e', ...Object.keys(StateManager.values), ...Object.keys(StateManager.giacDefinitions)];
                     const funcDeclMatch = ascii.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\(([^)]+)\)\s*=/);
                     if (funcDeclMatch) {
                         const params = funcDeclMatch[2].split(',').map(s => s.trim());
                         boundForSliders.push(...params, funcDeclMatch[1]);
                     }
-                    const free = FaultTolerantParser.detectFreeVariables(ascii, [...boundForSliders, ...Object.keys(StateManager.values)]);
-                    const missingSliders = free.filter(v => StateManager.values[v] === undefined && !MathEngine.compiledFuncs[v]);
+                    const free = FaultTolerantParser.detectFreeVariables(ascii, boundForSliders);
+                    const missingSliders = free.filter(v => 
+                        StateManager.values[v] === undefined && 
+                        !MathEngine.compiledFuncs[v] &&
+                        !StateManager.giacDefinitions[v] &&
+                        !StateManager.giacDefinitions[v.toUpperCase()]
+                    );
                     if (missingSliders.length > 0) {
                         ExpressionManager.setSliderSuggestions(item.id, missingSliders, (varName) => {
                             ExpressionManager.addExpression(`${varName} = 1`, false, varName, item.id);
@@ -1430,8 +1461,16 @@ function compileAllExpressions() {
 
             // Tenta detectar parâmetros livres para sugestão de sliders mesmo em estado intermediário (ex: 'sqr' ou 'a*x')
             try {
-                const free = FaultTolerantParser.detectFreeVariables(ascii, Object.keys(StateManager.values));
-                const missingSliders = free.filter(v => StateManager.values[v] === undefined && !MathEngine.compiledFuncs[v]);
+                const free = FaultTolerantParser.detectFreeVariables(ascii, [
+                    ...Object.keys(StateManager.values),
+                    ...Object.keys(StateManager.giacDefinitions)
+                ]);
+                const missingSliders = free.filter(v => 
+                    StateManager.values[v] === undefined && 
+                    !MathEngine.compiledFuncs[v] &&
+                    !StateManager.giacDefinitions[v] &&
+                    !StateManager.giacDefinitions[v.toUpperCase()]
+                );
                 if (missingSliders.length > 0) {
                     ExpressionManager.setSliderSuggestions(item.id, missingSliders, (varName) => {
                         ExpressionManager.addExpression(`${varName} = 1`, false, varName, item.id);
@@ -1971,17 +2010,16 @@ setTimeout(() => {
                         { insert: "\\begin{pmatrix}#? & #? \\\\ #? & #?\\end{pmatrix}", label: "Mat 2x2", tooltip: "Matriz 2x2" },
                         { insert: "\\begin{pmatrix}#? & #? & #? \\\\ #? & #? & #? \\\\ #? & #? & #?\\end{pmatrix}", label: "Mat 3x3", tooltip: "Matriz 3x3" },
                         { insert: "\\begin{pmatrix}#? \\\\ #?\\end{pmatrix}", label: "Vet 2D", tooltip: "Vetor Coluna 2D" },
-                        { insert: "\\begin{pmatrix}#? \\\\ #? \\\\ #?\\end{pmatrix}", label: "Vet 3D", tooltip: "Vetor Coluna 3D" },
-                        { insert: "Determinant(#?)", label: "det", tooltip: "Determinante" },
-                        { insert: "Invert(#?)", label: "A⁻¹", tooltip: "Inversa da Matriz" }
+                        { insert: "det(#?)", label: "det", tooltip: "Determinante det(A)" },
+                        { insert: "inv(#?)", label: "A⁻¹", tooltip: "Inversa inv(A)" }
                     ],
                     [
-                        { insert: "Eigenvalues(#?)", label: "Eigenvals", tooltip: "Autovalores" },
-                        { insert: "Eigenvectors(#?)", label: "Eigenvects", tooltip: "Autovetores" },
-                        { insert: "ReducedRowEchelonForm(#?)", label: "RREF", tooltip: "Escalonamento Reduzido" },
-                        { insert: "MatrixRank(#?)", label: "Rank", tooltip: "Posto da Matriz" },
-                        { insert: "Dot(#?, #?)", label: "u · v", tooltip: "Produto Escalar" },
-                        { insert: "Cross(#?, #?)", label: "u × v", tooltip: "Produto Vetorial" }
+                        { insert: "eigenvals(#?)", label: "Eigenvals", tooltip: "Autovalores" },
+                        { insert: "eigenvects(#?)", label: "Eigenvects", tooltip: "Autovetores" },
+                        { insert: "rref(#?)", label: "rref", tooltip: "Escalonamento Reduzido rref(A)" },
+                        { insert: "rank(#?)", label: "rank", tooltip: "Posto da Matriz rank(A)" },
+                        { insert: "trace(#?)", label: "trace", tooltip: "Traço trace(A)" },
+                        { insert: "transpose(#?)", label: "Aᵀ", tooltip: "Transposta transpose(A)" }
                     ],
                     [
                         { class: "action", label: "←", command: ["performWithFeedback", "moveToPreviousChar"] },

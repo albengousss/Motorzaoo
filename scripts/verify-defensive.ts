@@ -75,15 +75,35 @@ assert(
   matrizVars
 );
 
-// Teste do regex de auto-substituição instantânea de matriz (com suporte a espaçamento do MathLive)
-function matchMatrixInput(rawAscii: string, rawLatex: string = ''): { isMatch: boolean; name?: string } {
+// Teste do regex de auto-substituição instantânea de matriz (com suporte a espaçamento do MathLive e atalhos Desmos #ab)
+function matchMatrixInput(rawAscii: string, rawLatex: string = ''): { isMatch: boolean; name?: string; rows?: number; cols?: number } {
   const noSpaceAscii = rawAscii.replace(/\s+/g, '');
-  const cleanLatex = rawLatex.replace(/\\text\{([^}]+)\}/g, '$1').replace(/\\mathrm\{([^}]+)\}/g, '$1').replace(/\s+/g, '');
+  const cleanLatex = rawLatex
+    .replace(/\\text\{([^}]+)\}/g, '$1')
+    .replace(/\\mathrm\{([^}]+)\}/g, '$1')
+    .replace(/\\operatorname\{([^}]+)\}/g, '$1')
+    .replace(/\\#/g, '#')
+    .replace(/[{}]/g, '')
+    .replace(/\s+/g, '');
+
+  const hashMatch = noSpaceAscii.match(/^(?:([a-zA-Z])=)?#([1-8])(?:x|X|\*|\\times)?([1-8])$/i) ||
+                    cleanLatex.match(/^(?:([a-zA-Z])=)?#([1-8])(?:x|X|\*|\\times)?([1-8])$/i);
+  if (hashMatch) {
+    return {
+      isMatch: true,
+      name: hashMatch[1] ? hashMatch[1].toUpperCase() : undefined,
+      rows: parseInt(hashMatch[2]),
+      cols: parseInt(hashMatch[3])
+    };
+  }
+
   const match = noSpaceAscii.match(/^(?:([a-zA-Z])=)?matri[xz]$/i) ||
                 cleanLatex.match(/^(?:([a-zA-Z])=)?\\?matri[xz]$/i);
   return {
     isMatch: !!match,
-    name: match ? (match[1] ? match[1].toUpperCase() : undefined) : undefined
+    name: match ? (match[1] ? match[1].toUpperCase() : undefined) : undefined,
+    rows: 2,
+    cols: 2
   };
 }
 
@@ -94,6 +114,28 @@ assert(matchMatrixInput('m a t r i z').isMatch, 'Matches spaced MathLive "m a t 
 assert(matchMatrixInput('M = matrix').name === 'M', 'Extracts matrix name from "M = matrix"');
 assert(matchMatrixInput('A = m a t r i z').name === 'A', 'Extracts matrix name from spaced "A = m a t r i z"');
 assert(!matchMatrixInput('sin(matrix)').isMatch, 'Does not match inline expression "sin(matrix)"');
+
+// Testes do atalho Desmos #ab (PDF pág 25-26)
+assert(matchMatrixInput('#24').isMatch && matchMatrixInput('#24').rows === 2 && matchMatrixInput('#24').cols === 4, 'Matches Desmos shortcut #24 (2x4 matrix)');
+assert(matchMatrixInput('#33').isMatch && matchMatrixInput('#33').rows === 3 && matchMatrixInput('#33').cols === 3, 'Matches Desmos shortcut #33 (3x3 matrix)');
+assert(matchMatrixInput('#13').isMatch && matchMatrixInput('#13').rows === 1 && matchMatrixInput('#13').cols === 3, 'Matches Desmos shortcut #13 (1x3 matrix)');
+assert(matchMatrixInput('B = #24').name === 'B' && matchMatrixInput('B = #24').rows === 2 && matchMatrixInput('B = #24').cols === 4, 'Matches "B = #24"');
+assert(matchMatrixInput('', '\\#24').isMatch && matchMatrixInput('', '\\#24').cols === 4, 'Matches LaTeX escaped "\\#24"');
+assert(matchMatrixInput('', 'A=\\#{33}').name === 'A' && matchMatrixInput('', 'A=\\#{33}').rows === 3, 'Matches LaTeX "A=\\#{33}"');
+
+// Testes de Proteção de Variáveis Matriciais Já Definidas (Nunca pedir slider para matriz)
+console.log('\n[TEST GROUP 1.2: Defined Matrix Variable Protection]');
+const definedMatrices = ['B', 'A'];
+assert(FaultTolerantParser.detectFreeVariables('B^{-1}', definedMatrices).length === 0, 'Does NOT propose slider for B in B^{-1}');
+assert(FaultTolerantParser.detectFreeVariables('B^T', definedMatrices).length === 0, 'Does NOT propose slider for B in B^T');
+assert(FaultTolerantParser.detectFreeVariables("B'", definedMatrices).length === 0, "Does NOT propose slider for B in B'");
+assert(FaultTolerantParser.detectFreeVariables('det(B)', definedMatrices).length === 0, 'Does NOT propose slider for B in det(B)');
+assert(FaultTolerantParser.detectFreeVariables('rref(B)', definedMatrices).length === 0, 'Does NOT propose slider for B in rref(B)');
+assert(FaultTolerantParser.detectFreeVariables('trace(B)', definedMatrices).length === 0, 'Does NOT propose slider for B in trace(B)');
+assert(FaultTolerantParser.detectFreeVariables('rank(B)', definedMatrices).length === 0, 'Does NOT propose slider for B in rank(B)');
+assert(FaultTolerantParser.detectFreeVariables('A + B', definedMatrices).length === 0, 'Does NOT propose slider for A or B in A + B');
+assert(FaultTolerantParser.detectFreeVariables('2B', definedMatrices).length === 0, 'Does NOT propose slider for B in 2B');
+assert(FaultTolerantParser.detectFreeVariables('2*B + c', definedMatrices).length === 1 && FaultTolerantParser.detectFreeVariables('2*B + c', definedMatrices)[0] === 'c', 'Detects free variable c while protecting matrix B in 2*B + c');
 
 // 2. FaultTolerantParser: Incomplete typing detection
 console.log('\n[TEST GROUP 2: Incomplete Expression Detection]');
@@ -212,12 +254,17 @@ console.log('\n[TEST GROUP 5: Giac Matrix Expression Normalizations]');
 
 function testPrefixGiac(input: string, knownMatrices: Set<string>): string {
   let s = input.trim();
-  // Transpose: A^T, A^{T}, A^{\top}, A^{\intercal}, A'
+  s = s.replace(/\\operatorname\{([^}]+)\}/gi, '$1').replace(/\\mathrm\{([^}]+)\}/gi, '$1').replace(/\\text\{([^}]+)\}/gi, '$1');
+
+  // Transpose: (A+B)^T, (A+B)', A^T, A^{T}, A^{\top}, A^{\intercal}, A'
+  s = s.replace(/\(([^)]+)\)\^\{?(?:T|\\top|intercal)\}?/g, 'tran($1)');
+  s = s.replace(/\(([^)]+)\)'/g, 'tran($1)');
   s = s.replace(/([A-Za-z_][A-Za-z0-9_]*)\^\{?(?:T|\\top|intercal)\}?/g, 'tran($1)');
   s = s.replace(/([A-Za-z_][A-Za-z0-9_]*)'/g, 'tran($1)');
 
-  // Inverse: A^{-1}, A^-1
-  s = s.replace(/([A-Za-z_][A-Za-z0-9_]*)\^\{?-1\}?/g, 'inv($1)');
+  // Inverse: (A*B)^{-1}, A^{-1}, A^-1, A^(-1)
+  s = s.replace(/\(([^)]+)\)\^\{?\s*(?:-1|\(-1\))\s*\}?/g, 'inv($1)');
+  s = s.replace(/([A-Za-z_][A-Za-z0-9_]*)\^\{?\s*(?:-1|\(-1\))\s*\}?/g, 'inv($1)');
 
   // CAS aliases
   s = s.replace(/\btr\(([^)]+)\)/gi, 'trace($1)');
@@ -272,6 +319,20 @@ assert(
   primeRes
 );
 
+const parensTransRes = testPrefixGiac("(A + B)^T", new Set(['A', 'B']));
+assert(
+  parensTransRes === 'tran(usr_A + usr_B)',
+  'Transforms (A + B)^T into tran(usr_A + usr_B)',
+  parensTransRes
+);
+
+const parensInvRes = testPrefixGiac("(A B)^{-1}", new Set(['A', 'B']));
+assert(
+  parensInvRes === 'inv(usr_A*usr_B)',
+  'Transforms (A B)^{-1} into inv(usr_A*usr_B)',
+  parensInvRes
+);
+
 const scalarRes = testPrefixGiac('2A + 3B', new Set(['A', 'B']));
 assert(
   scalarRes === '2*usr_A + 3*usr_B',
@@ -298,6 +359,27 @@ assert(
   rrefRes === 'rref(usr_A)',
   'Transforms rref(A) into rref(usr_A)',
   rrefRes
+);
+
+const rrefLatexRes = testPrefixGiac('\\operatorname{rref}(B)', new Set(['B']));
+assert(
+  rrefLatexRes === 'rref(usr_B)',
+  'Transforms LaTeX \\operatorname{rref}(B) into rref(usr_B)',
+  rrefLatexRes
+);
+
+const rankRes = testPrefixGiac('rank(B)', new Set(['B']));
+assert(
+  rankRes === 'rank(usr_B)',
+  'Transforms rank(B) into rank(usr_B)',
+  rankRes
+);
+
+const traceRes = testPrefixGiac('trace(B) + tr(A)', new Set(['A', 'B']));
+assert(
+  traceRes === 'trace(usr_B) + trace(usr_A)',
+  'Transforms trace(B) and tr(A) into trace(usr_B) and trace(usr_A)',
+  traceRes
 );
 
 function cleanGiacMatrixOutput(raw: string): string {
