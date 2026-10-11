@@ -626,11 +626,18 @@ function normalizeIntegral(str: string): string {
     .replace(/\\mathrm\{d\}/gi, ' d ')
     .replace(/\\text\{d\}/gi, ' d ')
     .replace(/\\differentialD/gi, ' d ')
-    .replace(/\\,/g, ' ');
+    .replace(/\\,/g, ' ')
+    .replace(/\\!/g, ' ');
+
+  // Separa limites colados ao integrando gerados pelo MathLive (ex: _1^2x -> _1^2 x, _1x -> _1 x)
+  cleanStr = cleanStr.replace(/([\^_](?:\{[^}]+\}|\([^)]+\)|[0-9.]+))\s*([a-zA-Z_])/g, '$1 $2');
+
+  // Multiplicação escalar implícita protegendo limites
+  cleanStr = cleanStr.replace(/(?<![\^_])(\d+(?:\.\d+)?)\s*([A-Za-z_][A-Za-z0-9_]*)/g, '$1*$2');
 
   cleanStr = cleanStr.replace(/(?:(?<=\W)|\b|(?<=[a-zA-Z0-9_\)\}\]]))d\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i, ' d $1');
 
-  const boundPattern = '(?:\\{([^}]+)\\}|\\(([^)]+)\\)|(\\\\[a-zA-Z]+|[a-zA-Z0-9._\\-]+))';
+  const boundPattern = '(?:\\{([^}]+)\\}|\\(([^)]+)\\)|(-?[0-9.]+|\\\\[a-zA-Z]+|[a-zA-Z_][a-zA-Z0-9_]*))';
   const defIntRegex = new RegExp(
     `(?:\\bdefint(?![a-zA-Z])|\\\\int(?![a-zA-Z])|\\bint(?![a-zA-Z]))\\s*(?:_\\s*${boundPattern}\\s*\\^\\s*${boundPattern}|\\^\\s*${boundPattern}\\s*_\\s*${boundPattern})\\s*(.*?)\\s*(?:\\\\mathrm\\{d\\}|\\\\text\\{d\\}|\\\\differentialD|\\bd|(?<=[^a-zA-Z0-9_])d)\\s*\\\\?([a-zA-Z_][a-zA-Z0-9_]*)\\s*$`,
     'i'
@@ -768,6 +775,19 @@ assert(categories.has('integrais'), 'Guide contains category "integrais"');
 assert(categories.has('algebra'), 'Guide contains category "algebra"');
 assert(categories.has('funcoes'), 'Guide contains category "funcoes"');
 assert(categories.has('estatistica'), 'Guide contains category "estatistica"');
+
+// 7.12 Exact MathLive convertLatexToAsciiMath Glued Output Verification
+assert(normalizeIntegral(' int  _1^2x d x').trim() === 'integrate(x, x, 1, 2)', 'Normalizes exact MathLive glued ascii " int  _1^2x d x" to "integrate(x, x, 1, 2)"');
+assert(normalizeIntegral('int _1^2x d x').trim() === 'integrate(x, x, 1, 2)', 'Normalizes MathLive glued ascii "int _1^2x d x" to "integrate(x, x, 1, 2)"');
+assert(normalizeIntegral(' int  _0^3x^2d x').trim() === 'integrate(x^2, x, 0, 3)', 'Normalizes MathLive glued ascii " int  _0^3x^2d x" to "integrate(x^2, x, 0, 3)"');
+
+// Verify PrattParser parses the normalized output without prefix error
+const parsedGluedAst = new PrattParser(normalizeIntegral(' int  _1^2x d x').trim()).parseExpression();
+assert(Array.isArray(parsedGluedAst) && parsedGluedAst[0] === 'Integrate' && parsedGluedAst[1] === 'x' && parsedGluedAst[3] === 1 && parsedGluedAst[4] === 2, 'PrattParser parses normalized MathLive glued output correctly without prefix error');
+
+// 7.13 Constant Evaluation in evaluateAST
+assert(Math.abs(MathEngine.evaluateAST('pi') - Math.PI) < 1e-10, 'evaluateAST evaluates "pi" to Math.PI');
+assert(Math.abs(MathEngine.evaluateAST('e') - Math.E) < 1e-10, 'evaluateAST evaluates "e" to Math.E');
 
 console.log(`\n--- RESULTS: ${passed} PASSED, ${failed} FAILED ---`);
 if (failed > 0) {

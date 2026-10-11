@@ -516,8 +516,11 @@ function compileAllExpressions() {
         }
         cleanStr = cleanStr.replace(/\(([^)]+)\)'+/g, 'tran($1)');
 
-        // Multiplicação escalar implícita para matrizes: 2B -> 2*B, 3.5B -> 3.5*B
-        cleanStr = cleanStr.replace(/(\d+(?:\.\d+)?)\s*([A-Za-z_][A-Za-z0-9_]*)/g, '$1*$2');
+        // Separa limites colados ao integrando gerados pelo MathLive (ex: _1^2x -> _1^2 x, _1x -> _1 x)
+        cleanStr = cleanStr.replace(/([\^_](?:\{[^}]+\}|\([^)]+\)|[0-9.]+))\s*([a-zA-Z_])/g, '$1 $2');
+
+        // Multiplicação escalar implícita para matrizes e variáveis: 2B -> 2*B, MAS NÃO em limites _2 ou ^2
+        cleanStr = cleanStr.replace(/(?<![\^_])(\d+(?:\.\d+)?)\s*([A-Za-z_][A-Za-z0-9_]*)/g, '$1*$2');
 
         // Converter d/dx(expr) ou \frac{d}{dx}(expr) ou d/dx expr para diff(expr, x) ANTES de normalizar frações
         cleanStr = cleanStr
@@ -538,12 +541,13 @@ function compileAllExpressions() {
             .replace(/\\mathrm\{d\}/gi, ' d ')
             .replace(/\\text\{d\}/gi, ' d ')
             .replace(/\\differentialD/gi, ' d ')
-            .replace(/\\,/g, ' ');
+            .replace(/\\,/g, ' ')
+            .replace(/\\!/g, ' ');
 
         cleanStr = cleanStr.replace(/(?:(?<=\W)|\b|(?<=[a-zA-Z0-9_\)\}\]]))d\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i, ' d $1');
 
         // 1. Integral definida (defint / \int_a^b): \int_0^2 x dx ou \int_{0}^{2} x dx ou \int^2_0 x dx ou int _1^2 x dx
-        const boundPattern = '(?:\\{([^}]+)\\}|\\(([^)]+)\\)|(\\\\[a-zA-Z]+|[a-zA-Z0-9._\\-]+))';
+        const boundPattern = '(?:\\{([^}]+)\\}|\\(([^)]+)\\)|(-?[0-9.]+|\\\\[a-zA-Z]+|[a-zA-Z_][a-zA-Z0-9_]*))';
         const defIntRegex = new RegExp(
             `(?:\\bdefint(?![a-zA-Z])|\\\\int(?![a-zA-Z])|\\bint(?![a-zA-Z]))\\s*(?:_\\s*${boundPattern}\\s*\\^\\s*${boundPattern}|\\^\\s*${boundPattern}\\s*_\\s*${boundPattern})\\s*(.*?)\\s*(?:\\\\mathrm\\{d\\}|\\\\text\\{d\\}|\\\\differentialD|\\bd|(?<=[^a-zA-Z0-9_])d)\\s*\\\\?([a-zA-Z_][a-zA-Z0-9_]*)\\s*$`,
             'i'

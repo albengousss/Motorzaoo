@@ -188,6 +188,14 @@ export class MathEngine {
     static userFunctions: Record<string, { params: string[], expr: string, ast: any, blockId?: string }> = {};
 
     static evaluateAST(ast: any, scope: Record<string, number> = {}): number {
+        if (typeof ast === 'number') return ast;
+        if (typeof ast === 'string') {
+            const clean = ast.toLowerCase().replace(/[\{\}\\]/g, '').trim();
+            if (clean === 'pi') return Math.PI;
+            if (clean === 'e') return Math.E;
+            if (scope[ast] !== undefined) return scope[ast];
+            if (scope[clean] !== undefined) return scope[clean];
+        }
         try {
             this.ce.pushScope();
             Object.entries(scope).forEach(([k, v]) => {
