@@ -426,7 +426,7 @@ function compileAllExpressions() {
             return;
         }
 
-        let ascii = item.rawAscii.trim();
+        let ascii = item.rawAscii.trim() || (item.latex || '').trim();
         if (!ascii) {
             ExpressionManager.setResult(item.id, '');
             ExpressionManager.setError(item.id, null);
@@ -542,10 +542,10 @@ function compileAllExpressions() {
 
         cleanStr = cleanStr.replace(/(?:(?<=\W)|\b|(?<=[a-zA-Z0-9_\)\}\]]))d\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i, ' d $1');
 
-        // 1. Integral definida (defint / \int_a^b): \int_0^2 x dx ou \int_{0}^{2} x dx ou \int^2_0 x dx
-        const boundPattern = '(?:\\{([^}]+)\\}|\\(([^)]+)\\)|(\\\\[a-zA-Z]+|[a-zA-Z0-9.\\-]+))';
+        // 1. Integral definida (defint / \int_a^b): \int_0^2 x dx ou \int_{0}^{2} x dx ou \int^2_0 x dx ou int _1^2 x dx
+        const boundPattern = '(?:\\{([^}]+)\\}|\\(([^)]+)\\)|(\\\\[a-zA-Z]+|[a-zA-Z0-9._\\-]+))';
         const defIntRegex = new RegExp(
-            `(?:\\bdefint(?![a-zA-Z])|\\\\int(?![a-zA-Z])|\\bint(?![a-zA-Z]))(?:_${boundPattern}\\^${boundPattern}|\\^${boundPattern}_${boundPattern})\\s*(.*?)\\s*(?:\\\\mathrm\\{d\\}|\\\\text\\{d\\}|\\\\differentialD|\\bd)\\s*\\\\?([a-zA-Z_][a-zA-Z0-9_]*)\\s*$`,
+            `(?:\\bdefint(?![a-zA-Z])|\\\\int(?![a-zA-Z])|\\bint(?![a-zA-Z]))\\s*(?:_\\s*${boundPattern}\\s*\\^\\s*${boundPattern}|\\^\\s*${boundPattern}\\s*_\\s*${boundPattern})\\s*(.*?)\\s*(?:\\\\mathrm\\{d\\}|\\\\text\\{d\\}|\\\\differentialD|\\bd|(?<=[^a-zA-Z0-9_])d)\\s*\\\\?([a-zA-Z_][a-zA-Z0-9_]*)\\s*$`,
             'i'
         );
 
@@ -553,15 +553,19 @@ function compileAllExpressions() {
             (_m, l1, l2, l3, u1, u2, u3, u4, u5, u6, l4, l5, l6, expr, v) => {
                 let lower = (l1 ?? l2 ?? l3 ?? l4 ?? l5 ?? l6).trim();
                 let upper = (u1 ?? u2 ?? u3 ?? u4 ?? u5 ?? u6).trim();
-                if (lower.startsWith('\\')) lower = lower.substring(1);
-                if (upper.startsWith('\\')) upper = upper.substring(1);
+                lower = lower.replace(/\\/g, '');
+                upper = upper.replace(/\\/g, '');
                 const integrand = expr.trim() || '1';
                 return `integrate(${integrand}, ${v}, ${lower}, ${upper})`;
             }
         );
 
         // 2. Integral indefinida (int / \int): \int x dx ou int x dx ou \int dx
-        cleanStr = cleanStr.replace(/(?:\bdefint(?![a-zA-Z])|\\int(?![a-zA-Z])|\bint(?![a-zA-Z]))\s*(.*?)\s*(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD|\bd)\s*\\?([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i,
+        const indefIntRegex = new RegExp(
+            `(?:\\bdefint(?![a-zA-Z])|\\\\int(?![a-zA-Z])|\\bint(?![a-zA-Z]))\\s*(.*?)\\s*(?:\\\\mathrm\\{d\\}|\\\\text\\{d\\}|\\\\differentialD|\\bd|(?<=[^a-zA-Z0-9_])d)\\s*\\\\?([a-zA-Z_][a-zA-Z0-9_]*)\\s*$`,
+            'i'
+        );
+        cleanStr = cleanStr.replace(indefIntRegex,
             (_m, expr, v) => {
                 const integrand = expr.trim() || '1';
                 return `integrate(${integrand}, ${v})`;
@@ -569,17 +573,19 @@ function compileAllExpressions() {
         );
 
         // 3. Somatório (\sum_{n=a}^b expr) e Produtório (\prod_{n=a}^b expr)
-        cleanStr = cleanStr.replace(/\\sum_(?:\{([a-zA-Z_][a-zA-Z0-9_]*)=([^}]+)\}|\(([a-zA-Z_][a-zA-Z0-9_]*)=([^)]+)\))\^\{?([^}\s]+)\}?\s*(.*)$/i,
-            (_m, v1, s1, v2, s2, endVal, body) => {
+        cleanStr = cleanStr.replace(/(?:\\sum|\bsum\b)\s*_\s*(?:\{([a-zA-Z_][a-zA-Z0-9_]*)=([^}]+)\}|\(([a-zA-Z_][a-zA-Z0-9_]*)=([^)]+)\))\s*\^\s*(?:\{([^}]+)\}|\(([^)]+)\)|([^\s]+))\s*(.*)$/i,
+            (_m, v1, s1, v2, s2, e1, e2, e3, body) => {
                 const v = v1 || v2;
                 const start = s1 || s2;
+                const endVal = e1 || e2 || e3;
                 return `sum(${body.trim() || v}, ${v}, ${start.trim()}, ${endVal.trim()})`;
             }
         );
-        cleanStr = cleanStr.replace(/\\prod_(?:\{([a-zA-Z_][a-zA-Z0-9_]*)=([^}]+)\}|\(([a-zA-Z_][a-zA-Z0-9_]*)=([^)]+)\))\^\{?([^}\s]+)\}?\s*(.*)$/i,
-            (_m, v1, s1, v2, s2, endVal, body) => {
+        cleanStr = cleanStr.replace(/(?:\\prod|\bprod\b)\s*_\s*(?:\{([a-zA-Z_][a-zA-Z0-9_]*)=([^}]+)\}|\(([a-zA-Z_][a-zA-Z0-9_]*)=([^)]+)\))\s*\^\s*(?:\{([^}]+)\}|\(([^)]+)\)|([^\s]+))\s*(.*)$/i,
+            (_m, v1, s1, v2, s2, e1, e2, e3, body) => {
                 const v = v1 || v2;
                 const start = s1 || s2;
+                const endVal = e1 || e2 || e3;
                 return `product(${body.trim() || v}, ${v}, ${start.trim()}, ${endVal.trim()})`;
             }
         );
@@ -633,8 +639,27 @@ function compileAllExpressions() {
             const isIntegralCmd = ast[0] === 'Integrate';
             const isDefiniteInt = isIntegralCmd && ast.length > 3;
 
+            // Pré-avaliação numérica instantânea para integrais definidas
+            let numIntegralVal: number | null = null;
+            if (isDefiniteInt) {
+                try {
+                    const lowVal = MathEngine.evaluateAST(ast[3], StateManager.values);
+                    const uppVal = MathEngine.evaluateAST(ast[4], StateManager.values);
+                    const intVar = (typeof ast[2] === 'string' ? ast[2] : 'x');
+                    const numRes = MathEngine.evaluateDefiniteIntegral(ast[1], lowVal, uppVal, intVar, StateManager.values);
+                    if (!isNaN(numRes) && isFinite(numRes)) {
+                        numIntegralVal = numRes;
+                    }
+                } catch(_) {}
+            }
+
             const formatCasDisplay = (rawRes: string): string => {
-                if (rawRes.includes('Erro')) return '- Erro no cálculo';
+                if (rawRes.includes('Erro')) {
+                    if (numIntegralVal !== null) {
+                        return `= ${parseFloat(numIntegralVal.toFixed(6))}`;
+                    }
+                    return '- Erro no cálculo';
+                }
                 if (isDefiniteInt) {
                     try {
                         const numAst = new PrattParser(rawRes).parseExpression();
@@ -646,6 +671,12 @@ function compileAllExpressions() {
                             }
                         }
                     } catch(e) {}
+                    if (numIntegralVal !== null && isNaN(Number(rawRes))) {
+                        const rounded = parseFloat(numIntegralVal.toFixed(6));
+                        if (rawRes.trim() !== rounded.toString()) {
+                            return `= ${rawRes} ≈ ${rounded}`;
+                        }
+                    }
                     return `= ${rawRes}`;
                 }
                 if (isIntegralCmd) {
@@ -690,8 +721,14 @@ function compileAllExpressions() {
                         if (!isNaN(numVal) && isFinite(numVal)) {
                             StateManager.values[assignVarName] = numVal;
                             StateManager.defineVariable(assignVarName, numAst);
+                        } else if (numIntegralVal !== null) {
+                            StateManager.values[assignVarName] = numIntegralVal;
                         }
-                    } catch(e) {}
+                    } catch(e) {
+                        if (numIntegralVal !== null) {
+                            StateManager.values[assignVarName] = numIntegralVal;
+                        }
+                    }
                 }
                 try {
                     const solvedAst = new PrattParser(cached.result).parseExpression();
@@ -711,7 +748,14 @@ function compileAllExpressions() {
                     }
                 } catch(e) {}
             } else {
-                ExpressionManager.setResult(item.id, 'Calculando...');
+                if (numIntegralVal !== null) {
+                    ExpressionManager.setResult(item.id, `= ${parseFloat(numIntegralVal.toFixed(6))}`);
+                    if (assignVarName && assignVarName !== 'y') {
+                        StateManager.values[assignVarName] = numIntegralVal;
+                    }
+                } else {
+                    ExpressionManager.setResult(item.id, 'Calculando...');
+                }
                 MathEngine.askGiac(giacQuery).then(res => {
                     let cleanResult = res.replace(/"/g, '')
                                           .replace(/matrix\s*\[/g, '[')
@@ -719,7 +763,7 @@ function compileAllExpressions() {
                                           .replace(/usr_/g, '')
                                           .trim();
                     if (cleanResult.includes('Erro') || cleanResult.includes('undef') || cleanResult.includes('Bad Argument')) {
-                        cleanResult = 'Erro no cálculo';
+                        cleanResult = numIntegralVal !== null ? `${parseFloat(numIntegralVal.toFixed(6))}` : 'Erro no cálculo';
                     }
                     StateManager.casSolutions[item.id] = { query: giacQuery, result: cleanResult };
                     ExpressionManager.setResult(item.id, formatCasDisplay(cleanResult));
@@ -730,8 +774,14 @@ function compileAllExpressions() {
                             if (!isNaN(numVal) && isFinite(numVal)) {
                                 StateManager.values[assignVarName] = numVal;
                                 StateManager.defineVariable(assignVarName, numAst);
+                            } else if (numIntegralVal !== null) {
+                                StateManager.values[assignVarName] = numIntegralVal;
                             }
-                        } catch(e) {}
+                        } catch(e) {
+                            if (numIntegralVal !== null) {
+                                StateManager.values[assignVarName] = numIntegralVal;
+                            }
+                        }
                     }
                     updateSlidersForGiac();
                     scheduleFrame();

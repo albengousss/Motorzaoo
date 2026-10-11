@@ -228,6 +228,11 @@ export class FaultTolerantParser {
             if (!hasDifferential) {
                 return { isIncomplete: true, warning: 'O integrando deve terminar com uma variável de integração, como dx.' };
             }
+
+            // Se o diferencial está presente mas os limites ainda têm placeholders do MathLive (#?), avisa sobre limites
+            if (/(?:_\{|\^\{|_\(|\^\()\s*(?:#\?|#@)/.test(trimmedLatex) || /(?:_\{|\^\{|_\(|\^\()\s*(?:#\?|#@)/.test(trimmedAscii)) {
+                return { isIncomplete: true, warning: 'Faltam os limites de integração.' };
+            }
         }
 
 

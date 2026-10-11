@@ -544,4 +544,23 @@ export class MathEngine {
         }
         return points;
     }
+
+    /**
+     * Avaliação numérica rápida e ultra-precisa de integrais definidas via Regra de Simpson 1/3 composta
+     */
+    static evaluateDefiniteIntegral(ast: any, lower: number, upper: number, variable: string = 'x', scope: Record<string, number> = {}): number {
+        if (isNaN(lower) || !isFinite(lower) || isNaN(upper) || !isFinite(upper)) return NaN;
+        if (lower === upper) return 0;
+        const fastF = this.compile(ast, variable);
+        const n = 200; // 400 subintervalos para máxima convergência
+        const h = (upper - lower) / (2 * n);
+        let sum = fastF(lower, 0, scope) + fastF(upper, 0, scope);
+        for (let i = 1; i < 2 * n; i++) {
+            const x = lower + i * h;
+            const y = fastF(x, 0, scope);
+            if (isNaN(y) || !isFinite(y)) return NaN;
+            sum += (i % 2 === 1 ? 4 : 2) * y;
+        }
+        return (h / 3) * sum;
+    }
 }

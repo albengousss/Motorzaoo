@@ -630,9 +630,9 @@ function normalizeIntegral(str: string): string {
 
   cleanStr = cleanStr.replace(/(?:(?<=\W)|\b|(?<=[a-zA-Z0-9_\)\}\]]))d\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i, ' d $1');
 
-  const boundPattern = '(?:\\{([^}]+)\\}|\\(([^)]+)\\)|(\\\\[a-zA-Z]+|[a-zA-Z0-9.\\-]+))';
+  const boundPattern = '(?:\\{([^}]+)\\}|\\(([^)]+)\\)|(\\\\[a-zA-Z]+|[a-zA-Z0-9._\\-]+))';
   const defIntRegex = new RegExp(
-    `(?:\\bdefint(?![a-zA-Z])|\\\\int(?![a-zA-Z])|\\bint(?![a-zA-Z]))(?:_${boundPattern}\\^${boundPattern}|\\^${boundPattern}_${boundPattern})\\s*(.*?)\\s*(?:\\\\mathrm\\{d\\}|\\\\text\\{d\\}|\\\\differentialD|\\bd)\\s*\\\\?([a-zA-Z_][a-zA-Z0-9_]*)\\s*$`,
+    `(?:\\bdefint(?![a-zA-Z])|\\\\int(?![a-zA-Z])|\\bint(?![a-zA-Z]))\\s*(?:_\\s*${boundPattern}\\s*\\^\\s*${boundPattern}|\\^\\s*${boundPattern}\\s*_\\s*${boundPattern})\\s*(.*?)\\s*(?:\\\\mathrm\\{d\\}|\\\\text\\{d\\}|\\\\differentialD|\\bd|(?<=[^a-zA-Z0-9_])d)\\s*\\\\?([a-zA-Z_][a-zA-Z0-9_]*)\\s*$`,
     'i'
   );
 
@@ -640,14 +640,18 @@ function normalizeIntegral(str: string): string {
     (_m, l1, l2, l3, u1, u2, u3, u4, u5, u6, l4, l5, l6, expr, v) => {
       let lower = (l1 ?? l2 ?? l3 ?? l4 ?? l5 ?? l6).trim();
       let upper = (u1 ?? u2 ?? u3 ?? u4 ?? u5 ?? u6).trim();
-      if (lower.startsWith('\\')) lower = lower.substring(1);
-      if (upper.startsWith('\\')) upper = upper.substring(1);
+      lower = lower.replace(/\\/g, '');
+      upper = upper.replace(/\\/g, '');
       const integrand = expr.trim() || '1';
       return `integrate(${integrand}, ${v}, ${lower}, ${upper})`;
     }
   );
 
-  cleanStr = cleanStr.replace(/(?:\bdefint(?![a-zA-Z])|\\int(?![a-zA-Z])|\bint(?![a-zA-Z]))\s*(.*?)\s*(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD|\bd)\s*\\?([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i,
+  const indefIntRegex = new RegExp(
+    `(?:\\bdefint(?![a-zA-Z])|\\\\int(?![a-zA-Z])|\\bint(?![a-zA-Z]))\\s*(.*?)\\s*(?:\\\\mathrm\\{d\\}|\\\\text\\{d\\}|\\\\differentialD|\\bd|(?<=[^a-zA-Z0-9_])d)\\s*\\\\?([a-zA-Z_][a-zA-Z0-9_]*)\\s*$`,
+    'i'
+  );
+  cleanStr = cleanStr.replace(indefIntRegex,
     (_m, expr, v) => {
       const integrand = expr.trim() || '1';
       return `integrate(${integrand}, ${v})`;
@@ -657,29 +661,39 @@ function normalizeIntegral(str: string): string {
   return cleanStr;
 }
 
-assert(normalizeIntegral('\\int x dx') === 'integrate(x, x)', 'Normalizes "\\int x dx" to "integrate(x, x)"');
-assert(normalizeIntegral('\\int xdx') === 'integrate(x, x)', 'Normalizes "\\int xdx" to "integrate(x, x)"');
-assert(normalizeIntegral('int xdx') === 'integrate(x, x)', 'Normalizes "int xdx" to "integrate(x, x)"');
-assert(normalizeIntegral('\\int ydy') === 'integrate(y, y)', 'Normalizes "\\int ydy" to "integrate(y, y)"');
+assert(normalizeIntegral('\\int x dx') === 'integrate(x, x)', 'Normalizes "\\int x dx" to "integrate(x, x)"', normalizeIntegral('\\int x dx'));
+assert(normalizeIntegral('\\int xdx') === 'integrate(x, x)', 'Normalizes "\\int xdx" to "integrate(x, x)"', normalizeIntegral('\\int xdx'));
+assert(normalizeIntegral('int xdx') === 'integrate(x, x)', 'Normalizes "int xdx" to "integrate(x, x)"', normalizeIntegral('int xdx'));
+assert(normalizeIntegral('\\int ydy') === 'integrate(y, y)', 'Normalizes "\\int ydy" to "integrate(y, y)"', normalizeIntegral('\\int ydy'));
 assert(normalizeIntegral('\\int_{0}^{2} x dx') === 'integrate(x, x, 0, 2)', 'Normalizes "\\int_{0}^{2} x dx" to "integrate(x, x, 0, 2)"');
 assert(normalizeIntegral('\\int_{0}^{2} xdx') === 'integrate(x, x, 0, 2)', 'Normalizes "\\int_{0}^{2} xdx" to "integrate(x, x, 0, 2)"');
 assert(normalizeIntegral('\\int_{ 0 }^ { 2 } x dx') === 'integrate(x, x, 0, 2)' || normalizeIntegral('\\int_{ 0 }^{ 2 } x dx') === 'integrate(x, x, 0, 2)', 'Normalizes "\\int_{ 0 }^{ 2 } x dx" with spaces to "integrate(x, x, 0, 2)"');
 assert(normalizeIntegral('int_(0)^(2) x dx') === 'integrate(x, x, 0, 2)', 'Normalizes "int_(0)^(2) x dx" to "integrate(x, x, 0, 2)"');
 assert(normalizeIntegral('\\int_{-1}^{1} x dx') === 'integrate(x, x, -1, 1)', 'Normalizes "\\int_{-1}^{1} x dx" with negative bound to "integrate(x, x, -1, 1)"');
-assert(normalizeIntegral('\\int dx') === 'integrate(1, x)', 'Normalizes "\\int dx" to "integrate(1, x)"');
+assert(normalizeIntegral('\\int dx') === 'integrate(1, x)', 'Normalizes "\\int dx" to "integrate(1, x)"', normalizeIntegral('\\int dx'));
 assert(normalizeIntegral('\\int_{0}^{1} dx') === 'integrate(1, x, 0, 1)', 'Normalizes "\\int_{0}^{1} dx" to "integrate(1, x, 0, 1)"');
-assert(normalizeIntegral('\\int (t^2 + 1) dt') === 'integrate((t^2 + 1), t)', 'Normalizes "\\int (t^2 + 1) dt" to "integrate((t^2 + 1), t)"');
+assert(normalizeIntegral('\\int (t^2 + 1) dt') === 'integrate((t^2 + 1), t)', 'Normalizes "\\int (t^2 + 1) dt" to "integrate((t^2 + 1), t)"', normalizeIntegral('\\int (t^2 + 1) dt'));
 assert(normalizeIntegral('I = \\int_{0}^{2} x dx') === 'I = integrate(x, x, 0, 2)', 'Normalizes "I = \\int_{0}^{2} x dx" to "I = integrate(x, x, 0, 2)"');
-assert(normalizeIntegral('y = \\int x dx') === 'y = integrate(x, x)', 'Normalizes "y = \\int x dx" to "y = integrate(x, x)"');
+assert(normalizeIntegral('y = \\int x dx') === 'y = integrate(x, x)', 'Normalizes "y = \\int x dx" to "y = integrate(x, x)"', normalizeIntegral('y = \\int x dx'));
 
-// 7.6 Single-digit bounds without braces (User Bug Reproduction: \int_1^2 xdx)
+// 7.6 Single-digit bounds without braces and MathLive space formats (User Bug Reproduction: \int_1^2 xdx)
 assert(normalizeIntegral('\\int_1^2 xdx') === 'integrate(x, x, 1, 2)', 'Normalizes single-digit "\\int_1^2 xdx" to "integrate(x, x, 1, 2)"');
 assert(normalizeIntegral('\\int_1^2 x dx') === 'integrate(x, x, 1, 2)', 'Normalizes single-digit "\\int_1^2 x dx" to "integrate(x, x, 1, 2)"');
+assert(normalizeIntegral('int _1^2 x dx') === 'integrate(x, x, 1, 2)', 'Normalizes MathLive ascii "int _1^2 x dx" to "integrate(x, x, 1, 2)"');
+assert(normalizeIntegral('int _1^2 xdx') === 'integrate(x, x, 1, 2)', 'Normalizes MathLive ascii "int _1^2 xdx" to "integrate(x, x, 1, 2)"');
+assert(normalizeIntegral('int _(1)^(2) x dx') === 'integrate(x, x, 1, 2)', 'Normalizes MathLive ascii "int _(1)^(2) x dx" to "integrate(x, x, 1, 2)"');
+assert(normalizeIntegral('int _(1) ^(2) x dx') === 'integrate(x, x, 1, 2)', 'Normalizes MathLive ascii "int _(1) ^(2) x dx" to "integrate(x, x, 1, 2)"');
+assert(normalizeIntegral('\\int _1^2 x dx') === 'integrate(x, x, 1, 2)', 'Normalizes space-separated "\\int _1^2 x dx" to "integrate(x, x, 1, 2)"');
+assert(normalizeIntegral('\\int _1^2 xdx') === 'integrate(x, x, 1, 2)', 'Normalizes space-separated "\\int _1^2 xdx" to "integrate(x, x, 1, 2)"');
+assert(normalizeIntegral('\\int _{1} ^{2} x dx') === 'integrate(x, x, 1, 2)', 'Normalizes spaced braces "\\int _{1} ^{2} x dx" to "integrate(x, x, 1, 2)"');
+assert(normalizeIntegral('\\int _{1} ^{2} xdx') === 'integrate(x, x, 1, 2)', 'Normalizes spaced braces glued "\\int _{1} ^{2} xdx" to "integrate(x, x, 1, 2)"');
+assert(normalizeIntegral('\\int _(-1) ^(1) x dx') === 'integrate(x, x, -1, 1)', 'Normalizes parenthesized negative bound "\\int _(-1) ^(1) x dx" to "integrate(x, x, -1, 1)"');
 assert(normalizeIntegral('\\int^2_1 xdx') === 'integrate(x, x, 1, 2)', 'Normalizes inverted bounds "\\int^2_1 xdx" to "integrate(x, x, 1, 2)"');
 assert(normalizeIntegral('\\int^2_1 x dx') === 'integrate(x, x, 1, 2)', 'Normalizes inverted bounds "\\int^2_1 x dx" to "integrate(x, x, 1, 2)"');
 assert(normalizeIntegral('defint_1^2 xdx') === 'integrate(x, x, 1, 2)', 'Normalizes "defint_1^2 xdx" to "integrate(x, x, 1, 2)"');
 assert(normalizeIntegral('defint_1^2 x dx') === 'integrate(x, x, 1, 2)', 'Normalizes "defint_1^2 x dx" to "integrate(x, x, 1, 2)"');
-assert(normalizeIntegral('defint_{1}^{2} x dx') === 'integrate(x, x, 1, 2)', 'Normalizes "defint_{1}^{2} x dx" to "integrate(x, x, 1, 2)"');
+assert(normalizeIntegral('defint _1 ^2 x dx') === 'integrate(x, x, 1, 2)', 'Normalizes spaced "defint _1 ^2 x dx" to "integrate(x, x, 1, 2)"');
+assert(normalizeIntegral('defint _{1}^{2} x dx') === 'integrate(x, x, 1, 2)', 'Normalizes "defint_{1}^{2} x dx" to "integrate(x, x, 1, 2)"');
 assert(normalizeIntegral('\\int_0^\\pi \\sin(x) dx') === 'integrate(\\sin(x), x, 0, pi)', 'Normalizes "\\int_0^\\pi \\sin(x) dx" with pi bound');
 assert(normalizeIntegral('\\int_1^2 dx') === 'integrate(1, x, 1, 2)', 'Normalizes "\\int_1^2 dx" to "integrate(1, x, 1, 2)"');
 assert(normalizeIntegral('\\int_1^2dx') === 'integrate(1, x, 1, 2)', 'Normalizes "\\int_1^2dx" to "integrate(1, x, 1, 2)"');
@@ -706,17 +720,19 @@ assert(fullPipelineClean('M_3') === 'M[2]', 'Pipeline correctly converts matrix 
 // 7.8 Sum and Product Normalization
 function normalizeSumProd(input: string): string {
   let cleanStr = input;
-  cleanStr = cleanStr.replace(/\\sum_(?:\{([a-zA-Z_][a-zA-Z0-9_]*)=([^}]+)\}|\(([a-zA-Z_][a-zA-Z0-9_]*)=([^)]+)\))\^\{?([^}\s]+)\}?\s*(.*)$/i,
-    (_m, v1, s1, v2, s2, endVal, body) => {
+  cleanStr = cleanStr.replace(/(?:\\sum|\bsum\b)\s*_\s*(?:\{([a-zA-Z_][a-zA-Z0-9_]*)=([^}]+)\}|\(([a-zA-Z_][a-zA-Z0-9_]*)=([^)]+)\))\s*\^\s*(?:\{([^}]+)\}|\(([^)]+)\)|([^\s]+))\s*(.*)$/i,
+    (_m, v1, s1, v2, s2, e1, e2, e3, body) => {
       const v = v1 || v2;
       const start = s1 || s2;
+      const endVal = e1 || e2 || e3;
       return `sum(${body.trim() || v}, ${v}, ${start.trim()}, ${endVal.trim()})`;
     }
   );
-  cleanStr = cleanStr.replace(/\\prod_(?:\{([a-zA-Z_][a-zA-Z0-9_]*)=([^}]+)\}|\(([a-zA-Z_][a-zA-Z0-9_]*)=([^)]+)\))\^\{?([^}\s]+)\}?\s*(.*)$/i,
-    (_m, v1, s1, v2, s2, endVal, body) => {
+  cleanStr = cleanStr.replace(/(?:\\prod|\bprod\b)\s*_\s*(?:\{([a-zA-Z_][a-zA-Z0-9_]*)=([^}]+)\}|\(([a-zA-Z_][a-zA-Z0-9_]*)=([^)]+)\))\s*\^\s*(?:\{([^}]+)\}|\(([^)]+)\)|([^\s]+))\s*(.*)$/i,
+    (_m, v1, s1, v2, s2, e1, e2, e3, body) => {
       const v = v1 || v2;
       const start = s1 || s2;
+      const endVal = e1 || e2 || e3;
       return `product(${body.trim() || v}, ${v}, ${start.trim()}, ${endVal.trim()})`;
     }
   );
@@ -724,9 +740,26 @@ function normalizeSumProd(input: string): string {
 }
 
 assert(normalizeSumProd('\\sum_{n=1}^{10} n') === 'sum(n, n, 1, 10)', 'Normalizes LaTeX \\sum_{n=1}^{10} n to sum(n, n, 1, 10)');
+assert(normalizeSumProd('\\sum _{n=1} ^{10} n') === 'sum(n, n, 1, 10)', 'Normalizes LaTeX with spaces \\sum _{n=1} ^{10} n to sum(n, n, 1, 10)');
+assert(normalizeSumProd('sum _(n=1)^(10) n') === 'sum(n, n, 1, 10)', 'Normalizes AsciiMath sum _(n=1)^(10) n to sum(n, n, 1, 10)');
 assert(normalizeSumProd('\\prod_{n=1}^{5} n') === 'product(n, n, 1, 5)', 'Normalizes LaTeX \\prod_{n=1}^{5} n to product(n, n, 1, 5)');
+assert(normalizeSumProd('prod _(n=1)^(5) n') === 'product(n, n, 1, 5)', 'Normalizes AsciiMath prod _(n=1)^(5) n to product(n, n, 1, 5)');
 
-// 7.9 Commands Guide Data Structure Integrity
+// 7.9 MathEngine Numerical Quadrature (Simpson's 1/3 Rule)
+const numInt1 = MathEngine.evaluateDefiniteIntegral('x', 1, 2);
+assert(Math.abs(numInt1 - 1.5) < 1e-6, 'MathEngine.evaluateDefiniteIntegral calculates \\int_1^2 x dx = 1.5 accurately', numInt1);
+
+const numInt2 = MathEngine.evaluateDefiniteIntegral(['Power', 'x', 2], 0, 3);
+assert(Math.abs(numInt2 - 9) < 1e-5, 'MathEngine.evaluateDefiniteIntegral calculates \\int_0^3 x^2 dx = 9 accurately', numInt2);
+
+const numInt3 = MathEngine.evaluateDefiniteIntegral(['Sin', 'x'], 0, Math.PI);
+assert(Math.abs(numInt3 - 2) < 1e-5, 'MathEngine.evaluateDefiniteIntegral calculates \\int_0^pi sin(x) dx = 2 accurately', numInt3);
+
+// 7.10 Placeholder Limits Detection
+const placeholderInc = FaultTolerantParser.checkIncompleteStatus('\\int_{#?}^{#?} x dx');
+assert(placeholderInc.isIncomplete === true && placeholderInc.warning === 'Faltam os limites de integração.', 'Detects MathLive placeholder #? limits as incomplete with correct warning', placeholderInc);
+
+// 7.11 Commands Guide Data Structure Integrity
 import { COMMANDS_DATA } from '../src/ui/commandsGuideModal.js';
 assert(Array.isArray(COMMANDS_DATA) && COMMANDS_DATA.length >= 20, 'COMMANDS_DATA contains full database of commands');
 const categories = new Set(COMMANDS_DATA.map(c => c.category));
