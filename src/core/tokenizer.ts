@@ -11,7 +11,7 @@ export const TokenTypes = {
 
 const TokenSpec: Array<[RegExp, string | null]> = [
     [/^\s+/, null], 
-    [/^\\?(?:int|integrate)(?![a-zA-Z])/, TokenTypes.INTEGRAL],
+    [/^\\?(?:int|defint|integrate|iint|iiint)(?![a-zA-Z])/, TokenTypes.INTEGRAL],
     [/^\\?(?:lim|limit)(?![a-zA-Z])/, TokenTypes.LIMIT],
     [/^->/, TokenTypes.ARROW],
     [/^\\?[a-zA-Z][a-zA-Z0-9]*_(?:\{[a-zA-Z0-9]+\}|\([a-zA-Z0-9]+\)|[a-zA-Z0-9]+)/, TokenTypes.IDENTIFIER],
@@ -43,7 +43,7 @@ export class Tokenizer {
     private string: string = '';
 
     init(str: string) {
-        let processed = str.replace(/d([a-zA-Z])$/i, ' d $1');
+        let processed = str.trim().replace(/\bd\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i, ' d $1');
         
         // Multiplicação implícita inteligente universal
         // 1. (x+1)(x-1) -> (x+1)*(x-1)

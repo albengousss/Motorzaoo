@@ -123,19 +123,31 @@ export class PrattParser {
                 this.eat(TokenTypes.MULTIPLICATION);
             }
             
-            const expr = this.parseExpression(0);
+            let expr: any = null;
+            // Se o lookahead já for o diferencial (ex: \int dx ou \int_{0}^{1} dt), o integrando é 1
+            if (this.lookahead && (this.lookahead.type === TokenTypes.DIFFERENTIAL || (this.lookahead.type === TokenTypes.IDENTIFIER && this.lookahead.value.startsWith('d') && this.lookahead.value.length > 1))) {
+                expr = 1;
+            } else if (this.lookahead) {
+                expr = this.parseExpression(0);
+            } else {
+                throw new Error("O integrando deve terminar com uma variável de integração, como dx.");
+            }
             
-            // Consumir o diferencial opcional ex: 'dx', 'dt', 'dy'
-            let diffVar = "x";
+            // Consumir o diferencial obrigatório (Padrão Desmos: 'dx', 'dt', 'dy', etc.)
+            let diffVar: string | null = null;
             if (this.lookahead && this.lookahead.type === TokenTypes.DIFFERENTIAL) {
                 this.eat(TokenTypes.DIFFERENTIAL);
-                if (this.lookahead && this.lookahead.type === TokenTypes.IDENTIFIER) {
+                if (this.lookahead && (this.lookahead.type === TokenTypes.IDENTIFIER || this.lookahead.type === TokenTypes.VAR)) {
                     diffVar = this.lookahead.value.replace(/[\{\}\\]/g, '');
-                    this.eat(TokenTypes.IDENTIFIER);
+                    this.eat(this.lookahead.type);
                 }
-            } else if (this.lookahead && this.lookahead.type === TokenTypes.IDENTIFIER && this.lookahead.value.startsWith('d') && this.lookahead.value.length > 1) {
+            } else if (this.lookahead && (this.lookahead.type === TokenTypes.IDENTIFIER || this.lookahead.type === TokenTypes.VAR) && this.lookahead.value.startsWith('d') && this.lookahead.value.length > 1) {
                 diffVar = this.lookahead.value.substring(1).replace(/[\{\}\\]/g, '');
-                this.eat(TokenTypes.IDENTIFIER);
+                this.eat(this.lookahead.type);
+            }
+
+            if (!diffVar) {
+                throw new Error("O integrando deve terminar com uma variável de integração, como dx.");
             }
             
             list.push(expr);

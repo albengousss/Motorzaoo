@@ -44,6 +44,7 @@ export class FaultTolerantParser {
         s = s.replace(/#\?/g, '');
         s = s.replace(/#@/g, '');
         s = s.replace(/\\placeholder\{[^}]*\}/g, '');
+        s = s.replace(/\\(?:mathrm|text|operatorname)\{d\}/gi, 'd');
         s = s.replace(/\\text\{[^}]*\}/g, '');
         return s;
     }
@@ -89,6 +90,22 @@ export class FaultTolerantParser {
             if (dVar) boundSet.add(dVar.toLowerCase());
         }
 
+        // Operadores de Integrais (int, defint, \int): protege 'd' e a variável de integração
+        const hasIntCmd = /(?:\\int(?![a-zA-Z])|\\iint|\\iiint|\bint\b|\bdefint\b)/i.test(cleaned);
+        if (hasIntCmd) {
+            boundSet.add('d');
+            boundSet.add('D');
+            const diffVarMatches = cleaned.matchAll(/(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD|\bd)\s*\\?([a-zA-Z_][a-zA-Z0-9_]*)/gi);
+            for (const dm of diffVarMatches) {
+                if (dm[1]) {
+                    const varToken = dm[1].replace(/[\{\}\\]/g, '');
+                    boundSet.add(varToken);
+                    boundSet.add(varToken.toLowerCase());
+                    boundSet.add(varToken.toUpperCase());
+                }
+            }
+        }
+
         // Remove fragmentos de operadores diferenciais
         cleaned = cleaned
             .replace(/\\frac\{\s*(?:\\mathrm\{d\}|d)\s*\}\{\s*(?:\\mathrm\{d\}|d)([a-zA-Z_][a-zA-Z0-9_]*)\s*\}/gi, ' ')
@@ -118,8 +135,10 @@ export class FaultTolerantParser {
         // Remove comandos LaTeX de formatação (ex: \frac, \left, \right, \operatorname)
         cleaned = cleaned.replace(/\\[a-zA-Z]+/g, ' ');
 
-        // Remove diferenciais no final de integrais (ex: dx, dt, dy)
-        cleaned = cleaned.replace(/\bd\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i, '');
+        // Remove diferenciais e operadores de integrais
+        cleaned = cleaned
+            .replace(/(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD|\bd)\s*\\?[a-zA-Z_][a-zA-Z0-9_]*/gi, ' ')
+            .replace(/(?:\\int(?![a-zA-Z])|\\iint|\\iiint|\bint\b|\bdefint\b)/gi, ' ');
 
         const freeVars = new Set<string>();
 
@@ -175,6 +194,31 @@ export class FaultTolerantParser {
 
         if (!trimmedAscii && !trimmedLatex) {
             return { isIncomplete: false, warning: null };
+        }
+
+        // Integral sem diferencial terminal (Padrão Desmos: int ou defint)
+        const hasVisualIntegral = (
+            /(?:\\int(?![a-zA-Z])|\\iint|\\iiint|\bint\b|\bdefint\b)/i.test(trimmedLatex) ||
+            /(?:\\int(?![a-zA-Z])|\\iint|\\iiint|\bint\b|\bdefint\b)/i.test(trimmedAscii)
+        ) && !/^(?:usr_)?[a-zA-Z_]+\s*=\s*(?:integrate|Integral)\(/i.test(trimmedAscii)
+          && !/^(?:integrate|Integral)\(/i.test(trimmedAscii);
+
+        if (hasVisualIntegral) {
+            let sForDiff = (trimmedLatex || trimmedAscii || '').trim();
+            sForDiff = sForDiff
+                .replace(/#\?/g, '')
+                .replace(/#@/g, '')
+                .replace(/\\placeholder\{[^}]*\}/g, '')
+                .replace(/\\mathrm\{d\}/gi, ' d ')
+                .replace(/\\text\{d\}/gi, ' d ')
+                .replace(/\\differentialD/gi, ' d ')
+                .replace(/\\,/g, ' ')
+                .trim();
+            
+            const hasDifferential = /(?:^|[^a-zA-Z0-9_\\]|\s)d\s*(?:\\?[a-zA-Z_][a-zA-Z0-9_]*|\([a-zA-Z_][a-zA-Z0-9_]*\))\s*\)?$/i.test(sForDiff);
+            if (!hasDifferential) {
+                return { isIncomplete: true, warning: 'O integrando deve terminar com uma variável de integração, como dx.' };
+            }
         }
 
         // Operador diferencial incompleto: \frac{d}{dx} ou d/dx sem argumento

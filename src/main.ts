@@ -45,6 +45,21 @@ function getFreeVariables(ast: any, boundVars: string[] = []): string[] {
             if (!isBuiltin && typeof op === 'string' && !standardNames.has(op)) {
                 vars.add(op);
             }
+            if (op === 'Integrate') {
+                const intVar = typeof node[2] === 'string' ? node[2].trim() : '';
+                const innerBound = new Set([...standardNames, intVar, 'd', 'D']);
+                const subWalk = (subNode: any) => {
+                    if (typeof subNode === 'string') {
+                        const clean = subNode.trim();
+                        if (!innerBound.has(clean) && isNaN(Number(clean))) vars.add(clean);
+                    } else if (Array.isArray(subNode)) {
+                        for (let j = 1; j < subNode.length; j++) subWalk(subNode[j]);
+                    }
+                };
+                if (node[1]) subWalk(node[1]);
+                for (let i = 3; i < node.length; i++) walk(node[i]);
+                return;
+            }
             for (let i = 1; i < node.length; i++) {
                 walk(node[i]);
             }
@@ -342,6 +357,9 @@ function compileAllExpressions() {
         if (blockEl && blockEl.dataset.autoSlider) return;
         const raw = item.rawAscii || '';
         if (raw && !item.isMatrix && !item.isTable) {
+            const inc = FaultTolerantParser.checkIncompleteStatus(item.latex || '', raw);
+            if (inc.isIncomplete) return;
+
             const free = FaultTolerantParser.detectFreeVariables(raw, [
                 ...Object.keys(StateManager.values),
                 ...Object.keys(StateManager.giacDefinitions),
@@ -411,6 +429,16 @@ function compileAllExpressions() {
         if (!ascii) {
             ExpressionManager.setResult(item.id, '');
             ExpressionManager.setError(item.id, null);
+            ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+            ExpressionManager.processBlockState(item.id, '', {});
+            return;
+        }
+
+        // Validação estrita de incompletude e diferencial obrigatório (Padrão Desmos)
+        const incCheck = FaultTolerantParser.checkIncompleteStatus(item.latex || '', ascii);
+        if (incCheck.isIncomplete) {
+            ExpressionManager.setResult(item.id, '');
+            ExpressionManager.setError(item.id, incCheck.warning);
             ExpressionManager.setSliderSuggestions(item.id, [], () => {});
             ExpressionManager.processBlockState(item.id, '', {});
             return;
@@ -511,18 +539,22 @@ function compileAllExpressions() {
             .replace(/\\differentialD/gi, ' d ')
             .replace(/\\,/g, ' ');
 
-        // 1. Integral definida: \int_0^2 x dx ou \int_{0}^{2} x dx ou \int^2_0 x dx
-        cleanStr = cleanStr.replace(/\\?int(?:_(?:\{([^}]+)\}|([a-zA-Z0-9.]+))\^(?:\{([^}]+)\}|([a-zA-Z0-9.]+))|\^(?:\{([^}]+)\}|([a-zA-Z0-9.]+))_(?:\{([^}]+)\}|([a-zA-Z0-9.]+)))\s*(.+?)\s*d\s*([a-zA-Z_])\s*$/i,
+        // 1. Integral definida (defint / \int_a^b): \int_0^2 x dx ou \int_{0}^{2} x dx ou \int^2_0 x dx
+        cleanStr = cleanStr.replace(/(?:\\?int|\bdefint\b)(?:_(?:\{([^}]+)\}|([a-zA-Z0-9.\-]+))\^(?:\{([^}]+)\}|([a-zA-Z0-9.\-]+))|\^(?:\{([^}]+)\}|([a-zA-Z0-9.\-]+))_(?:\{([^}]+)\}|([a-zA-Z0-9.\-]+)))\s*(.*?)\s*(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD|\bd)\s*\\?([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i,
             (_m, l1, l2, u1, u2, u3, u4, l3, l4, expr, v) => {
-                const lower = l1 ?? l2 ?? l3 ?? l4;
-                const upper = u1 ?? u2 ?? u3 ?? u4;
-                return `integrate(${expr.trim()}, ${v}, ${lower}, ${upper})`;
+                const lower = (l1 ?? l2 ?? l3 ?? l4).trim();
+                const upper = (u1 ?? u2 ?? u3 ?? u4).trim();
+                const integrand = expr.trim() || '1';
+                return `integrate(${integrand}, ${v}, ${lower}, ${upper})`;
             }
         );
 
-        // 2. Integral indefinida: \int y dy ou \int ydy ou int t dy ou \int h dy
-        cleanStr = cleanStr.replace(/\\?int\s*(.+?)\s*d\s*([a-zA-Z_])\s*$/i,
-            (_m, expr, v) => `integrate(${expr.trim()}, ${v})`
+        // 2. Integral indefinida (int / \int): \int x dx ou int x dx ou \int dx
+        cleanStr = cleanStr.replace(/(?:\\?int|\bint\b)\s*(.*?)\s*(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD|\bd)\s*\\?([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i,
+            (_m, expr, v) => {
+                const integrand = expr.trim() || '1';
+                return `integrate(${integrand}, ${v})`;
+            }
         );
 
         // Extração de restrições de domínio entre chaves: ex: y = x^2 {x >= 0} ou {0 <= t <= 2pi}
@@ -555,13 +587,63 @@ function compileAllExpressions() {
             ExpressionManager.setError(item.id, null);
             const giacQuery = MathEngine.formatForGiac(ast);
             const cached = StateManager.casSolutions[item.id];
+            const isIntegralCmd = ast[0] === 'Integrate';
+            const isDefiniteInt = isIntegralCmd && ast.length > 3;
+
+            const formatCasDisplay = (rawRes: string): string => {
+                if (rawRes.includes('Erro')) return '- Erro no cálculo';
+                if (isDefiniteInt) {
+                    try {
+                        const numAst = new PrattParser(rawRes).parseExpression();
+                        const numVal = MathEngine.compile(numAst)(0, 0, StateManager.values);
+                        if (!isNaN(numVal) && isFinite(numVal)) {
+                            const rounded = parseFloat(numVal.toFixed(6));
+                            if (rawRes.trim() !== rounded.toString()) {
+                                return `= ${rawRes} ≈ ${rounded}`;
+                            }
+                        }
+                    } catch(e) {}
+                    return `= ${rawRes}`;
+                }
+                if (isIntegralCmd) {
+                    if (!/[+\-]\s*c\b/i.test(rawRes)) {
+                        return `= ${rawRes} + C`;
+                    }
+                }
+                return `= ${rawRes}`;
+            };
+
+            const updateSlidersForGiac = () => {
+                if (isIntegralCmd) {
+                    const intVar = (typeof ast[2] === 'string' ? ast[2] : 'x').toLowerCase();
+                    const bound = new Set([intVar, 'd', 'x', 'y', 'z', 't', 'pi', 'e', ...Object.keys(StateManager.values), ...Object.keys(StateManager.giacDefinitions), ...definedMatrixNames]);
+                    const freeInAst = getFreeVariables(ast, Array.from(bound));
+                    const missingSliders = freeInAst.filter(v => 
+                        StateManager.values[v] === undefined && 
+                        !MathEngine.compiledFuncs[v] &&
+                        !StateManager.giacDefinitions[v] &&
+                        !definedMatrixNames.has(v)
+                    );
+                    if (missingSliders.length > 0) {
+                        ExpressionManager.setSliderSuggestions(item.id, missingSliders, (varName) => {
+                            ExpressionManager.addExpression(`${varName} = 1`, false, varName, item.id);
+                            scheduleFrame();
+                        });
+                    } else {
+                        ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                    }
+                } else {
+                    ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                }
+            };
+
             if (cached && cached.query === giacQuery) {
-                ExpressionManager.setResult(item.id, cached.result.includes('Erro') ? `- Erro no cálculo` : `= ${cached.result}`);
-                ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                ExpressionManager.setResult(item.id, formatCasDisplay(cached.result));
+                updateSlidersForGiac();
                 try {
                     const solvedAst = new PrattParser(cached.result).parseExpression();
                     const free = getFreeVariables(solvedAst, []);
-                    if (free.includes('x') || (!isNaN(Number(cached.result)) && isFinite(Number(cached.result)))) {
+                    if (!isDefiniteInt && (free.includes('x') || (!isNaN(Number(cached.result)) && isFinite(Number(cached.result))))) {
                         validEquations.push({ 
                             color: item.color, 
                             id: item.id, 
@@ -571,7 +653,7 @@ function compileAllExpressions() {
                             isEdo: false, 
                             isDerivative: false, 
                             isHidden: !item.visible, 
-                            variable: 'x' 
+                            variable: isIntegralCmd && typeof ast[2] === 'string' ? ast[2] : 'x'
                         });
                     }
                 } catch(e) {}
@@ -587,8 +669,8 @@ function compileAllExpressions() {
                         cleanResult = 'Erro no cálculo';
                     }
                     StateManager.casSolutions[item.id] = { query: giacQuery, result: cleanResult };
-                    ExpressionManager.setResult(item.id, cleanResult.includes('Erro') ? `- Erro no cálculo` : `= ${cleanResult}`);
-                    ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                    ExpressionManager.setResult(item.id, formatCasDisplay(cleanResult));
+                    updateSlidersForGiac();
                     scheduleFrame();
                 });
             }
@@ -1509,6 +1591,10 @@ function compileAllExpressions() {
             if (ascii.trim().length === 0) {
                 ExpressionManager.setError(item.id, null);
                 ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+            } else if (e?.message?.includes('integrando deve terminar') || inc.warning === 'O integrando deve terminar com uma variável de integração, como dx.') {
+                ExpressionManager.setError(item.id, 'O integrando deve terminar com uma variável de integração, como dx.');
+                ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                return;
             } else if (inc.isIncomplete) {
                 ExpressionManager.setError(item.id, inc.warning);
             } else {

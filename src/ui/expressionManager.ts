@@ -575,6 +575,7 @@ export class ExpressionManager {
             'sum': '\\sum_{#?}^{#?}',
             'prod': '\\prod_{#?}^{#?}',
             'int': '\\int',
+            'defint': '\\int_{#?}^{#?}',
             'limit': '\\lim',
             'lim': '\\lim',
             'inf': '\\infty',
