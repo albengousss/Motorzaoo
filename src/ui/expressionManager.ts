@@ -538,6 +538,11 @@ export class ExpressionManager {
                     }
                     .ML__selected {
                         color: #1f2937 !important;
+                        background: transparent !important;
+                    }
+                    ::selection {
+                        background: rgba(66, 133, 244, 0.25) !important;
+                        color: #1f2937 !important;
                     }
                     .ML__focused .ML__empty-line-anchor.ML__selected::after {
                         background: rgba(66, 133, 244, 0.25) !important;
@@ -685,8 +690,8 @@ export class ExpressionManager {
 
         const isCaretKey = (e: KeyboardEvent) => {
             if (e.key === '^') return true;
-            // Teclado ABNT2 (Shift + ~) ou US-Intl (Shift + 6 ou Shift + `)
-            if (e.shiftKey && (e.code === 'BracketLeft' || e.code === 'Digit6' || e.code === 'Backquote' || e.key === 'Dead')) {
+            // Teclado US (Shift + 6)
+            if (e.shiftKey && e.code === 'Digit6') {
                 return true;
             }
             return false;

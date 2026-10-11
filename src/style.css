@@ -53,6 +53,7 @@ math-field::part(selection),
 
 .ML__selected {
   color: #1f2937 !important;
+  background: transparent !important;
 }
 
 /* Inibe caixas pontilhadas e fundos azuis residuais no MathLive */

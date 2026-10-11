@@ -50,10 +50,10 @@ export class Tokenizer {
         // Multiplicação implícita inteligente universal
         // 1. (x+1)(x-1) -> (x+1)*(x-1)
         processed = processed.replace(/\)\s*\(/g, ')*(');
-        // 2. (x+1)x ou (x+1)2 -> (x+1)*x ou (x+1)*2
-        processed = processed.replace(/\)\s*([a-zA-Z0-9])/g, ')*$1');
-        // 3. 2(x+1) -> 2*(x+1)
-        processed = processed.replace(/(\d)\s*\(/g, '$1*(');
+        // 2. (x+1)x ou (x+1)2 -> (x+1)*x ou (x+1)*2 (MAS NÃO antes de diferencial d x, dt, dx, etc.)
+        processed = processed.replace(/\)\s*(?!d\s+[a-zA-Z_]|d[a-zA-Z_]\b)([a-zA-Z0-9])/g, ')*$1');
+        // 3. 2(x+1) -> 2*(x+1) (MAS NÃO em limites de integral ^1( ou _0()
+        processed = processed.replace(/(?<![\^_])(\d)\s*\(/g, '$1*(');
         // 4. 2x, 2y, 2z, etc. -> 2*x, 2*y, 2*z
         processed = processed.replace(/(\d)\s*([a-zA-Z])/g, '$1*$2');
         // 5. x(...), y(...), z(...), t(...) -> x*(...), y*(...), z*(...)

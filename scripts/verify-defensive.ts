@@ -993,6 +993,60 @@ const compiledDiffFunc = MathEngine.compile(funcAstWithDiff, 'x');
 const diffAt2 = compiledDiffFunc(2, 0, {});
 assert(Math.abs(diffAt2 - 12.0) < 1e-3, 'compiledDiffFunc evaluates d/dx(x^3) at x=2 = 12.0', diffAt2);
 
+// =========================================================================
+// [TEST GROUP 12: Multivariable Integrals, Nested Integrals & Edge Cases]
+// =========================================================================
+console.log('\n[TEST GROUP 12: Multivariable & Nested Integrals]');
+
+// 1. Double integral parsing and numerical evaluation
+const doubleIntStr = '\\int_0^1 \\int_0^2 (x + y) dy dx';
+const doubleIntAst = new PrattParser(doubleIntStr).parseExpression();
+assert(Array.isArray(doubleIntAst) && doubleIntAst[0] === 'Integrate' && Array.isArray(doubleIntAst[1]) && doubleIntAst[1][0] === 'Integrate', 'PrattParser parses double integral recursively', doubleIntAst);
+
+const compiledDoubleInt = MathEngine.compile(doubleIntAst);
+const doubleIntVal = compiledDoubleInt(0, 0, {});
+// Exact: \int_0^1 \int_0^2 (x + y) dy dx = 3
+assert(Math.abs(doubleIntVal - 3.0) < 1e-3, 'compiledDoubleInt evaluates \\int_0^1 \\int_0^2 (x + y) dy dx = 3.0', doubleIntVal);
+
+// 2. Parenthesized single integral
+const parenIntStr = '\\int_0^1 (x^2 + 1) dx';
+const parenIntAst = new PrattParser(parenIntStr).parseExpression();
+assert(Array.isArray(parenIntAst) && parenIntAst[0] === 'Integrate', 'PrattParser parses parenthesized single integral \\int_0^1 (x^2 + 1) dx', parenIntAst);
+const compiledParenInt = MathEngine.compile(parenIntAst);
+const parenIntVal = compiledParenInt(0, 0, {});
+// Exact: \int_0^1 (x^2 + 1) dx = 1/3 + 1 = 4/3 = 1.3333333333
+assert(Math.abs(parenIntVal - (4 / 3)) < 1e-3, 'compiledParenInt evaluates \\int_0^1 (x^2 + 1) dx = 4/3', parenIntVal);
+
+// 3. Multivariable integral inside user function maintaining variable y
+const multiIntAst = new PrattParser('integrate(x + y + t, t, 0, 1)').parseExpression();
+MathEngine.userFunctions['f_test'] = {
+    params: ['x', 'y'],
+    expr: 'integrate(x + y + t, t, 0, 1)',
+    ast: multiIntAst
+};
+const fTestMulti = MathEngine.compileMultivariable(multiIntAst, ['x', 'y']);
+// For x = 1, y = 1.5: \int_0^1 (1 + 1.5 + t) dt = 2.5 + 0.5 = 3
+const fTestVal = fTestMulti(1, 1.5);
+assert(Math.abs(fTestVal - 3.0) < 1e-3, 'compileMultivariable preserves y and evaluates f(1, 1.5) = 3.0', fTestVal);
+
+// 4. Implicit equation expansion f(x, y) = 3
+const implicitAst = new PrattParser('(f_test(x, y)) - (3)').parseExpression();
+const expandedImplicit = MathEngine.expandUserFunctions(implicitAst);
+const compiledImplicit = MathEngine.compile(expandedImplicit);
+const implicitZeroCheck = compiledImplicit(1, 1.5, {});
+assert(Math.abs(implicitZeroCheck) < 1e-3, 'Implicit expanded equation f(x, y) = 3 evaluates to 0 at (1, 1.5)', implicitZeroCheck);
+
+// 5. Incomplete status check with compound expression
+const compoundIntInc = FaultTolerantParser.checkIncompleteStatus('f(x) = \\int_{0}^{x} t dt + 1', 'f(x) = integrate(t, t, 0, x) + 1');
+assert(!compoundIntInc.isIncomplete, 'f(x) = \\int_0^x t dt + 1 is recognized as complete despite trailing + 1', compoundIntInc);
+
+// 6. High-precision fraction conversion
+const f1_6 = toFraction(1 / 6);
+assert(f1_6 !== null && f1_6.num === 1 && f1_6.den === 6, 'toFraction(1/6) returns 1/6', f1_6);
+
+const f1_7 = toFraction(1 / 7);
+assert(f1_7 !== null && f1_7.num === 1 && f1_7.den === 7, 'toFraction(1/7) returns 1/7', f1_7);
+
 console.log(`\n--- RESULTS: ${passed} PASSED, ${failed} FAILED ---`);
 if (failed > 0) {
   process.exit(1);

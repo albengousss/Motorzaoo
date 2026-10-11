@@ -347,13 +347,15 @@ export class MathEngine {
                 if (op === 'Integrate' && node.length > 3) {
                     const integrandJson = JSON.stringify(node[1]);
                     const intVar = typeof node[2] === 'string' ? node[2] : 'x';
-                    return `funcs.evaluateDefiniteIntegral(${integrandJson}, ${toJS(node[3])}, ${toJS(node[4])}, '${intVar}', Object.assign({}, scope, Object.fromEntries(paramNames.map((p, i) => [p, args[i] !== undefined ? args[i] : 0]))))`;
+                    const paramsJson = JSON.stringify(paramNames);
+                    return `funcs.evaluateDefiniteIntegral(${integrandJson}, ${toJS(node[3])}, ${toJS(node[4])}, '${intVar}', Object.assign({}, scope, Object.fromEntries(${paramsJson}.map((p, i) => [p, args[i] !== undefined ? args[i] : 0]))))`;
                 }
 
                 if (op === 'diff') {
                     const exprJson = JSON.stringify(node[1]);
                     const diffVar = typeof node[2] === 'string' ? node[2] : 'x';
-                    return `funcs.evaluateDerivative(${exprJson}, '${diffVar}', Object.assign({}, scope, Object.fromEntries(paramNames.map((p, i) => [p, args[i] !== undefined ? args[i] : 0]))))`;
+                    const paramsJson = JSON.stringify(paramNames);
+                    return `funcs.evaluateDerivative(${exprJson}, '${diffVar}', Object.assign({}, scope, Object.fromEntries(${paramsJson}.map((p, i) => [p, args[i] !== undefined ? args[i] : 0]))))`;
                 }
 
                 const args = node.slice(1).map(toJS);
@@ -470,6 +472,7 @@ export class MathEngine {
                 if (op === 'Negate') return `funcs.intNeg(${L})`;
                 if (op === 'Abs') return `funcs.intAbs(${L})`;
                 if (op === 'Exp') return `funcs.intExp(${L})`;
+                if (op === 'Integrate' || op === 'diff') return '{min: -Infinity, max: Infinity}';
             }
             return '{min: 0, max: 0}';
         };
@@ -587,7 +590,7 @@ export class MathEngine {
     static evaluateDefiniteIntegral(ast: any, lower: number, upper: number, variable: string = 'x', scope: Record<string, number> = {}): number {
         if (isNaN(lower) || !isFinite(lower) || isNaN(upper) || !isFinite(upper)) return NaN;
         if (lower === upper) return 0;
-        const fastF = this.compile(ast, variable);
+        const fastF = this.compile(ast, variable, '__unused__');
         const n = 200; // 400 subintervalos para máxima convergência
         const h = (upper - lower) / (2 * n);
         let sum = fastF(lower, 0, scope) + fastF(upper, 0, scope);

@@ -216,11 +216,23 @@ export class FaultTolerantParser {
                 .replace(/\\,/g, ' ')
                 .trim();
             
-            // Separa diferencial colado ao integrando (ex: xdx -> x d x, ydy -> y d y, (x+1)dt -> (x+1) d t)
-            sForDiff = sForDiff.replace(/(?:(?<=\W)|\b|(?<=[a-zA-Z0-9_\)\}\]]))d\s*(\\?[a-zA-Z_][a-zA-Z0-9_]*|\([a-zA-Z_][a-zA-Z0-9_]*\))\s*\)?$/i, ' d $1');
+            // Separa diferencial colado ao integrando (ex: xdx -> x d x, ydy -> y d y, (x+1)dt -> (x+1) d t), mas não palavras reservadas como defint, diff, det
+            sForDiff = sForDiff.replace(/(?:(?<=\W)|\b|(?<=[a-zA-Z0-9_\)\}\]]))d(?!efint|iff|et)\s*(\\?[a-zA-Z_][a-zA-Z0-9_]*|\([a-zA-Z_][a-zA-Z0-9_]*\))/gi, ' d $1');
 
-            const hasDifferential = /(?:^|[^a-zA-Z0-9_\\]|\s)d\s*(?:\\?[a-zA-Z_][a-zA-Z0-9_]*|\([a-zA-Z_][a-zA-Z0-9_]*\))\s*\)?$/i.test(sForDiff);
-            if (!hasDifferential) {
+            // Se termina com operador diferencial incompleto "d" sem variável (ex: \int x d)
+            if (/(?:^|[^a-zA-Z0-9_\\]|\s)d\s*$/i.test(sForDiff)) {
+                return { isIncomplete: true, warning: 'O integrando deve terminar com uma variável de integração, como dx.' };
+            }
+
+            // Se termina imediatamente após a declaração da integral sem integrando ou diferencial
+            if (/(?:\\int(?![a-zA-Z])|\bint\b|\bdefint\b)\s*(?:_\{[^}]*\}\^\{[^}]*\}|_[a-zA-Z0-9.]+\^[a-zA-Z0-9.]+)?\s*$/i.test(sForDiff)) {
+                return { isIncomplete: true, warning: 'O integrando deve terminar com uma variável de integração, como dx.' };
+            }
+
+            const intCount = (sForDiff.match(/(?:\\int(?![a-zA-Z])|\\iint|\\iiint|\bint\b|\bdefint\b)/gi) || []).length;
+            const sWithoutIntKeywords = sForDiff.replace(/(?:\\int(?![a-zA-Z])|\\iint|\\iiint|\bdefint\b|\bint\b)/gi, ' ');
+            const diffMatches = sWithoutIntKeywords.match(/(?:^|[^a-zA-Z0-9_\\]|\s)d\s*(?:\\?[a-zA-Z_][a-zA-Z0-9_]*|\([a-zA-Z_][a-zA-Z0-9_]*\))/gi) || [];
+            if (diffMatches.length < intCount) {
                 return { isIncomplete: true, warning: 'O integrando deve terminar com uma variável de integração, como dx.' };
             }
 

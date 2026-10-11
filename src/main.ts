@@ -548,34 +548,47 @@ function compileAllExpressions() {
         cleanStr = cleanStr.replace(/(?:(?<=\W)|\b|(?<=[a-zA-Z0-9_\)\}\]]))d\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i, ' d $1');
 
         // 1. Integral definida (defint / \int_a^b): \int_0^2 x dx ou \int_{0}^{2} x dx ou \int^2_0 x dx ou int _1^2 x dx
+        // Processa do integrando mais interno para o mais externo para suportar integrais múltiplas e compostas
         const boundPattern = '(?:\\{([^}]+)\\}|\\(([^)]+)\\)|(-?[0-9.]+|\\\\[a-zA-Z]+|[a-zA-Z_][a-zA-Z0-9_]*))';
-        const defIntRegex = new RegExp(
-            `(?:\\bdefint(?![a-zA-Z])|\\\\int(?![a-zA-Z])|\\bint(?![a-zA-Z]))\\s*(?:_\\s*${boundPattern}\\s*\\^\\s*${boundPattern}|\\^\\s*${boundPattern}\\s*_\\s*${boundPattern})\\s*(.*?)\\s*(?:\\\\mathrm\\{d\\}|\\\\text\\{d\\}|\\\\differentialD|\\bd|(?<=[^a-zA-Z0-9_])d)\\s*\\\\?([a-zA-Z_][a-zA-Z0-9_]*)\\s*$`,
+        const innermostDefIntRegex = new RegExp(
+            `(?:\\bdefint(?![a-zA-Z])|\\\\int(?![a-zA-Z])|\\bint(?![a-zA-Z]))\\s*(?:_\\s*${boundPattern}\\s*\\^\\s*${boundPattern}|\\^\\s*${boundPattern}\\s*_\\s*${boundPattern})\\s*((?:(?!\\\\int|\\bint\\b|\\bdefint\\b).)*?)\\s*(?:\\\\mathrm\\{d\\}|\\\\text\\{d\\}|\\\\differentialD|\\bd|(?<=[^a-zA-Z0-9_])d)\\s*\\\\?([a-zA-Z_][a-zA-Z0-9_]*)`,
             'i'
         );
 
-        cleanStr = cleanStr.replace(defIntRegex,
-            (_m, l1, l2, l3, u1, u2, u3, u4, u5, u6, l4, l5, l6, expr, v) => {
-                let lower = (l1 ?? l2 ?? l3 ?? l4 ?? l5 ?? l6).trim();
-                let upper = (u1 ?? u2 ?? u3 ?? u4 ?? u5 ?? u6).trim();
-                lower = lower.replace(/\\/g, '');
-                upper = upper.replace(/\\/g, '');
-                const integrand = expr.trim() || '1';
-                return `integrate(${integrand}, ${v}, ${lower}, ${upper})`;
-            }
-        );
+        let intPasses = 0;
+        let prevIntStr = '';
+        while (prevIntStr !== cleanStr && intPasses < 10) {
+            prevIntStr = cleanStr;
+            cleanStr = cleanStr.replace(innermostDefIntRegex,
+                (_m, l1, l2, l3, u1, u2, u3, u4, u5, u6, l4, l5, l6, expr, v) => {
+                    let lower = (l1 ?? l2 ?? l3 ?? l4 ?? l5 ?? l6).trim();
+                    let upper = (u1 ?? u2 ?? u3 ?? u4 ?? u5 ?? u6).trim();
+                    lower = lower.replace(/\\/g, '');
+                    upper = upper.replace(/\\/g, '');
+                    const integrand = expr.trim() || '1';
+                    return `integrate(${integrand}, ${v}, ${lower}, ${upper})`;
+                }
+            );
+            intPasses++;
+        }
 
         // 2. Integral indefinida (int / \int): \int x dx ou int x dx ou \int dx
-        const indefIntRegex = new RegExp(
-            `(?:\\bdefint(?![a-zA-Z])|\\\\int(?![a-zA-Z])|\\bint(?![a-zA-Z]))\\s*(.*?)\\s*(?:\\\\mathrm\\{d\\}|\\\\text\\{d\\}|\\\\differentialD|\\bd|(?<=[^a-zA-Z0-9_])d)\\s*\\\\?([a-zA-Z_][a-zA-Z0-9_]*)\\s*$`,
+        const innermostIndefIntRegex = new RegExp(
+            `(?:\\bdefint(?![a-zA-Z])|\\\\int(?![a-zA-Z])|\\bint(?![a-zA-Z]))\\s*((?:(?!\\\\int|\\bint\\b|\\bdefint\\b).)*?)\\s*(?:\\\\mathrm\\{d\\}|\\\\text\\{d\\}|\\\\differentialD|\\bd|(?<=[^a-zA-Z0-9_])d)\\s*\\\\?([a-zA-Z_][a-zA-Z0-9_]*)`,
             'i'
         );
-        cleanStr = cleanStr.replace(indefIntRegex,
-            (_m, expr, v) => {
-                const integrand = expr.trim() || '1';
-                return `integrate(${integrand}, ${v})`;
-            }
-        );
+        let indefPasses = 0;
+        let prevIndefStr = '';
+        while (prevIndefStr !== cleanStr && indefPasses < 10) {
+            prevIndefStr = cleanStr;
+            cleanStr = cleanStr.replace(innermostIndefIntRegex,
+                (_m, expr, v) => {
+                    const integrand = expr.trim() || '1';
+                    return `integrate(${integrand}, ${v})`;
+                }
+            );
+            indefPasses++;
+        }
 
         // 3. Somatório (\sum_{n=a}^b expr) e Produtório (\prod_{n=a}^b expr)
         cleanStr = cleanStr.replace(/(?:\\sum|\bsum\b)\s*_\s*(?:\{([a-zA-Z_][a-zA-Z0-9_]*)=([^}]+)\}|\(([a-zA-Z_][a-zA-Z0-9_]*)=([^)]+)\))\s*\^\s*(?:\{([^}]+)\}|\(([^)]+)\)|([^\s]+))\s*(.*)$/i,
@@ -738,7 +751,7 @@ function compileAllExpressions() {
                 } catch(e) {}
             } else {
                 if (numIntegralVal !== null) {
-                    ExpressionManager.setResult(item.id, `= ${parseFloat(numIntegralVal.toFixed(6))}`);
+                    ExpressionManager.setResult(item.id, `= ${parseFloat(numIntegralVal.toFixed(10))}`);
                     if (assignVarName && assignVarName !== 'y') {
                         StateManager.values[assignVarName] = numIntegralVal;
                     }
@@ -752,7 +765,7 @@ function compileAllExpressions() {
                                           .replace(/usr_/g, '')
                                           .trim();
                     if (cleanResult.includes('Erro') || cleanResult.includes('undef') || cleanResult.includes('Bad Argument')) {
-                        cleanResult = numIntegralVal !== null ? `${parseFloat(numIntegralVal.toFixed(6))}` : 'Erro no cálculo';
+                        cleanResult = numIntegralVal !== null ? `${parseFloat(numIntegralVal.toFixed(10))}` : 'Erro no cálculo';
                     }
                     StateManager.casSolutions[item.id] = { query: giacQuery, result: cleanResult };
                     ExpressionManager.setResult(item.id, formatCasDisplay(cleanResult));
@@ -773,7 +786,7 @@ function compileAllExpressions() {
                         }
                     }
                     updateSlidersForGiac();
-                    scheduleFrame();
+                    markExpressionsDirty();
                 });
             }
             return;
@@ -883,12 +896,12 @@ function compileAllExpressions() {
                                     }
                                 });
                                 
-                                StateManager.odeSolutions[item.id] = { query: currentQuery, name: nextName, expr: finalExpr, ast, index: idx };
+                                 StateManager.odeSolutions[item.id] = { query: currentQuery, name: nextName, expr: finalExpr, ast, index: idx };
                             } catch(e) {
                                 StateManager.odeSolutions[item.id] = { query: currentQuery, name: 'Erro', expr: 'Parse falhou', ast: null, index: -1 };
                             }
                         }
-                        scheduleFrame();
+                        markExpressionsDirty();
                     });
                 }
             }
@@ -902,6 +915,21 @@ function compileAllExpressions() {
             if (cmdArgs.trim() === '') {
                 ExpressionManager.setResult(item.id, '');
                 return;
+            }
+
+            // Validação estrita de sensibilidade a maiúsculas/minúsculas para comandos de matriz (ex: det(A) vs det(a))
+            const matrixOnlyCmds = new Set(['det', 'determinant', 'rref', 'reducedrowechelonform', 'trace', 'tr', 'matrixrank', 'rank', 'invert', 'inv', 'transpose', 'tran', 'eigenvalues', 'eigenvectors', 'ludecomposition', 'jordandiagonalization']);
+            if (matrixOnlyCmds.has(cmdName)) {
+                const rawArg = cmdArgs.trim().replace(/[\{\}\\]/g, '');
+                if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(rawArg) && !definedMatrixNames.has(rawArg)) {
+                    const errMsg = `Erro: Matriz "${rawArg}" não definida`;
+                    StateManager.casSolutions[item.id] = { query: currentQuery, result: errMsg };
+                    ExpressionManager.setResult(item.id, `- ${errMsg}`);
+                    ExpressionManager.setError(item.id, errMsg);
+                    StateManager.pendingCas[item.id] = false;
+                    scheduleFrame();
+                    return;
+                }
             }
 
             const cached = StateManager.casSolutions[item.id];
@@ -1101,7 +1129,7 @@ function compileAllExpressions() {
                                   MathEngine.compiledFuncs[cleanName] = MathEngine.compile(resAst, extractVar);
                               }               
                         }
-                        scheduleFrame();
+                        markExpressionsDirty();
                     });
                 }
             }
@@ -1262,10 +1290,11 @@ function compileAllExpressions() {
                                     }
                                 } else {
                                     ExpressionManager.setResult(item.id, 'Calculando...');
+                                    ExpressionManager.setError(item.id, null);
                                     MathEngine.askGiac(giacQuery).then(res => {
                                         const cleanRes = res.replace(/"/g, '').trim();
                                         StateManager.casSolutions[item.id] = { query: giacQuery, result: cleanRes };
-                                        scheduleFrame();
+                                        markExpressionsDirty();
                                     });
                                     MathEngine.compiledFuncs[funcName] = MathEngine.compile(ast, paramName);
                                     validEquations.push({ color: item.color, id: item.id, ast, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
@@ -1634,7 +1663,7 @@ function compileAllExpressions() {
                         const evalFunc = MathEngine.compile(ast);
                         const val = evalFunc(0, 0, StateManager.values);
                         if (!isNaN(val) && isFinite(val)) {
-                            ExpressionManager.setResult(item.id, '= ' + parseFloat(val.toFixed(4)).toString());
+                            ExpressionManager.setResult(item.id, '= ' + parseFloat(val.toFixed(10)).toString());
                             ExpressionManager.setError(item.id, null);
                             ExpressionManager.setSliderSuggestions(item.id, [], () => {});
                             return;
