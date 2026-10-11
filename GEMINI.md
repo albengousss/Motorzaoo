@@ -1,93 +1,98 @@
 # Motor-Calc (Motor Gráfico Avançado & CAS)
 
-Este documento descreve a arquitetura, as funcionalidades implementadas e o funcionamento geral do projeto **Motor-Calc**, uma calculadora gráfica e sistema de computação algébrica (CAS) na web, inspirada no Desmos e GeoGebra.
+Este documento descreve a arquitetura, a filosofia de design, o fluxo de engenharia rigoroso e o roteiro estratégico do projeto **Motor-Calc** — uma plataforma de computação gráfica matemática e sistema algébrico computacional (CAS) interativo de última geração.
 
 ---
 
-## 🛠️ Tecnologias Utilizadas
-- **TypeScript & Vite:** Base do projeto para tipagem estática rigorosa e bundling ultra-rápido.
-- **MathLive:** Biblioteca responsável pelo teclado matemático virtual e pelo campo de input (`<math-field>`), gerando LaTeX e ASCII-Math limpos e formatados.
-- **Giac (WebAssembly via Web Worker):** O "cérebro" matemático do projeto. O Giac roda 100% isolado em segundo plano (`public/giacWorker.js`) através de mensagens tipadas via `postMessage`. A thread principal da UI e do canvas nunca sofre congelamentos, mesmo durante cálculos de integrais complexas, determinantes ou expansões simbólicas.
-- **WebGL / Fragment Shaders (GPU):** Motor de renderização (`src/graphics/glRenderer.ts`) em camada acelerada por hardware para equações implícitas e inequações, utilizando derivadas parciais de tela (`dFdx`, `dFdy`) para anti-aliasing subpixel de alta fidelidade a 60 FPS.
-- **Canvas 2D API Adaptativa:** Renderizador de alta performance (`src/graphics/renderer.ts`) com algoritmo de amostragem adaptativa (`generatePointsAdaptive`) para curvas explícitas, paramétricas e polares.
+## 🧭 1. Nossa Filosofia de Design & Inspiração no Desmos
+
+### O que significa a "Inspiração no Desmos"?
+Inspirar-se no Desmos não é apenas copiar cores ou formatos; é adotar uma **filosofia profunda de respeito cognitivo ao usuário e elegância matemática invisível**:
+
+1. **A Interface Deve Ser Invisível:** O usuário deve se concentrar puramente na beleza e na lógica da matemática. Caixas cinzentas rígidas, popups intrusivos e quebras visuais obstruem o pensamento e foram terminantemente abolidos.
+2. **Auto-Transformação Instantânea (Zero Burocracia):** Ao digitar termos como `int`, `defint`, `sqrt`, `matrix`, `sum`, `d/dx`, `det`, o editor matemático converte a sequência em símbolos nativos de alta fidelidade no exato instante da última tecla, sem exigir confirmação (`Enter`, `Espaço` ou cliques).
+3. **Eliminação do Padrão GeoGebra:** O usuário **nunca** deve ser forçado a digitar comandos em texto de código burocrático (como `Integral(f, x, 0, 2)` ou matrizes em `[[1, 2], [3, 4]]`). No Motor-Calc, tudo é tratado em visual LaTeX contínuo, visualmente arrastável e com tipografia matemática pura.
+4. **Tratamento de Falhas com Serenidade (Zero Crashes):** Estados intermediários de digitação (ex: o usuário acabou de digitar `\int` e ainda não colocou o diferencial `dx`) nunca disparam exceções no console (`SyntaxError`) nem travam o canvas. Erros são comunicados com discrição através do ícone sutil de aviso e popover explicativo, exatamente como no Desmos (ex: *"O integrando deve terminar com uma variável de integração, como dx."*).
+5. **Reatividade Viva:** Sliders dinâmicos nascem e morrem automaticamente conforme variáveis livres aparecem ou somem das fórmulas. Matrizes abraçam seu conteúdo com colchetes de ajuste perfeito (*hug-fit*) e preenchem automaticamente com `0` células limpas.
 
 ---
 
-## ✨ Funcionalidades Implementadas
+## 🛠️ 2. Nossa Forma de Trabalho & Protocolo de Engenharia
 
-### 1. Sistema de Input e UI (Estilo Desmos)
-- **Interface Limpa e Responsiva:** Sidebar expansível, fundo branco, botões de ação com cantos arredondados e suporte a toque móvel.
-- **Digitação Matemática Fluida em Camada Tripla (Keybindings + Keydown + BeforeInput):**
-  - **Expoentes Imediatos (`moveToSuperscript`):** Ao pressionar `^` (ou `Shift + ~` no teclado ABNT2 / `Shift + 6` no US), o cursor sobe instantaneamente para o expoente, anulando o estado de tecla morta e sem jamais exibir o caractere circunflexo `^`.
-  - **Frações Inteligentes Imediatas com `/`:** Ao pressionar `/`, o termo anterior (ou seleção) é encapsulado no numerador de `\frac{#@}{#?}` e o cursor se posiciona no denominador, exatamente igual ao Desmos.
-  - **Parênteses Automáticos (`smartFence`):** Digitar `(` fecha o parêntese correspondente automaticamente.
-- **Toggles Dinâmicos de Visibilidade:** Círculos coloridos com o índice da expressão. Clicar no círculo oculta ou exibe a curva instantaneamente.
-- **Badges de Resultado:** Exibição clara e contextual de resultados escalares, expressões simbólicas simplificadas, campos vetoriais e avisos de variáveis livres.
+Para manter a estabilidade de classe mundial em um software com compilador matemático, CAS assíncrono em WebAssembly e shaders em WebGL, seguimos rigorosamente os seguintes protocolos:
 
-### 2. Funções Multivariáveis e Alta Dimensão
-- **Declaração com Múltiplas Variáveis:**
-  - $f(x, y) = x^2 y + \frac{y^2}{x}$
-  - $f_1(x, y) = 2x - 3y$
-  - $f_{jose}(x, y) = x^2 + y^2$
-  - Funções de alta dimensão: $f(x, y, z, a, b) = x + y + z + a + b$
-- **Multiplicação Implícita Universal:** Suporte a produtos de variáveis sem operador explícito ou com espaços: `xy`, `xz`, `yz`, `x z`, `y z`, `2xz`, `3yz`, `xyz`, etc., resolvendo equações implícitas multivariáveis e superfícies analiticamente.
-- **Avaliação Numérica Multivariável:** Chamadas como $f(2, 3, 1, 0, 2)$ avaliam todos os argumentos em cascata e exibem o resultado numérico exato no badge.
-- **Curvas de Nível e Equações Implícitas com Funções:** Escrever $f(x, y) = 0$, $f(x, y) = 4$ ou $f(x, y) \le 0$ expande a definição da função e plota a curva ou região diretamente na GPU via WebGL.
-- **Cálculo Simbólico Multivariável via Giac:** Consultas como `int(f(x, y), y)` ou `diff(f(x, y, z), x)` são enviadas ao Giac com o namespace do usuário (`usr_f`), resolvendo integrais e derivadas parciais simbolicamente.
+### Protocolo 1: Sincronização Contínua com o GitHub e Deploy (Vercel)
+* O aplicativo oficial roda em produção no Vercel ([motorzaoo.vercel.app](https://motorzaoo.vercel.app/)), integrado à branch `main` do GitHub.
+* **Regra de Ouro:** Toda refatoração, correção ou feature concluída deve ser validada e imediatamente enviada ao repositório via `git commit` e `git push origin main`, garantindo que o ambiente online esteja sempre atualizado e disponível para o usuário.
 
-### 3. Plotagem e Gráficos
-- **Gráficos Explícitos:** Funções $f(x) = \dots$ ou $y = \dots$.
-- **Curvas Paramétricas 2D e 3D:** Pares ordenados $(x(t), y(t))$ e tuplas espaciais $(x(t), y(t), z(t))$ (ex: hélices cônicas e cilíndricas como $(\cos(t), \sin(t), t)$).
-- **Curvas Polares:** Equações $r = f(\theta)$ ou $r = f(t)$, como $r = 1 + \cos(\theta)$, convertidas internamente para coordenadas cartesianas no intervalo $[0, 2\pi]$.
-- **Restrições de Domínio `{condição}`:** Suporte à sintaxe clássica do Desmos com condições simples e duplas (ex: `y = x^2 {x >= 0}`, `y = sin(x) {0 <= x <= pi}`, `(cos(t), sin(t), t) {0 <= t <= 4pi}`).
-- **Equações Implícitas & Inequações em WebGL:** Resolução analítica por pixel no fragment shader sem o custo de triangulação pesada na CPU.
+### Protocolo 2: Testes Exaustivos sob a Ótica do Usuário Real (*User-Centric Adversarial Testing*)
+* **A Mente do Usuário é Imprevisível:**
+  * O usuário real **não pensa como um programador linear**. Ele digita rápido, erra letras, cola expressões complexas, esquece parênteses, apaga o meio de uma equação, cola termos grudados (`xdx`, `ydy`, `2xsin(x)`), mistura espaços aleatórios (`\int _1 ^2 x dx`), inverte limites (`\int^2_1`), e combina caracteres LaTeX com texto comum.
+* **Testar a Cadeia Completa de Tradução:**
+  Não basta testar se o cálculo numérico isolado funciona. É obrigatório testar **o programa pelo programa** em sua cadeia completa de 6 etapas:
+  $$\text{Input do Usuário} \longrightarrow \text{MathLive} \longrightarrow \text{Sanitização } (cleanStr) \longrightarrow \text{Parser / AST} \longrightarrow \text{Motor / Giac CAS} \longrightarrow \text{Tradução Visual para o Usuário}$$
+  Se o Giac calcular a integral corretamente, mas o resultado for exibido como texto feio ou incompleto, **o sistema falhou**. A tradução de ida e de volta deve ser 100% perfeita.
 
-### 4. Sliders Dinâmicos e Animados (60 FPS)
-- Declaração de variáveis dinâmicas (ex: $a = 5$ ou $k = 2$).
-- Botão de **Play/Pause** animado em cada slider com loop ping-pong entre os valores mínimo e máximo a 60 FPS ininterruptos.
+### Protocolo 3: Ciclo Fechado de Correção até Zero Erros (*Defensive Loop*)
+* Praticamos **programação defensiva extrema**.
+* Todo bug reportado ou identificado deve ser isolado, adicionado como teste automatizado na suíte de testes defensivos (`scripts/verify-defensive.ts`) e o motor deve ser testado repetidamente até que **todas as asserções passem com 100% de sucesso e zero regressões**.
+* Antes de dar qualquer tarefa como concluída, o build de produção (`npm run build`) deve rodar com **0 erros de TypeScript e 0 avisos impeditivos de bundling**.
 
-### 5. Computação Algébrica Simbólica (CAS & Giac Worker)
-- **Integrais com Qualquer Variável:**
-  - Formato funcional: `int(x, x)`, `int(t, x)`, `int(t, t)`
-  - Formato LaTeX: `\int x dx`, `\int t dt`, `\int_0^2 x dx`
-  - Auto-plotagem: Integrais indefinidas em $x$ geram o resultado simbólico e plotam imediatamente a curva primitiva no gráfico.
-- **Derivadas e Limites:** $\frac{d}{dx} f(x)$, `diff(expr, x)`, `limit(expr, x, 0)`.
-- **Matrizes e Álgebra Linear:** Operações de matrizes $M \times N$, determinantes, inversas e resolução simbólica de equações matriciais $M \times N = 0$.
-
-### 6. Equações Diferenciais Ordinárias (EDOs) e Campos Vetoriais
-- **Notações Universais:**
-  - Plicas: $y' = x + y$, $y'(t) = -2y$, $x'(t) = -x$
-  - Leibniz: $\frac{dy}{dx} = \dots$, $\frac{dy}{dt} = -k \cdot y$
-  - Comando explícito: `campo(y' = x)`
-- **Parâmetros Dinâmicos:** Variáveis livres em EDOs (como $k$ em $dy/dt = -k \cdot y$) conectam-se aos sliders em tempo real.
-- **Problema de Valor Inicial (IVP):** Traçado automático da solução a partir de condições iniciais como $y(0) = 1$ via integrador Dormand-Prince (RK45).
-
-### 7. Motor Gráfico 3D (Estilo Desmos 3D com Alto Contraste & WebGL Híbrido)
-- **Alternador de Modo 2D / 3D:** Seletor moderno no topo da tela para transitar suavemente entre o plano cartesiano 2D e o espaço tridimensional.
-- **Câmera Orbital Arcball 3D (`src/graphics/camera3d.ts`):** Rotação com um dedo/mouse, translação (pan) com dois dedos/botão direito, zoom por pinça/scroll com Z apontando para cima e inversão matricial para raios de câmera.
-- **Visual Inspirado no Desmos 3D com Alto Contraste:**
-  - **Piso Workbench no Plano $XY$ ($z = 0$):** Placa translúcida de referência física que ancora os objetos no espaço e elimina a sensação de "vazio branco".
-  - **Grade de Alto Contraste no Plano $XY$:** Linhas escuras bem definidas (com linhas mestras reforçadas a cada 5 unidades) perfeitamente legíveis em qualquer tela.
-  - **Caixa Cúbica Delimitadora Nítida:** Delimitação $[-5, 5]^3$ com arestas escuras de alto contraste.
-  - **Eixos RGB com Orientação e Espessura:** Vermelho (+X), Verde (+Y), Azul (+Z) com traçado espesso (`lineWidth: 3.5`) e semieixos negativos translúcidos mas perfeitamente visíveis.
-- **Superfícies Explícitas $z = f(x, y)$ com Shading Dual-Tone:** Malha indexada com iluminação bilateral Phong e diferenciação entre a face externa (cor vibrante da expressão) e a face interna (tom contrastante mais escuro), conferindo volume real e eliminação do efeito casca oca.
-- **Equações Implícitas 3D $F(x, y, z) = 0$ via Raymarching:** Shader volumétrico analítico na GPU que acha a superfície por bissecção binária com cálculo de normais por diferenças centrais $\nabla F = (\partial_x F, \partial_y F, \partial_z F)$. Plota esferas ($x^2 + y^2 + z^2 = 9$), hiperboloides ($x^2 + y^2 - z^2 = 1$), toros, superfícies de sela ($xy = z$), paraboloides e equações de produtos múltiplos ($xz = y$, $y^2 = xz$, $x^2 = \frac{yz}{2}$).
-- **Curvas Espaciais Paramétricas 3D $(x(t), y(t), z(t))$:** Traçado contínuo espesso no espaço tridimensional para hélices, espirais cônicas e curvas espaciais com renderização integrada no z-buffer.
+### Protocolo 4: Verificação Estrita de Duplicidade (*Single Source of Truth*)
+* Antes de implementar qualquer cálculo, regex ou handler de UI, examine rigorosamente o repositório para verificar se a funcionalidade já existe em outro formato.
+* Elimine códigos mortos, caminhos legados do GeoGebra e implementações redundantes. Deve existir **apenas uma única implementação canônica limpa**, padronizada e otimizada.
 
 ---
 
-## 🧠 Fluxo de Execução do Sistema
+## 🎯 3. Momento Atual vs. Nosso Grande Objetivo Central
 
-1. **Entrada do Usuário:** O componente `<math-field>` capta as edições e gera o código ASCII-Math/LaTeX com atalhos inteligentes (sem circunflexo visível, parênteses e frações automáticas).
-2. **Higienização (`cleanStr`):** Corrige operadores, converte frações LaTeX/AsciiMath para notação funcional, normaliza plicas e subscritos de funções (`f_1`, `f_{jose}`), e extrai condições de domínio `{condição}`.
-3. **Classificação e Árvore Sintática (`PrattParser` & `Tokenizer`):**
-   - Expande multiplicações implícitas universais entre letras e variáveis (`xz`, `yz`, `xy`, `2xz`).
-   - Se for definição de variável escalar $\implies$ cria slider dinâmico.
-   - Se for definição de função mono ou multivariável ($f(x)$, $f(x, y)$, $f(x, y, z, \dots)$) $\implies$ registra em `compiledFuncs`, mapeia para o Giac e plota se aplicável.
-   - Se for EDO $\implies$ compila o campo vetorial conectando variáveis livres ao escopo de sliders.
-   - Se for comando CAS puro $\implies$ envia ao Giac Worker assíncrono.
-   - Se for equação implícita $\implies$ envia para o pipeline GLSL do WebGL (2D ou 3D raymarching).
-4. **Render Loop (`drawFrame`):** A 60 FPS, o WebGL rasteriza as superfícies e equações implícitas na camada 3D/2D com shading Phong bilateral e controle de profundidade, desenhando eixos e grades nítidos no topo.
+### Fase Atual: Refinamento, Ergonomia e Robustez da Base
+No momento presente, estamos **lapidando e blindando os fundamentos do sistema**:
+* Normalização matemática impecável (`int` vs `defint`, diferenciais obrigatórios, matrizes arrastáveis vivas, sliders automáticos, remoção de menus legados).
+* Garantir que a usabilidade seja suave, elegante e visualmente impecável.
+
+### O Ponto Principal: A Máquina Matemática Superior
+Este refinamento é a **fundação estrutural sólida** para a verdadeira meta do Motor-Calc. Em breve, voltaremos com força total ao nosso objetivo principal:
+1. **Computação Avançada de Equações Diferenciais (EDOs e EDPs):**
+   * Resoluções analíticas simbólicas e numéricas de alta ordem.
+   * Campos vetoriais direcionais 2D e 3D em tempo real com controle de densidade e cores.
+   * Traçado de retratos de fase, bacias de atração e sistemas de equações diferenciais acopladas.
+   * Integradores numéricos adaptativos de alta precisão (Runge-Kutta Dormand-Prince RK45 e métodos para sistemas rígidos / *stiff*).
+2. **Cálculo Avançado Multivariável & Vetorial:**
+   * Integrais duplas e triplas com limites de integração funcionais e projeção de regiões de integração volumétricas.
+   * Gradientes, divergentes, rotacionais e campos de fluxo.
+   * Visualização gráfica de teoremas fundamentais do cálculo (Green, Stokes e Gauss-Divergência).
+3. **Motor Gráfico e CAS de Alta Performance:**
+   * Unificação perfeita entre CPU simbólica (Giac WebAssembly) e GPU paralela (WebGL raymarching e fragment shaders a 60 FPS ininterruptos).
 
 ---
-*Este ficheiro serve como documentação de referência central da arquitetura e das capacidades do Motor-Calc.*
+
+## 📖 4. Guia e Central de Ajuda de Comandos
+
+O Motor-Calc possui uma **Central Interativa de Comandos e Ajuda** integrada nativamente na interface:
+
+* **Como Acessar:** Clique no ícone de ajuda **`?`** no cabeçalho da barra lateral de expressões (ao lado dos botões Desfazer/Refazer) ou pressione a tecla `Esc` para fechar a qualquer momento.
+* **O que o Guia Contém:**
+  * **Cálculo & Derivadas:** `d/dx(f(x))`, linha de plica `f'(x)`, limites `lim(f(x), x, a)`, campos de direção `campo(y')`, resolução analítica de EDOs `edo(y' = f(x, y))` e séries de Taylor.
+  * **Integrais & Séries:**
+    * `int`: Integral indefinida simbólica $\int f(x) \, dx$ com constante $+ C$ e curva primitiva automática.
+    * `defint`: Integral definida $\int_a^b f(x) \, dx$ com cálculo instantâneo da área sob a curva.
+    * Somatórios $\sum_{n=a}^b$ e Produtórios $\prod_{n=a}^b$.
+  * **Álgebra Linear & Matrizes:**
+    * Criação visual interativa (`matrix` ou atalhos `#22`, `#33`, `#24`).
+    * Determinantes `det(A)`, escalonamento reduzido `rref(A)`, traço `trace(A)`, posto `rank(A)`, transposta $A^T$ / $A'$, inversa $A^{-1}$ / `inv(A)`, autovalores e autovetores.
+  * **Trigonometria & Funções:** Funções trigonométricas, hiperbólicas e inversas, raízes $n$-ésimas `nthroot`, logaritmos `log`, `ln`.
+  * **Estatística & Listas:** Média `mean(L)`, mediana `median(L)`, desvio padrão `stdev(L)` e vetores/listas entre colchetes `L = [1, 2, 3]`.
+
+---
+
+## 🛠️ 5. Tecnologias Utilizadas na Stack
+
+* **TypeScript & Vite:** Tipagem estática rigorosa e pipeline de bundling ultra-rápido (< 1s).
+* **MathLive:** Campo de entrada matemática `<math-field>` sem latência, configurado para conversão instantânea de operadores e visual LaTeX puro.
+* **Giac (WebAssembly via Web Worker):** Motor simbólico rodando isolado em segundo plano (`public/giacWorker.js`), garantindo que cálculos pesados nunca congelem a UI.
+* **WebGL / Shaders GLSL:** Renderização acelerada por GPU para superfícies 3D, equações implícitas via Raymarching e inequações com anti-aliasing subpixel a 60 FPS.
+* **Canvas 2D API Adaptativa:** Renderização adaptativa de alta densidade para funções explícitas, curvas paramétricas e polares.
+
+---
+*Documentação de engenharia e diretrizes de desenvolvimento do Motor-Calc.*
