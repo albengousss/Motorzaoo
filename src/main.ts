@@ -539,11 +539,13 @@ function compileAllExpressions() {
             .replace(/\\differentialD/gi, ' d ')
             .replace(/\\,/g, ' ');
 
+        cleanStr = cleanStr.replace(/(?:(?<=\W)|\b|(?<=[a-zA-Z0-9_\)\}\]]))d\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i, ' d $1');
+
         // 1. Integral definida (defint / \int_a^b): \int_0^2 x dx ou \int_{0}^{2} x dx ou \int^2_0 x dx
-        cleanStr = cleanStr.replace(/(?:\\?int|\bdefint\b)(?:_(?:\{([^}]+)\}|([a-zA-Z0-9.\-]+))\^(?:\{([^}]+)\}|([a-zA-Z0-9.\-]+))|\^(?:\{([^}]+)\}|([a-zA-Z0-9.\-]+))_(?:\{([^}]+)\}|([a-zA-Z0-9.\-]+)))\s*(.*?)\s*(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD|\bd)\s*\\?([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i,
-            (_m, l1, l2, u1, u2, u3, u4, l3, l4, expr, v) => {
-                const lower = (l1 ?? l2 ?? l3 ?? l4).trim();
-                const upper = (u1 ?? u2 ?? u3 ?? u4).trim();
+        cleanStr = cleanStr.replace(/(?:\\?int|\bdefint\b)(?:_(?:\{([^}]+)\}|\(([^)]+)\)|([a-zA-Z0-9.\-]+))\^(?:\{([^}]+)\}|\(([^)]+)\)|([a-zA-Z0-9.\-]+))|\^(?:\{([^}]+)\}|\(([^)]+)\)|([a-zA-Z0-9.\-]+))_(?:\{([^}]+)\}|\(([^)]+)\)|([a-zA-Z0-9.\-]+)))\s*(.*?)\s*(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD|\bd)\s*\\?([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i,
+            (_m, l1, l2, l3, u1, u2, u3, u4, u5, u6, l4, l5, l6, expr, v) => {
+                const lower = (l1 ?? l2 ?? l3 ?? l4 ?? l5 ?? l6).trim();
+                const upper = (u1 ?? u2 ?? u3 ?? u4 ?? u5 ?? u6).trim();
                 const integrand = expr.trim() || '1';
                 return `integrate(${integrand}, ${v}, ${lower}, ${upper})`;
             }
@@ -556,6 +558,7 @@ function compileAllExpressions() {
                 return `integrate(${integrand}, ${v})`;
             }
         );
+
 
         // Extração de restrições de domínio entre chaves: ex: y = x^2 {x >= 0} ou {0 <= t <= 2pi}
         let conditionFn: ((x: number, y: number, scope: any, t?: number) => boolean) | undefined = undefined;
@@ -578,9 +581,24 @@ function compileAllExpressions() {
 
         // Parsing inicial para descobrir o tipo de comando
         let ast: any = null;
+        let assignVarName: string | null = null;
         try {
             ast = new PrattParser(cleanStr).parseExpression();
         } catch(e) {}
+
+        const funcDeclEarly = cleanStr.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\(([^)]+)\)\s*=/);
+        if (!ast && !funcDeclEarly) {
+            const assignMatch = cleanStr.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*(.+)$/);
+            if (assignMatch) {
+                try {
+                    const rhsAst = new PrattParser(assignMatch[2].trim()).parseExpression();
+                    if (rhsAst && MathEngine.isGiacCommand(rhsAst)) {
+                        ast = rhsAst;
+                        assignVarName = assignMatch[1];
+                    }
+                } catch(e) {}
+            }
+        }
 
         if (ast && MathEngine.isGiacCommand(ast)) {
             ExpressionManager.setSliderSuggestions(item.id, [], () => {});
@@ -640,10 +658,20 @@ function compileAllExpressions() {
             if (cached && cached.query === giacQuery) {
                 ExpressionManager.setResult(item.id, formatCasDisplay(cached.result));
                 updateSlidersForGiac();
+                if (assignVarName && assignVarName !== 'y' && isDefiniteInt) {
+                    try {
+                        const numAst = new PrattParser(cached.result).parseExpression();
+                        const numVal = MathEngine.compile(numAst)(0, 0, StateManager.values);
+                        if (!isNaN(numVal) && isFinite(numVal)) {
+                            StateManager.values[assignVarName] = numVal;
+                            StateManager.defineVariable(assignVarName, numAst);
+                        }
+                    } catch(e) {}
+                }
                 try {
                     const solvedAst = new PrattParser(cached.result).parseExpression();
                     const free = getFreeVariables(solvedAst, []);
-                    if (!isDefiniteInt && (free.includes('x') || (!isNaN(Number(cached.result)) && isFinite(Number(cached.result))))) {
+                    if (!isDefiniteInt && (assignVarName === null || assignVarName === 'y') && (free.includes('x') || (!isNaN(Number(cached.result)) && isFinite(Number(cached.result))))) {
                         validEquations.push({ 
                             color: item.color, 
                             id: item.id, 
@@ -670,12 +698,23 @@ function compileAllExpressions() {
                     }
                     StateManager.casSolutions[item.id] = { query: giacQuery, result: cleanResult };
                     ExpressionManager.setResult(item.id, formatCasDisplay(cleanResult));
+                    if (assignVarName && assignVarName !== 'y' && isDefiniteInt) {
+                        try {
+                            const numAst = new PrattParser(cleanResult).parseExpression();
+                            const numVal = MathEngine.compile(numAst)(0, 0, StateManager.values);
+                            if (!isNaN(numVal) && isFinite(numVal)) {
+                                StateManager.values[assignVarName] = numVal;
+                                StateManager.defineVariable(assignVarName, numAst);
+                            }
+                        } catch(e) {}
+                    }
                     updateSlidersForGiac();
                     scheduleFrame();
                 });
             }
             return;
         }
+
 
         // 2. EQUAÇÕES DIFERENCIAIS E COMANDOS CAS GENÉRICOS
         let isEdo = false;

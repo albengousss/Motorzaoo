@@ -501,6 +501,15 @@ assert(intMissing9.isIncomplete && intMissing9.warning === missingDiffMsg, 'Dete
 const intMissing10 = FaultTolerantParser.checkIncompleteStatus('\\int \\sin(x)');
 assert(intMissing10.isIncomplete && intMissing10.warning === missingDiffMsg, 'Detects missing differential in "\\int \\sin(x)"', intMissing10);
 
+const intMissing11 = FaultTolerantParser.checkIncompleteStatus('\\int_{}^{} x dx');
+assert(intMissing11.isIncomplete && intMissing11.warning === 'Faltam os limites de integração.', 'Detects empty limits in "\\int_{}^{} x dx"', intMissing11);
+
+const intMissing12 = FaultTolerantParser.checkIncompleteStatus('\\int_{0}^{} x dx');
+assert(intMissing12.isIncomplete && intMissing12.warning === 'Faltam os limites de integração.', 'Detects empty upper limit in "\\int_{0}^{} x dx"', intMissing12);
+
+const intMissing13 = FaultTolerantParser.checkIncompleteStatus('\\int_{}^{2} x dx');
+assert(intMissing13.isIncomplete && intMissing13.warning === 'Faltam os limites de integração.', 'Detects empty lower limit in "\\int_{}^{2} x dx"', intMissing13);
+
 // 7.2 Complete integrals with differential
 const intComplete1 = FaultTolerantParser.checkIncompleteStatus('\\int x dx');
 assert(!intComplete1.isIncomplete && intComplete1.warning === null, 'Accepts complete indefinite integral "\\int x dx"', intComplete1);
@@ -523,6 +532,18 @@ assert(!intComplete6.isIncomplete && intComplete6.warning === null, 'Accepts emp
 const intComplete7 = FaultTolerantParser.checkIncompleteStatus('\\int x \\mathrm{d}x');
 assert(!intComplete7.isIncomplete && intComplete7.warning === null, 'Accepts LaTeX \\mathrm{d}x in "\\int x \\mathrm{d}x"', intComplete7);
 
+const intComplete8 = FaultTolerantParser.checkIncompleteStatus('\\int xdx');
+assert(!intComplete8.isIncomplete && intComplete8.warning === null, 'Accepts glued differential "\\int xdx"', intComplete8);
+
+const intComplete9 = FaultTolerantParser.checkIncompleteStatus('\\int ydy');
+assert(!intComplete9.isIncomplete && intComplete9.warning === null, 'Accepts glued differential "\\int ydy"', intComplete9);
+
+const intComplete10 = FaultTolerantParser.checkIncompleteStatus('\\int_{0}^{2} xdx');
+assert(!intComplete10.isIncomplete && intComplete10.warning === null, 'Accepts glued differential in definite integral "\\int_{0}^{2} xdx"', intComplete10);
+
+const intComplete11 = FaultTolerantParser.checkIncompleteStatus('int_(0)^(2) x dx');
+assert(!intComplete11.isIncomplete && intComplete11.warning === null, 'Accepts AsciiMath bounds "int_(0)^(2) x dx"', intComplete11);
+
 // 7.3 Free Variable and Phantom Slider Suppression
 const intFree1 = FaultTolerantParser.detectFreeVariables('\\int x dx');
 assert(intFree1.length === 0, 'No slider suggestions for "\\int x dx"', intFree1);
@@ -542,6 +563,12 @@ assert(!intFree5.includes('d'), 'Missing differential "\\int x" does NOT suggest
 const intFree6 = FaultTolerantParser.detectFreeVariables('\\int t');
 assert(!intFree6.includes('d'), 'Missing differential "\\int t" does NOT suggest slider for "d"', intFree6);
 
+const intFree7 = FaultTolerantParser.detectFreeVariables('\\int xdx');
+assert(intFree7.length === 0, 'No slider suggestions for glued "\\int xdx"', intFree7);
+
+const intFree8 = FaultTolerantParser.detectFreeVariables('\\int (a * x) dx');
+assert(intFree8.length === 1 && intFree8[0] === 'a', 'Only detects parameter "a" in "\\int (a * x) dx" with glued diff', intFree8);
+
 // 7.4 PrattParser differential validation and AST generation
 const prattAst1 = new PrattParser('\\int x dx').parseExpression();
 assert(Array.isArray(prattAst1) && prattAst1[0] === 'Integrate' && prattAst1[1] === 'x' && prattAst1[2] === 'x', 'PrattParser parses "\\int x dx" as ["Integrate", "x", "x"]', prattAst1);
@@ -551,6 +578,15 @@ assert(Array.isArray(prattAst2) && prattAst2[0] === 'Integrate' && prattAst2[1] 
 
 const prattAst3 = new PrattParser('\\int dx').parseExpression();
 assert(Array.isArray(prattAst3) && prattAst3[0] === 'Integrate' && prattAst3[1] === 1 && prattAst3[2] === 'x', 'PrattParser parses "\\int dx" with default integrand 1', prattAst3);
+
+const prattAst4 = new PrattParser('\\int xdx').parseExpression();
+assert(Array.isArray(prattAst4) && prattAst4[0] === 'Integrate' && prattAst4[1] === 'x' && prattAst4[2] === 'x', 'PrattParser parses glued "\\int xdx"', prattAst4);
+
+const prattAst5 = new PrattParser('\\int ydy').parseExpression();
+assert(Array.isArray(prattAst5) && prattAst5[0] === 'Integrate' && prattAst5[1] === 'y' && prattAst5[2] === 'y', 'PrattParser parses glued "\\int ydy"', prattAst5);
+
+const prattAst6 = new PrattParser('\\int_{0}^{2} xdx').parseExpression();
+assert(Array.isArray(prattAst6) && prattAst6[0] === 'Integrate' && prattAst6[1] === 'x' && prattAst6[2] === 'x' && prattAst6[3] === 0 && prattAst6[4] === 2, 'PrattParser parses glued "\\int_{0}^{2} xdx"', prattAst6);
 
 let prattErr1Thrown = false;
 try {
@@ -576,6 +612,14 @@ try {
 }
 assert(prattErr3Thrown, 'PrattParser throws Desmos error when differential is missing in standalone "\\int"');
 
+let prattErr4Thrown = false;
+try {
+  new PrattParser('int(x)').parseExpression();
+} catch (e: any) {
+  prattErr4Thrown = e.message.includes('integrando deve terminar com uma variável de integração');
+}
+assert(prattErr4Thrown, 'PrattParser throws Desmos error when variable is missing in functional "int(x)"');
+
 // 7.5 Integral Normalization Transformation (Desmos standard)
 function normalizeIntegral(str: string): string {
   let cleanStr = str
@@ -584,10 +628,12 @@ function normalizeIntegral(str: string): string {
     .replace(/\\differentialD/gi, ' d ')
     .replace(/\\,/g, ' ');
 
-  cleanStr = cleanStr.replace(/(?:\\?int|\bdefint\b)(?:_(?:\{([^}]+)\}|([a-zA-Z0-9.\-]+))\^(?:\{([^}]+)\}|([a-zA-Z0-9.\-]+))|\^(?:\{([^}]+)\}|([a-zA-Z0-9.\-]+))_(?:\{([^}]+)\}|([a-zA-Z0-9.\-]+)))\s*(.*?)\s*(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD|\bd)\s*\\?([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i,
-    (_m, l1, l2, u1, u2, u3, u4, l3, l4, expr, v) => {
-      const lower = (l1 ?? l2 ?? l3 ?? l4).trim();
-      const upper = (u1 ?? u2 ?? u3 ?? u4).trim();
+  cleanStr = cleanStr.replace(/(?:(?<=\W)|\b|(?<=[a-zA-Z0-9_\)\}\]]))d\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i, ' d $1');
+
+  cleanStr = cleanStr.replace(/(?:\\?int|\bdefint\b)(?:_(?:\{([^}]+)\}|\(([^)]+)\)|([a-zA-Z0-9.\-]+))\^(?:\{([^}]+)\}|\(([^)]+)\)|([a-zA-Z0-9.\-]+))|\^(?:\{([^}]+)\}|\(([^)]+)\)|([a-zA-Z0-9.\-]+))_(?:\{([^}]+)\}|\(([^)]+)\)|([a-zA-Z0-9.\-]+)))\s*(.*?)\s*(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD|\bd)\s*\\?([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i,
+    (_m, l1, l2, l3, u1, u2, u3, u4, u5, u6, l4, l5, l6, expr, v) => {
+      const lower = (l1 ?? l2 ?? l3 ?? l4 ?? l5 ?? l6).trim();
+      const upper = (u1 ?? u2 ?? u3 ?? u4 ?? u5 ?? u6).trim();
       const integrand = expr.trim() || '1';
       return `integrate(${integrand}, ${v}, ${lower}, ${upper})`;
     }
@@ -604,14 +650,22 @@ function normalizeIntegral(str: string): string {
 }
 
 assert(normalizeIntegral('\\int x dx') === 'integrate(x, x)', 'Normalizes "\\int x dx" to "integrate(x, x)"');
+assert(normalizeIntegral('\\int xdx') === 'integrate(x, x)', 'Normalizes "\\int xdx" to "integrate(x, x)"');
+assert(normalizeIntegral('int xdx') === 'integrate(x, x)', 'Normalizes "int xdx" to "integrate(x, x)"');
+assert(normalizeIntegral('\\int ydy') === 'integrate(y, y)', 'Normalizes "\\int ydy" to "integrate(y, y)"');
 assert(normalizeIntegral('\\int_{0}^{2} x dx') === 'integrate(x, x, 0, 2)', 'Normalizes "\\int_{0}^{2} x dx" to "integrate(x, x, 0, 2)"');
+assert(normalizeIntegral('\\int_{0}^{2} xdx') === 'integrate(x, x, 0, 2)', 'Normalizes "\\int_{0}^{2} xdx" to "integrate(x, x, 0, 2)"');
 assert(normalizeIntegral('\\int_{ 0 }^{ 2 } x dx') === 'integrate(x, x, 0, 2)', 'Normalizes "\\int_{ 0 }^{ 2 } x dx" with spaces to "integrate(x, x, 0, 2)"');
+assert(normalizeIntegral('int_(0)^(2) x dx') === 'integrate(x, x, 0, 2)', 'Normalizes "int_(0)^(2) x dx" to "integrate(x, x, 0, 2)"');
 assert(normalizeIntegral('\\int_{-1}^{1} x dx') === 'integrate(x, x, -1, 1)', 'Normalizes "\\int_{-1}^{1} x dx" with negative bound to "integrate(x, x, -1, 1)"');
 assert(normalizeIntegral('\\int dx') === 'integrate(1, x)', 'Normalizes "\\int dx" to "integrate(1, x)"');
 assert(normalizeIntegral('\\int_{0}^{1} dx') === 'integrate(1, x, 0, 1)', 'Normalizes "\\int_{0}^{1} dx" to "integrate(1, x, 0, 1)"');
 assert(normalizeIntegral('\\int (t^2 + 1) dt') === 'integrate((t^2 + 1), t)', 'Normalizes "\\int (t^2 + 1) dt" to "integrate((t^2 + 1), t)"');
+assert(normalizeIntegral('I = \\int_{0}^{2} x dx') === 'I = integrate(x, x, 0, 2)', 'Normalizes "I = \\int_{0}^{2} x dx" to "I = integrate(x, x, 0, 2)"');
+assert(normalizeIntegral('y = \\int x dx') === 'y = integrate(x, x)', 'Normalizes "y = \\int x dx" to "y = integrate(x, x)"');
 
 console.log(`\n--- RESULTS: ${passed} PASSED, ${failed} FAILED ---`);
 if (failed > 0) {
   process.exit(1);
 }
+

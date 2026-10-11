@@ -95,7 +95,7 @@ export class FaultTolerantParser {
         if (hasIntCmd) {
             boundSet.add('d');
             boundSet.add('D');
-            const diffVarMatches = cleaned.matchAll(/(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD|\bd)\s*\\?([a-zA-Z_][a-zA-Z0-9_]*)/gi);
+            const diffVarMatches = cleaned.matchAll(/(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD|(?<=\W)|\b|(?<=[a-zA-Z0-9_\)\}\]]))d\s*\\?([a-zA-Z_][a-zA-Z0-9_]*)/gi);
             for (const dm of diffVarMatches) {
                 if (dm[1]) {
                     const varToken = dm[1].replace(/[\{\}\\]/g, '');
@@ -105,6 +105,7 @@ export class FaultTolerantParser {
                 }
             }
         }
+
 
         // Remove fragmentos de operadores diferenciais
         cleaned = cleaned
@@ -204,6 +205,11 @@ export class FaultTolerantParser {
           && !/^(?:integrate|Integral)\(/i.test(trimmedAscii);
 
         if (hasVisualIntegral) {
+            // Limites vazios em integral definida (ex: \int_{}^{}, \int_{0}^{}, \int_{}^{2})
+            if (/(?:_\{|\^\{|_\(|\^\()\s*(?:\}|\))/.test(trimmedLatex) || /(?:_\{|\^\{|_\(|\^\()\s*(?:\}|\))/.test(trimmedAscii)) {
+                return { isIncomplete: true, warning: 'Faltam os limites de integração.' };
+            }
+
             let sForDiff = (trimmedLatex || trimmedAscii || '').trim();
             sForDiff = sForDiff
                 .replace(/#\?/g, '')
@@ -215,11 +221,15 @@ export class FaultTolerantParser {
                 .replace(/\\,/g, ' ')
                 .trim();
             
+            // Separa diferencial colado ao integrando (ex: xdx -> x d x, ydy -> y d y, (x+1)dt -> (x+1) d t)
+            sForDiff = sForDiff.replace(/(?:(?<=\W)|\b|(?<=[a-zA-Z0-9_\)\}\]]))d\s*(\\?[a-zA-Z_][a-zA-Z0-9_]*|\([a-zA-Z_][a-zA-Z0-9_]*\))\s*\)?$/i, ' d $1');
+
             const hasDifferential = /(?:^|[^a-zA-Z0-9_\\]|\s)d\s*(?:\\?[a-zA-Z_][a-zA-Z0-9_]*|\([a-zA-Z_][a-zA-Z0-9_]*\))\s*\)?$/i.test(sForDiff);
             if (!hasDifferential) {
                 return { isIncomplete: true, warning: 'O integrando deve terminar com uma variável de integração, como dx.' };
             }
         }
+
 
         // Operador diferencial incompleto: \frac{d}{dx} ou d/dx sem argumento
         if (

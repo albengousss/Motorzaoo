@@ -43,7 +43,9 @@ export class Tokenizer {
     private string: string = '';
 
     init(str: string) {
-        let processed = str.trim().replace(/\bd\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i, ' d $1');
+        let processed = str.trim()
+            .replace(/(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i, ' d $1')
+            .replace(/(?:(?<=\W)|\b|(?<=[a-zA-Z0-9_\)\}\]]))d\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i, ' d $1');
         
         // Multiplicação implícita inteligente universal
         // 1. (x+1)(x-1) -> (x+1)*(x-1)

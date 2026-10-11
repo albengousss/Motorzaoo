@@ -82,13 +82,18 @@ export class PrattParser {
             if (this.lookahead && this.lookahead.type === TokenTypes.PARENTHESIS_LEFT) {
                 this.eat(TokenTypes.PARENTHESIS_LEFT);
                 const expr = this.parseExpression(0);
-                let diffVar = "x";
+                let diffVar: string | null = null;
                 if (this.lookahead && this.lookahead.type === TokenTypes.COMMA) {
                     this.eat(TokenTypes.COMMA);
                     const varNode = this.parseExpression(0);
                     if (typeof varNode === 'string') diffVar = varNode.replace(/[\{\}\\]/g, '');
                     else if (typeof varNode === 'number') diffVar = varNode.toString();
                 }
+                if (!diffVar && token.value !== 'integrate') {
+                    throw new Error("O integrando deve terminar com uma variável de integração, como dx.");
+                }
+                diffVar = diffVar || 'x';
+
                 if (this.lookahead && this.lookahead.type === TokenTypes.COMMA) {
                     this.eat(TokenTypes.COMMA);
                     lower = this.parseExpression(0);
