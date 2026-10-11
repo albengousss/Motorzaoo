@@ -65,14 +65,12 @@ export class FaultTolerantParser {
         const funcDecl = cleaned.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\(([^)]+)\)\s*=/);
         const boundSet = new Set<string>([
             ...this.PROTECTED_IDENTIFIERS,
-            ...boundVariables,
-            ...boundVariables.map(v => v.toLowerCase()),
-            ...boundVariables.map(v => v.toUpperCase())
+            ...boundVariables
         ]);
 
         if (funcDecl) {
-            boundSet.add(funcDecl[1].toLowerCase());
-            funcDecl[2].split(',').forEach(p => boundSet.add(p.trim().toLowerCase()));
+            boundSet.add(funcDecl[1]);
+            funcDecl[2].split(',').forEach(p => boundSet.add(p.trim()));
             cleaned = cleaned.substring(funcDecl[0].length);
         } else {
             const assignDecl = cleaned.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*=/);
@@ -87,7 +85,7 @@ export class FaultTolerantParser {
         const derivVarMatch = cleaned.match(/(?:\\frac\{\s*(?:\\mathrm\{d\}|d)\s*\}\{\s*(?:\\mathrm\{d\}|d)([a-zA-Z_][a-zA-Z0-9_]*)\s*\}|d\/d([a-zA-Z_][a-zA-Z0-9_]*)|(?:\(?d\)?\/\(?d([a-zA-Z_][a-zA-Z0-9_]*)\)?))\b/i);
         if (derivVarMatch) {
             const dVar = derivVarMatch[1] || derivVarMatch[2] || derivVarMatch[3];
-            if (dVar) boundSet.add(dVar.toLowerCase());
+            if (dVar) boundSet.add(dVar);
         }
 
         // Operadores de Integrais (int, defint, \int): protege 'd' e a variável de integração
@@ -100,8 +98,6 @@ export class FaultTolerantParser {
                 if (dm[1]) {
                     const varToken = dm[1].replace(/[\{\}\\]/g, '');
                     boundSet.add(varToken);
-                    boundSet.add(varToken.toLowerCase());
-                    boundSet.add(varToken.toUpperCase());
                 }
             }
         }
@@ -153,7 +149,7 @@ export class FaultTolerantParser {
             if (match[1]) {
                 // Variável subscrita (ex: x_1, x_2)
                 const subscriptVar = match[1].replace(/[\{\}]/g, '');
-                if (!boundSet.has(subscriptVar) && !boundSet.has(subscriptVar.toLowerCase())) {
+                if (!boundSet.has(subscriptVar)) {
                     freeVars.add(subscriptVar);
                 }
             } else if (match[2]) {
@@ -161,21 +157,20 @@ export class FaultTolerantParser {
                 const lowerWord = word.toLowerCase();
 
                 // Se a palavra inteira for uma função reservada, ignora
-                if (this.RESERVED_FUNCTIONS.has(lowerWord) || boundSet.has(lowerWord)) {
+                if (this.RESERVED_FUNCTIONS.has(lowerWord) || boundSet.has(word)) {
                     continue;
                 }
 
                 // Se for uma palavra de 1 letra
                 if (word.length === 1) {
-                    if (!boundSet.has(word) && !boundSet.has(lowerWord)) {
+                    if (!boundSet.has(word)) {
                         freeVars.add(word);
                     }
                 } else {
                     // Sequência de letras que não é função reservada (ex: 'sqr', 'ab', 'kx')
                     // Desmos decompõe em letras individuais
                     for (const char of word) {
-                        const charLower = char.toLowerCase();
-                        if (!boundSet.has(char) && !boundSet.has(charLower)) {
+                        if (!boundSet.has(char)) {
                             freeVars.add(char);
                         }
                     }
@@ -201,7 +196,7 @@ export class FaultTolerantParser {
         const hasVisualIntegral = (
             /(?:\\int(?![a-zA-Z])|\\iint|\\iiint|\bint\b|\bdefint\b)/i.test(trimmedLatex) ||
             /(?:\\int(?![a-zA-Z])|\\iint|\\iiint|\bint\b|\bdefint\b)/i.test(trimmedAscii)
-        ) && !/^(?:usr_)?[a-zA-Z_]+\s*=\s*(?:integrate|Integral)\(/i.test(trimmedAscii)
+        ) && !/^(?:usr_)?[a-zA-Z_]+\s*(?:\([^)]*\))?\s*=\s*(?:integrate|Integral)\(/i.test(trimmedAscii)
           && !/^(?:integrate|Integral)\(/i.test(trimmedAscii);
 
         if (hasVisualIntegral) {
@@ -238,8 +233,8 @@ export class FaultTolerantParser {
 
         // Operador diferencial incompleto: \frac{d}{dx} ou d/dx sem argumento
         if (
-            /^(?:\\frac\{\s*(?:\\mathrm\{d\}|d)\s*\}\{\s*(?:\\mathrm\{d\}|d)[a-zA-Z_]?\s*\}|d\/d[a-zA-Z_]?|\(?d\)?\/\(?d[a-zA-Z_]?\)?)\s*$/i.test(trimmedLatex) ||
-            /^(?:d\/d[a-zA-Z_]?|\(?d\)?\/\(?d[a-zA-Z_]?\)?)\s*$/i.test(trimmedAscii)
+            /^(?:\\frac\{\s*(?:\\mathrm\{d\}|d)\s*\}\{\s*(?:\\mathrm\{d\}|d)[a-zA-Z_]?\s*\}|frac\s*\(\s*(?:\\mathrm\{d\}|d)\s*\)\s*\(\s*(?:\\mathrm\{d\}|d)[a-zA-Z_]?\s*\)|d\/d[a-zA-Z_]?|\(?d\)?\/\(?d[a-zA-Z_]?\)?)\s*$/i.test(trimmedLatex) ||
+            /^(?:d\/d[a-zA-Z_]?|\(?d\)?\/\(?d[a-zA-Z_]?\)?|frac\s*\(\s*d\s*\)\s*\(\s*d[a-zA-Z_]?\s*\))\s*$/i.test(trimmedAscii)
         ) {
             return { isIncomplete: true, warning: 'Informe a função para derivar (ex: d/dx(x^2)).' };
         }

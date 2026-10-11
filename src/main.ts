@@ -338,8 +338,6 @@ function compileAllExpressions() {
         if (item.isMatrix && item.matrixName) {
             const varName = item.matrixName;
             definedMatrixNames.add(varName);
-            definedMatrixNames.add(varName.toUpperCase());
-            definedMatrixNames.add(varName.toLowerCase());
             const rightSide = item.rawAscii.substring(item.rawAscii.indexOf('=') + 1).trim();
             const giacDef = `usr_${varName}:=${rightSide}`;
             if (StateManager.giacDefinitions[varName] !== giacDef) {
@@ -367,7 +365,7 @@ function compileAllExpressions() {
                 ...definedMatrixNames
             ]);
             free.forEach(v => {
-                if (!definedMatrixNames.has(v) && !definedMatrixNames.has(v.toUpperCase())) {
+                if (!definedMatrixNames.has(v)) {
                     activelyNeededFreeVars.add(v);
                 }
             });
@@ -522,14 +520,17 @@ function compileAllExpressions() {
         // Multiplicação escalar implícita para matrizes e variáveis: 2B -> 2*B, MAS NÃO em limites _2 ou ^2
         cleanStr = cleanStr.replace(/(?<![\^_])(\d+(?:\.\d+)?)\s*([A-Za-z_][A-Za-z0-9_]*)/g, '$1*$2');
 
-        // Converter d/dx(expr) ou \frac{d}{dx}(expr) ou d/dx expr para diff(expr, x) ANTES de normalizar frações
-        cleanStr = cleanStr
-            .replace(/(?:\\frac\{\s*(?:\\mathrm\{d\}|d)\s*\}\{\s*(?:\\mathrm\{d\}|d)([a-zA-Z_])\s*\}|d\/d([a-zA-Z_])|(?:\(?\(?d\)?\/\(?d([a-zA-Z_])\)?\)?))\s*\(([^)]+)\)/gi,
-                (_m, v1, v2, v3, expr) => `diff(${expr.trim()}, ${v1 || v2 || v3})`
-            )
-            .replace(/(?:\\frac\{\s*(?:\\mathrm\{d\}|d)\s*\}\{\s*(?:\\mathrm\{d\}|d)([a-zA-Z_])\s*\}|d\/d([a-zA-Z_])|(?:\(?\(?d\)?\/\(?d([a-zA-Z_])\)?\)?))\s+([a-zA-Z0-9_]+(?:\([^)]*\))?)/gi,
-                (_m, v1, v2, v3, expr) => `diff(${expr.trim()}, ${v1 || v2 || v3})`
-            );
+        // Converter d/dx(expr), \frac{d}{dx}(expr), frac(d)(dx)(expr), d/dx expr, \frac{d}{dx} expr, \frac{d}{dx}x para diff(expr, x) ANTES de normalizar frações
+        // 1. Derivada com argumentos entre parênteses ou chaves
+        cleanStr = cleanStr.replace(
+            /(?:\\frac\{\s*(?:\\mathrm\{d\}|\\text\{d\}|d)\s*\}\{\s*(?:\\mathrm\{d\}|\\text\{d\}|d)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}|frac\s*\(\s*(?:\\mathrm\{d\}|d)\s*\)\s*\(\s*(?:\\mathrm\{d\}|d)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)|(?:\(?\s*d\s*\)?\s*\/\s*\(?\s*d\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)?)|\\bdd([a-zA-Z_][a-zA-Z0-9_]*)\b)\s*(?:\(([^)]+)\)|\{([^}]+)\})/gi,
+            (_m, v1, v2, v3, v4, e1, e2) => `diff(${(e1 || e2).trim()}, ${v1 || v2 || v3 || v4})`
+        );
+        // 2. Derivada com expressão direta (com ou sem espaço, ex: \frac{d}{dx} x, \frac{d}{dx}x, \frac{d}{dx}\sin(x), d/dx x)
+        cleanStr = cleanStr.replace(
+            /(?:\\frac\{\s*(?:\\mathrm\{d\}|\\text\{d\}|d)\s*\}\{\s*(?:\\mathrm\{d\}|\\text\{d\}|d)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}|frac\s*\(\s*(?:\\mathrm\{d\}|d)\s*\)\s*\(\s*(?:\\mathrm\{d\}|d)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)|(?:\(?\s*d\s*\)?\s*\/\s*\(?\s*d\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)?)|\\bdd([a-zA-Z_][a-zA-Z0-9_]*)\b)\s*([a-zA-Z0-9_\\^]+(?:\([^)]*\))?|.+)$/gi,
+            (_m, v1, v2, v3, v4, expr) => `diff(${expr.trim()}, ${v1 || v2 || v3 || v4})`
+        );
 
         // Normalização de frações (LaTeX \frac{a}{b} e AsciiMath frac(a)(b))
         cleanStr = cleanStr
@@ -665,22 +666,6 @@ function compileAllExpressions() {
                     return '- Erro no cálculo';
                 }
                 if (isDefiniteInt) {
-                    try {
-                        const numAst = new PrattParser(rawRes).parseExpression();
-                        const numVal = MathEngine.compile(numAst)(0, 0, StateManager.values);
-                        if (!isNaN(numVal) && isFinite(numVal)) {
-                            const rounded = parseFloat(numVal.toFixed(6));
-                            if (rawRes.trim() !== rounded.toString()) {
-                                return `= ${rawRes} ≈ ${rounded}`;
-                            }
-                        }
-                    } catch(e) {}
-                    if (numIntegralVal !== null && isNaN(Number(rawRes))) {
-                        const rounded = parseFloat(numIntegralVal.toFixed(6));
-                        if (rawRes.trim() !== rounded.toString()) {
-                            return `= ${rawRes} ≈ ${rounded}`;
-                        }
-                    }
                     return `= ${rawRes}`;
                 }
                 if (isIntegralCmd) {
@@ -1225,16 +1210,18 @@ function compileAllExpressions() {
 
             if (!isPlotEquation) {
                 try {
-                    const derivMatch = !isMultiVar ? expr.match(/^(?:\\frac\{d\}\{d([a-zA-Z])\}|d\/d([a-zA-Z])|\(d\)\/\(d([a-zA-Z])\))\s*(.+)$/) : null;
+                    const directDiff = !isMultiVar ? expr.match(/^diff\s*\(\s*(.+?)\s*,\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)$/i) : null;
+                    const derivMatch = directDiff || (!isMultiVar ? expr.match(/^(?:\\frac\{d\}\{d([a-zA-Z])\}|d\/d([a-zA-Z])|\(d\)\/\(d([a-zA-Z])\))\s*(.+)$/) : null);
                     if (derivMatch) {
-                        const derivVar = derivMatch[1] || derivMatch[2] || derivMatch[3];
-                        const derivExpr = derivMatch[4];
+                        const derivVar = directDiff ? directDiff[2] : (derivMatch[1] || derivMatch[2] || derivMatch[3]);
+                        const derivExpr = directDiff ? directDiff[1] : derivMatch[4];
                         const ast = new PrattParser(derivExpr).parseExpression();
                         MathEngine.compiledFuncs[funcName] = MathEngine.createDerivativeFunction(ast, derivVar);
                         MathEngine.userFunctions[funcName] = { params: paramNames, expr, ast, blockId: item.id };
                         StateManager.userFunctions[funcName] = { params: paramNames, expr, ast, blockId: item.id };
                         definedUserFunctionNames.add(funcName);
                         validEquations.push({ color: item.color, id: item.id, ast, isImplicit: false, operator: '=', isEdo: false, isDerivative: true, derivVar, isHidden: !item.visible, variable: paramNames[0] });
+                        ExpressionManager.setError(item.id, null);
                         ExpressionManager.setResult(item.id, `Derivada ${funcName}(${paramNames[0]})`);
                     } else {
                         const ast = new PrattParser(expr).parseExpression();
@@ -1311,8 +1298,10 @@ function compileAllExpressions() {
                             }
                         }
                     }
+                    ExpressionManager.setError(item.id, null);
                 } catch(e) {
-                    ExpressionManager.setResult(item.id, `Erro: ${(e as Error).message}`);
+                    ExpressionManager.setError(item.id, `Erro: ${(e as Error).message}`);
+                    ExpressionManager.setResult(item.id, '');
                 }
                 return; 
             }
@@ -1486,32 +1475,39 @@ function compileAllExpressions() {
                 expressaoPlot = yExplicitMatch[1].trim();
                 isExplicitY = true;
             } else {
-                // Captura gráficos de derivadas diretas como: d/dx sin(x)
-                const derivPlotMatch = expressaoPlot.match(/^(?:\\frac\{d\}\{d([a-zA-Z])\}|d\/d([a-zA-Z])|\(d\)\/\(d([a-zA-Z])\))(.+)$/);
-                if (derivPlotMatch) {
-                    derivVarTarget = derivPlotMatch[1] || derivPlotMatch[2] || derivPlotMatch[3];
-                    expressaoPlot = derivPlotMatch[4];
+                // Captura gráficos de derivadas diretas como: diff(sin(x), x) ou d/dx sin(x)
+                const directDiffPlot = expressaoPlot.match(/^diff\s*\(\s*(.+?)\s*,\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)$/i);
+                if (directDiffPlot) {
+                    derivVarTarget = directDiffPlot[2];
+                    expressaoPlot = directDiffPlot[1];
                     isDerivativePlot = true;
                 } else {
-                    const implicitMatch = noSpaceStr.match(/^(.+?)(<=|>=|<|>|=)(.+)$/);
-                    if (implicitMatch) {
-                        const parts = cleanStr.split(implicitMatch[2]);
-                        operator = implicitMatch[2];
-                        expressaoPlot = `(${parts[0]})-(${parts[1]})`;
-                        
-                        if (operator !== '=') {
+                    const derivPlotMatch = expressaoPlot.match(/^(?:\\frac\{d\}\{d([a-zA-Z])\}|d\/d([a-zA-Z])|\(d\)\/\(d([a-zA-Z])\))(.+)$/);
+                    if (derivPlotMatch) {
+                        derivVarTarget = derivPlotMatch[1] || derivPlotMatch[2] || derivPlotMatch[3];
+                        expressaoPlot = derivPlotMatch[4];
+                        isDerivativePlot = true;
+                    } else {
+                        const implicitMatch = noSpaceStr.match(/^(.+?)(<=|>=|<|>|=)(.+)$/);
+                        if (implicitMatch) {
+                            const parts = cleanStr.split(implicitMatch[2]);
+                            operator = implicitMatch[2];
+                            expressaoPlot = `(${parts[0]})-(${parts[1]})`;
+                            
+                            if (operator !== '=') {
+                                isImplicit = true;
+                            } else if (implicitMatch[1].includes('z') || implicitMatch[3]?.includes('z') || noSpaceStr.includes('z')) {
+                                isImplicit = true;
+                            } else if (implicitMatch[1].includes('y') && implicitMatch[1] !== 'y') {
+                                isImplicit = true; 
+                            } else if (implicitMatch[1].includes('x')) {
+                                isImplicit = true;
+                            }
+                        } else if (!expressaoPlot.includes('x') && expressaoPlot.includes('y') && !expressaoPlot.includes('z')) {
+                            expressaoPlot = `x-(${expressaoPlot})`;
                             isImplicit = true;
-                        } else if (implicitMatch[1].includes('z') || implicitMatch[3]?.includes('z') || noSpaceStr.includes('z')) {
-                            isImplicit = true;
-                        } else if (implicitMatch[1].includes('y') && implicitMatch[1] !== 'y') {
-                            isImplicit = true; 
-                        } else if (implicitMatch[1].includes('x')) {
-                            isImplicit = true;
+                            operator = '=';
                         }
-                    } else if (!expressaoPlot.includes('x') && expressaoPlot.includes('y') && !expressaoPlot.includes('z')) {
-                        expressaoPlot = `x-(${expressaoPlot})`;
-                        isImplicit = true;
-                        operator = '=';
                     }
                 }
             }
@@ -1683,9 +1679,7 @@ function compileAllExpressions() {
                         StateManager.values[v] === undefined && 
                         !MathEngine.compiledFuncs[v] &&
                         !StateManager.giacDefinitions[v] &&
-                        !StateManager.giacDefinitions[v.toUpperCase()] &&
-                        !definedMatrixNames.has(v) &&
-                        !definedMatrixNames.has(v.toUpperCase())
+                        !definedMatrixNames.has(v)
                     );
                     if (missingSliders.length > 0) {
                         ExpressionManager.setSliderSuggestions(item.id, missingSliders, (varName) => {
@@ -1730,9 +1724,7 @@ function compileAllExpressions() {
                     StateManager.values[v] === undefined && 
                     !MathEngine.compiledFuncs[v] &&
                     !StateManager.giacDefinitions[v] &&
-                    !StateManager.giacDefinitions[v.toUpperCase()] &&
-                    !definedMatrixNames.has(v) &&
-                    !definedMatrixNames.has(v.toUpperCase())
+                    !definedMatrixNames.has(v)
                 );
                 if (missingSliders.length > 0) {
                     ExpressionManager.setSliderSuggestions(item.id, missingSliders, (varName) => {
@@ -1979,24 +1971,20 @@ function drawFrame() {
         } else if (item.isImplicit) {
             glRenderer.drawImplicit(item.ast, item.operator, StateManager.values, color);
 
-        } else if (Array.isArray(item.ast) && item.ast[0] === 'Integrate') {
+        } else if (Array.isArray(item.ast) && item.ast[0] === 'Integrate' && !isNaN(MathEngine.evaluateAST(item.ast[3], StateManager.values)) && !isNaN(MathEngine.evaluateAST(item.ast[4], StateManager.values))) {
             const funcAst = item.ast[1]; const minAst = item.ast[3]; const maxAst = item.ast[4];
             const minVal = MathEngine.evaluateAST(minAst, StateManager.values);
             const maxVal = MathEngine.evaluateAST(maxAst, StateManager.values);
 
-            if (!isNaN(minVal) && !isNaN(maxVal)) {
-                const pontos = MathEngine.generatePointsAdaptive(funcAst, minVal, maxVal, StateManager.values, 'x', canvasEl.width);
-                let area = 0;
-                if (pontos.length > 1) {
-                    for (let i = 0; i < pontos.length - 1; i++) {
-                        const dx = pontos[i+1].x - pontos[i].x;
-                        area += ((pontos[i].y + pontos[i+1].y) / 2) * dx;
-                    }
+            const pontos = MathEngine.generatePointsAdaptive(funcAst, minVal, maxVal, StateManager.values, 'x', canvasEl.width);
+            let area = 0;
+            if (pontos.length > 1) {
+                for (let i = 0; i < pontos.length - 1; i++) {
+                    const dx = pontos[i+1].x - pontos[i].x;
+                    area += ((pontos[i].y + pontos[i+1].y) / 2) * dx;
                 }
-                ExpressionManager.setResult(item.id, '= ' + parseFloat(area.toFixed(4)).toString());
-            } else {
-                ExpressionManager.setResult(item.id, 'Limites indefinidos');
             }
+            ExpressionManager.setResult(item.id, '= ' + parseFloat(area.toFixed(4)).toString());
         } else {
             const fastF = MathEngine.compile(item.ast, item.variable || 'x');
             const f = (x: number) => {

@@ -497,8 +497,6 @@ export class ExpressionManager {
             { key: '/', ifMode: 'math', command: ['insert', '\\frac{#@}{#?}'] },
             { key: '[Slash]', ifMode: 'math', command: ['insert', '\\frac{#@}{#?}'] },
             { key: '[NumpadDivide]', ifMode: 'math', command: ['insert', '\\frac{#@}{#?}'] },
-            { key: '^', ifMode: 'math', command: 'moveToSuperscript' },
-            { key: 'shift+[Digit6]', ifMode: 'math', command: 'moveToSuperscript' },
             { key: '*', ifMode: 'math', command: ['insert', '\\cdot'] },
             ...currentBindings
         ];
@@ -511,8 +509,10 @@ export class ExpressionManager {
         mathField.style.setProperty('--prompt-border', 'none');
         mathField.style.setProperty('--prompt-background', 'transparent');
         mathField.style.setProperty('--prompt-highlight-color', 'transparent');
-        mathField.style.setProperty('--selection-background-color', 'transparent');
-        mathField.style.setProperty('--_selection-background-color', 'transparent');
+        mathField.style.setProperty('--selection-background-color', 'rgba(66, 133, 244, 0.25)');
+        mathField.style.setProperty('--_selection-background-color', 'rgba(66, 133, 244, 0.25)');
+        mathField.style.setProperty('--selection-color', '#1f2937');
+        mathField.style.setProperty('--_selection-color', '#1f2937');
 
         const injectCleanStyles = () => {
             if (mf.shadowRoot) {
@@ -524,16 +524,23 @@ export class ExpressionManager {
                 }
                 styleEl.textContent = `
                     :host {
-                        --selection-background-color: transparent !important;
-                        --_selection-background-color: transparent !important;
+                        --selection-background-color: rgba(66, 133, 244, 0.25) !important;
+                        --_selection-background-color: rgba(66, 133, 244, 0.25) !important;
+                        --selection-color: #1f2937 !important;
+                        --_selection-color: #1f2937 !important;
                         --box-placeholder-color: #94a3b8 !important;
                         --_box-placeholder-color: #94a3b8 !important;
                     }
-                    .ML__selection, 
-                    .ML__selected,
+                    .ML__selection {
+                        background: rgba(66, 133, 244, 0.25) !important;
+                        background-color: rgba(66, 133, 244, 0.25) !important;
+                        border-radius: 2px !important;
+                    }
+                    .ML__selected {
+                        color: #1f2937 !important;
+                    }
                     .ML__focused .ML__empty-line-anchor.ML__selected::after {
-                        background: transparent !important;
-                        background-color: transparent !important;
+                        background: rgba(66, 133, 244, 0.25) !important;
                     }
                     .ML__placeholder, .ML__prompt, .ML__empty, [data-placeholder] {
                         border: none !important;
@@ -658,9 +665,15 @@ export class ExpressionManager {
             this.onUpdateCallback();
         };
 
+        let lastPowerTime = 0;
         const handlePower = (e: Event) => {
             e.preventDefault();
             e.stopPropagation();
+            const now = Date.now();
+            if (now - lastPowerTime < 300) {
+                return;
+            }
+            lastPowerTime = now;
             (mf as any).executeCommand('moveToSuperscript');
         };
 
@@ -2300,6 +2313,85 @@ export class ExpressionManager {
         return false;
     }
 
+    static toFraction(val: number, maxDen: number = 10000): { num: number, den: number } | null {
+        if (isNaN(val) || !isFinite(val)) return null;
+        const sign = val < 0 ? -1 : 1;
+        const x = Math.abs(val);
+        let h1 = 1, h0 = 0, k1 = 0, k0 = 1;
+        let b = x;
+        do {
+            const a = Math.floor(b);
+            let aux = h1; h1 = a * h1 + h0; h0 = aux;
+            aux = k1; k1 = a * k1 + k0; k0 = aux;
+            if (k1 > maxDen) break;
+            const approx = h1 / k1;
+            if (Math.abs(approx - x) < 1e-9) {
+                return { num: sign * h1, den: k1 };
+            }
+            b = 1 / (b - a);
+        } while (isFinite(b) && Math.abs(x - h1 / k1) > 1e-9);
+
+        if (k1 <= maxDen && Math.abs(h1 / k1 - x) < 1e-5) {
+            return { num: sign * h1, den: k1 };
+        }
+        return null;
+    }
+
+    static parseFractionInfo(mathStr: string): { fractionLatex: string, decimalStr: string, isRational: boolean } | null {
+        let clean = mathStr.trim();
+        if (clean.startsWith('=')) clean = clean.substring(1).trim();
+        if (clean.includes('≈')) {
+            const parts = clean.split('≈').map(p => p.trim());
+            clean = parts[0];
+        }
+
+        // 1. Fração ASCII: 3/2, -5/4, (3)/(2)
+        const fracMatch = clean.match(/^\(?\s*(-?\d+)\s*\)?\s*\/\s*\(?\s*(\d+)\s*\)?$/);
+        if (fracMatch) {
+            const num = parseInt(fracMatch[1]);
+            const den = parseInt(fracMatch[2]);
+            if (den !== 0) {
+                const dec = num / den;
+                const decStr = parseFloat(dec.toFixed(8)).toString();
+                const sign = num < 0 ? '-' : '';
+                const absNum = Math.abs(num);
+                const fracLatex = den === 1 ? `${num}` : `${sign}\\frac{${absNum}}{${den}}`;
+                return { fractionLatex: fracLatex, decimalStr: decStr, isRational: den !== 1 };
+            }
+        }
+
+        // 2. Fração LaTeX: \frac{a}{b}
+        const latexMatch = clean.match(/^([+-]?)\s*\\frac\s*\{(\d+)\}\s*\{(\d+)\}$/);
+        if (latexMatch) {
+            const sign = latexMatch[1] === '-' ? -1 : 1;
+            const num = parseInt(latexMatch[2]) * sign;
+            const den = parseInt(latexMatch[3]);
+            if (den !== 0) {
+                const dec = num / den;
+                const decStr = parseFloat(dec.toFixed(8)).toString();
+                return { fractionLatex: clean, decimalStr: decStr, isRational: den !== 1 };
+            }
+        }
+
+        // 3. Número decimal: 1.5, 0.75, -2.5
+        const numVal = Number(clean);
+        if (!isNaN(numVal) && isFinite(numVal)) {
+            if (Number.isInteger(numVal)) {
+                return null;
+            }
+            const rational = ExpressionManager.toFraction(numVal);
+            if (rational && rational.den > 1 && rational.den <= 10000) {
+                const sign = rational.num < 0 ? '-' : '';
+                const fracLatex = `${sign}\\frac{${Math.abs(rational.num)}}{${rational.den}}`;
+                const decStr = parseFloat(numVal.toFixed(8)).toString();
+                return { fractionLatex: fracLatex, decimalStr: decStr, isRational: true };
+            }
+            return null;
+        }
+
+        return null;
+    }
+
     static setResult(id: string, result: string) {
         const block = document.getElementById(id);
         if (block) {
@@ -2344,6 +2436,37 @@ export class ExpressionManager {
                         }
                         return;
                     } catch(e) {}
+                }
+
+                // Botão de Fração Interativo Desmos [a/b] para cálculos com resultado racional
+                const fractionInfo = this.parseFractionInfo(mathStr);
+                if (fractionInfo && fractionInfo.isRational) {
+                    const isFracActive = (block as any)._showFraction === true;
+                    const valueToRender = isFracActive ? fractionInfo.fractionLatex : fractionInfo.decimalStr;
+                    let valueHtml = valueToRender;
+                    if (win.katex && isFracActive) {
+                        try {
+                            valueHtml = win.katex.renderToString(fractionInfo.fractionLatex, { throwOnError: false });
+                        } catch (_) {}
+                    }
+                    
+                    resDisplay.innerHTML = `
+                        <div class="flex items-center gap-1.5 select-none">
+                            <button type="button" class="fraction-toggle-btn flex items-center justify-center w-6 h-6 rounded border transition-all cursor-pointer select-none text-[10px] font-bold font-serif leading-none tracking-tighter ${isFracActive ? 'bg-blue-100 border-blue-400 text-blue-700 shadow-xs' : 'bg-white border-gray-300 text-gray-500 hover:text-gray-800 hover:bg-gray-100 hover:border-gray-400'}" title="${isFracActive ? 'Mostrar aproximação decimal' : 'Mostrar fração exata'}">
+                                a/b
+                            </button>
+                            <span class="font-semibold text-gray-800 select-text">= <span style="display:inline-block; vertical-align: middle;">${valueHtml}</span></span>
+                        </div>
+                    `;
+                    const btn = resDisplay.querySelector('.fraction-toggle-btn') as HTMLButtonElement;
+                    if (btn) {
+                        btn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            (block as any)._showFraction = !isFracActive;
+                            this.setResult(id, result);
+                        });
+                    }
+                    return;
                 }
 
                 if (win.katex && !mathStr.includes('Erro') && !mathStr.includes('indefinido') && !mathStr.includes('carregar')) {

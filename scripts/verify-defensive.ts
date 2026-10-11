@@ -789,9 +789,214 @@ assert(Array.isArray(parsedGluedAst) && parsedGluedAst[0] === 'Integrate' && par
 assert(Math.abs(MathEngine.evaluateAST('pi') - Math.PI) < 1e-10, 'evaluateAST evaluates "pi" to Math.PI');
 assert(Math.abs(MathEngine.evaluateAST('e') - Math.E) < 1e-10, 'evaluateAST evaluates "e" to Math.E');
 
+// =========================================================================
+// [TEST GROUP 8: Derivative Normalization and Numerical Evaluation]
+// =========================================================================
+console.log('\n[TEST GROUP 8: Derivative Normalization & Numerical Evaluation]');
+
+function normalizeDerivative(str: string): string {
+  let cleanStr = str.trim();
+  // 1. Derivada com argumentos entre parênteses ou chaves
+  cleanStr = cleanStr.replace(
+    /(?:\\frac\{\s*(?:\\mathrm\{d\}|\\text\{d\}|d)\s*\}\{\s*(?:\\mathrm\{d\}|\\text\{d\}|d)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}|frac\s*\(\s*(?:\\mathrm\{d\}|d)\s*\)\s*\(\s*(?:\\mathrm\{d\}|d)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)|(?:\(?\s*d\s*\)?\s*\/\s*\(?\s*d\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)?)|\\bdd([a-zA-Z_][a-zA-Z0-9_]*)\b)\s*(?:\(([^)]+)\)|\{([^}]+)\})/gi,
+    (_m, v1, v2, v3, v4, e1, e2) => `diff(${(e1 || e2).trim()}, ${v1 || v2 || v3 || v4})`
+  );
+  // 2. Derivada com expressão direta (com ou sem espaço, ex: \frac{d}{dx} x, \frac{d}{dx}x, \frac{d}{dx}\sin(x), d/dx x)
+  cleanStr = cleanStr.replace(
+    /(?:\\frac\{\s*(?:\\mathrm\{d\}|d)\s*\}\{\s*(?:\\mathrm\{d\}|d)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}|frac\s*\(\s*(?:\\mathrm\{d\}|d)\s*\)\s*\(\s*(?:\\mathrm\{d\}|d)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)|(?:\(?\s*d\s*\)?\s*\/\s*\(?\s*d\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)?)|\\bdd([a-zA-Z_][a-zA-Z0-9_]*)\b)\s*([a-zA-Z0-9_\\^]+(?:\([^)]*\))?|.+)$/gi,
+    (_m, v1, v2, v3, v4, expr) => `diff(${expr.trim()}, ${v1 || v2 || v3 || v4})`
+  );
+  return cleanStr;
+}
+
+assert(normalizeDerivative('\\frac{d}{dx} x') === 'diff(x, x)', 'Normalizes LaTeX \\frac{d}{dx} x to diff(x, x)');
+assert(normalizeDerivative('\\frac{d}{dx}x') === 'diff(x, x)', 'Normalizes unspaced LaTeX \\frac{d}{dx}x to diff(x, x)');
+assert(normalizeDerivative('\\frac{d}{dx}(x^2)') === 'diff(x^2, x)', 'Normalizes parenthesized LaTeX \\frac{d}{dx}(x^2) to diff(x^2, x)');
+assert(normalizeDerivative('d/dx x') === 'diff(x, x)', 'Normalizes ascii d/dx x to diff(x, x)');
+assert(normalizeDerivative('d/dx(x^3)') === 'diff(x^3, x)', 'Normalizes ascii d/dx(x^3) to diff(x^3, x)');
+assert(normalizeDerivative('frac(d)(dx) x') === 'diff(x, x)', 'Normalizes AsciiMath frac(d)(dx) x to diff(x, x)');
+assert(normalizeDerivative('frac(d)(dx)(x^2)') === 'diff(x^2, x)', 'Normalizes AsciiMath frac(d)(dx)(x^2) to diff(x^2, x)');
+assert(normalizeDerivative('\\frac{\\mathrm{d}}{\\mathrm{d}t} t') === 'diff(t, t)', 'Normalizes \\mathrm{d} in \\frac{\\mathrm{d}}{\\mathrm{d}t} t to diff(t, t)');
+
+// Incomplete derivative check
+const incDeriv1 = FaultTolerantParser.checkIncompleteStatus('\\frac{d}{dx}');
+assert(incDeriv1.isIncomplete && incDeriv1.warning === 'Informe a função para derivar (ex: d/dx(x^2)).', 'Detects incomplete LaTeX \\frac{d}{dx} without operand');
+const incDeriv2 = FaultTolerantParser.checkIncompleteStatus('d/dx');
+assert(incDeriv2.isIncomplete && incDeriv2.warning === 'Informe a função para derivar (ex: d/dx(x^2)).', 'Detects incomplete Ascii d/dx without operand');
+const incDeriv3 = FaultTolerantParser.checkIncompleteStatus('frac(d)(dx)');
+assert(incDeriv3.isIncomplete && incDeriv3.warning === 'Informe a função para derivar (ex: d/dx(x^2)).', 'Detects incomplete frac(d)(dx) without operand');
+
+// MathEngine numerical differentiation
+const derivVal1 = MathEngine.evaluateDerivative('x', 'x', { x: 5 });
+assert(Math.abs(derivVal1 - 1) < 1e-4, 'evaluateDerivative d/dx(x) at x=5 evaluates to 1', derivVal1);
+
+const derivVal2 = MathEngine.evaluateDerivative(['Power', 'x', 2], 'x', { x: 3 });
+assert(Math.abs(derivVal2 - 6) < 1e-4, 'evaluateDerivative d/dx(x^2) at x=3 evaluates to 6', derivVal2);
+
+const derivVal3 = MathEngine.evaluateDerivative(['Sin', 'x'], 'x', { x: 0 });
+assert(Math.abs(derivVal3 - 1) < 1e-4, 'evaluateDerivative d/dx(sin(x)) at x=0 evaluates to 1', derivVal3);
+
+
+// =========================================================================
+// [TEST GROUP 9: Strict Case Sensitivity (Desmos Standard)]
+// =========================================================================
+console.log('\n[TEST GROUP 9: Strict Case Sensitivity]');
+
+// detectFreeVariables: matrix A vs scalar a
+const freeWithMatrixA = FaultTolerantParser.detectFreeVariables('det(a)', ['A']);
+assert(freeWithMatrixA.includes('a') && !freeWithMatrixA.includes('A'), 'detectFreeVariables keeps lowercase "a" free even if matrix "A" is registered', freeWithMatrixA);
+
+const freeWithScalarB = FaultTolerantParser.detectFreeVariables('det(B)', ['b']);
+assert(freeWithScalarB.includes('B') && !freeWithScalarB.includes('b'), 'detectFreeVariables keeps uppercase "B" free even if lowercase "b" is registered', freeWithScalarB);
+
+// formatForGiac case sensitivity simulation
+const mockDefs: Record<string, string> = { 'A': '[[1, 2], [3, 4]]' };
+const formatGiacWithDefs = (str: string, defs: Record<string, string>) => {
+    return defs[str] ? `usr_${str}` : str;
+};
+assert(formatGiacWithDefs('A', mockDefs) === 'usr_A', 'formatForGiac preserves defined matrix A as usr_A');
+assert(formatGiacWithDefs('a', mockDefs) === 'a', 'formatForGiac does NOT resolve lowercase a to usr_A');
+
+
+// =========================================================================
+// [TEST GROUP 10: Fraction Conversion & Interactive Toggle Logic]
+// =========================================================================
+console.log('\n[TEST GROUP 10: Fraction Conversion & Desmos Toggle]');
+
+function toFraction(val: number, maxDen: number = 10000): { num: number, den: number } | null {
+    if (isNaN(val) || !isFinite(val)) return null;
+    const sign = val < 0 ? -1 : 1;
+    const x = Math.abs(val);
+    let h1 = 1, h0 = 0, k1 = 0, k0 = 1;
+    let b = x;
+    do {
+        const a = Math.floor(b);
+        let aux = h1; h1 = a * h1 + h0; h0 = aux;
+        aux = k1; k1 = a * k1 + k0; k0 = aux;
+        if (k1 > maxDen) break;
+        const approx = h1 / k1;
+        if (Math.abs(approx - x) < 1e-9) {
+            return { num: sign * h1, den: k1 };
+        }
+        b = 1 / (b - a);
+    } while (isFinite(b) && Math.abs(x - h1 / k1) > 1e-9);
+
+    if (k1 <= maxDen && Math.abs(h1 / k1 - x) < 1e-5) {
+        return { num: sign * h1, den: k1 };
+    }
+    return null;
+}
+
+function parseFractionInfo(mathStr: string): { fractionLatex: string, decimalStr: string, isRational: boolean } | null {
+    let clean = mathStr.trim();
+    if (clean.startsWith('=')) clean = clean.substring(1).trim();
+    if (clean.includes('≈')) {
+        const parts = clean.split('≈').map(p => p.trim());
+        clean = parts[0];
+    }
+
+    // 1. Fração ASCII: 3/2, -5/4, (3)/(2)
+    const fracMatch = clean.match(/^\(?\s*(-?\d+)\s*\)?\s*\/\s*\(?\s*(\d+)\s*\)?$/);
+    if (fracMatch) {
+        const num = parseInt(fracMatch[1]);
+        const den = parseInt(fracMatch[2]);
+        if (den !== 0) {
+            const dec = num / den;
+            const decStr = parseFloat(dec.toFixed(8)).toString();
+            const sign = num < 0 ? '-' : '';
+            const absNum = Math.abs(num);
+            const fracLatex = den === 1 ? `${num}` : `${sign}\\frac{${absNum}}{${den}}`;
+            return { fractionLatex: fracLatex, decimalStr: decStr, isRational: den !== 1 };
+        }
+    }
+
+    // 2. Fração LaTeX: \frac{a}{b}
+    const latexMatch = clean.match(/^([+-]?)\s*\\frac\s*\{(\d+)\}\s*\{(\d+)\}$/);
+    if (latexMatch) {
+        const sign = latexMatch[1] === '-' ? -1 : 1;
+        const num = parseInt(latexMatch[2]) * sign;
+        const den = parseInt(latexMatch[3]);
+        if (den !== 0) {
+            const dec = num / den;
+            const decStr = parseFloat(dec.toFixed(8)).toString();
+            return { fractionLatex: clean, decimalStr: decStr, isRational: den !== 1 };
+        }
+    }
+
+    // 3. Número decimal: 1.5, 0.75, -2.5
+    const numVal = Number(clean);
+    if (!isNaN(numVal) && isFinite(numVal)) {
+        if (Number.isInteger(numVal)) {
+            return null;
+        }
+        const rational = toFraction(numVal);
+        if (rational && rational.den > 1 && rational.den <= 10000) {
+            const sign = rational.num < 0 ? '-' : '';
+            const fracLatex = `${sign}\\frac{${Math.abs(rational.num)}}{${rational.den}}`;
+            const decStr = parseFloat(numVal.toFixed(8)).toString();
+            return { fractionLatex: fracLatex, decimalStr: decStr, isRational: true };
+        }
+        return null;
+    }
+
+    return null;
+}
+
+const frac1 = toFraction(1.5);
+assert(frac1 !== null && frac1.num === 3 && frac1.den === 2, 'toFraction(1.5) returns 3/2', frac1);
+
+const frac2 = toFraction(0.75);
+assert(frac2 !== null && frac2.num === 3 && frac2.den === 4, 'toFraction(0.75) returns 3/4', frac2);
+
+const frac3 = toFraction(-2.5);
+assert(frac3 !== null && frac3.num === -5 && frac3.den === 2, 'toFraction(-2.5) returns -5/2', frac3);
+
+const frac4 = toFraction(0.3333333333);
+assert(frac4 !== null && frac4.num === 1 && frac4.den === 3, 'toFraction(0.3333333333) returns 1/3', frac4);
+
+const info1 = parseFractionInfo('1.5');
+assert(info1 !== null && info1.isRational && info1.fractionLatex === '\\frac{3}{2}' && info1.decimalStr === '1.5', 'parseFractionInfo("1.5") extracts fraction \\frac{3}{2} and decimal 1.5', info1);
+
+const info2 = parseFractionInfo('= 3/2');
+assert(info2 !== null && info2.isRational && info2.fractionLatex === '\\frac{3}{2}' && info2.decimalStr === '1.5', 'parseFractionInfo("= 3/2") extracts fraction \\frac{3}{2} and decimal 1.5', info2);
+
+const info3 = parseFractionInfo('\\frac{7}{4}');
+assert(info3 !== null && info3.isRational && info3.fractionLatex === '\\frac{7}{4}' && info3.decimalStr === '1.75', 'parseFractionInfo("\\frac{7}{4}") extracts fraction and decimal 1.75', info3);
+
+const info4 = parseFractionInfo('42');
+assert(info4 === null, 'parseFractionInfo("42") returns null for integers (no toggle needed)', info4);
+
+
+// =========================================================================
+// [TEST GROUP 11: Functions with Integrals & Multivariable Plot Compilation]
+// =========================================================================
+console.log('\n[TEST GROUP 11: Functions with Integrals]');
+
+// Check that f(x) = \int_0^x t dt is NOT flagged as incomplete
+const funcWithIntInc = FaultTolerantParser.checkIncompleteStatus('f(x) = \\int_{0}^{x} t dt', 'f(x) = integrate(t, t, 0, x)');
+assert(!funcWithIntInc.isIncomplete, 'f(x) = \\int_{0}^{x} t dt is recognized as complete function definition', funcWithIntInc);
+
+// Test MathEngine.compile with an embedded Integrate node: f(x) = \int_0^x t dt -> x^2 / 2
+const funcAstWithInt: any = ['Integrate', 't', 't', 0, 'x'];
+const compiledIntFunc = MathEngine.compile(funcAstWithInt, 'x');
+
+const resAt2 = compiledIntFunc(2, 0, {});
+assert(Math.abs(resAt2 - 2.0) < 1e-4, 'compiledIntFunc evaluates \\int_0^2 t dt = 2.0', resAt2);
+
+const resAt4 = compiledIntFunc(4, 0, {});
+assert(Math.abs(resAt4 - 8.0) < 1e-4, 'compiledIntFunc evaluates \\int_0^4 t dt = 8.0', resAt4);
+
+// Test MathEngine.compile with an embedded diff node: g(x) = d/dx (x^3) -> 3*x^2
+const funcAstWithDiff: any = ['diff', ['Power', 'x', 3], 'x'];
+const compiledDiffFunc = MathEngine.compile(funcAstWithDiff, 'x');
+
+const diffAt2 = compiledDiffFunc(2, 0, {});
+assert(Math.abs(diffAt2 - 12.0) < 1e-3, 'compiledDiffFunc evaluates d/dx(x^3) at x=2 = 12.0', diffAt2);
+
 console.log(`\n--- RESULTS: ${passed} PASSED, ${failed} FAILED ---`);
 if (failed > 0) {
   process.exit(1);
 }
+
 
 

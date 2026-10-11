@@ -27,14 +27,15 @@ math-field {
   --error-background: transparent !important;
   --error-color: inherit !important;
   --caret-color: #1f2937 !important;
-  --selection-background-color: transparent !important;
-  --_selection-background-color: transparent !important;
+  --selection-background-color: rgba(66, 133, 244, 0.25) !important;
+  --_selection-background-color: rgba(66, 133, 244, 0.25) !important;
+  --selection-color: #1f2937 !important;
+  --_selection-color: #1f2937 !important;
 }
 
 math-field::part(error),
 math-field::part(placeholder),
 math-field::part(container),
-math-field::part(selection),
 math-field::part(prompt) {
   background: transparent !important;
   background-color: transparent !important;
@@ -43,14 +44,23 @@ math-field::part(prompt) {
   box-shadow: none !important;
 }
 
+math-field::part(selection),
+.ML__selection {
+  background: rgba(66, 133, 244, 0.25) !important;
+  background-color: rgba(66, 133, 244, 0.25) !important;
+  border-radius: 2px !important;
+}
+
+.ML__selected {
+  color: #1f2937 !important;
+}
+
 /* Inibe caixas pontilhadas e fundos azuis residuais no MathLive */
 .ML__contains-highlight, 
 .ML__highlight, 
 .ML__placeholder, 
 .ML__prompt, 
 .ML__empty,
-.ML__selection,
-.ML__selected,
 .ML__box-placeholder,
 [data-placeholder] {
   background: transparent !important;

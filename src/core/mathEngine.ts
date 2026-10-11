@@ -124,8 +124,8 @@ export class MathEngine {
         if (typeof ast === 'string') {
             const clean = ast.replace(/[\{\}\\]/g, '');
             const defs = (typeof window !== 'undefined' && (window as any).StateManager?.giacDefinitions) || {};
-            if (defs[clean] || defs[clean.toUpperCase()]) {
-                return `usr_${clean.toUpperCase()}`;
+            if (defs[clean]) {
+                return `usr_${clean}`;
             }
             return clean;
         }
@@ -269,6 +269,18 @@ export class MathEngine {
                 if (op === 'Negate') return `(-${toJS(node[1])})`;
                 if (op === 'List') return `[${node.slice(1).map(toJS).join(', ')}]`;
                 
+                if (op === 'Integrate' && node.length > 3) {
+                    const integrandJson = JSON.stringify(node[1]);
+                    const intVar = typeof node[2] === 'string' ? node[2] : 'x';
+                    return `funcs.evaluateDefiniteIntegral(${integrandJson}, ${toJS(node[3])}, ${toJS(node[4])}, '${intVar}', Object.assign({}, scope, { '${paramName}': x, '${dependentVar}': y }))`;
+                }
+
+                if (op === 'diff') {
+                    const exprJson = JSON.stringify(node[1]);
+                    const diffVar = typeof node[2] === 'string' ? node[2] : 'x';
+                    return `funcs.evaluateDerivative(${exprJson}, '${diffVar}', Object.assign({}, scope, { '${paramName}': x, '${dependentVar}': y }))`;
+                }
+
                 // Trata chamadas customizadas ou não reconhecidas (ex: f(x) ou f(x, y) ou f(2, 3, 1, 0, 2))
                 if (op === 'Call') {
                     const fnName = node[1];
@@ -290,6 +302,8 @@ export class MathEngine {
         const rawFunc = new Function('x', 'y', 'scope', 'funcs', `return ${jsCode};`);
         
         MathEngine.compiledFuncs['realPow'] = MathEngine.realPow;
+        MathEngine.compiledFuncs['evaluateDefiniteIntegral'] = (MathEngine as any).evaluateDefiniteIntegral?.bind(MathEngine);
+        MathEngine.compiledFuncs['evaluateDerivative'] = (MathEngine as any).evaluateDerivative?.bind(MathEngine);
         const compiled = (x: number, y: number, scope: Record<string, number>) => rawFunc(x, y, scope, MathEngine.compiledFuncs);
         MathEngine.compileCache[cacheKey] = compiled;
         return compiled;
@@ -330,6 +344,18 @@ export class MathEngine {
                 if (op === 'Exp') return `Math.exp(${toJS(node[1])})`;
                 if (op === 'Log') return `Math.log(${toJS(node[1])})`;
                 
+                if (op === 'Integrate' && node.length > 3) {
+                    const integrandJson = JSON.stringify(node[1]);
+                    const intVar = typeof node[2] === 'string' ? node[2] : 'x';
+                    return `funcs.evaluateDefiniteIntegral(${integrandJson}, ${toJS(node[3])}, ${toJS(node[4])}, '${intVar}', Object.assign({}, scope, Object.fromEntries(paramNames.map((p, i) => [p, args[i] !== undefined ? args[i] : 0]))))`;
+                }
+
+                if (op === 'diff') {
+                    const exprJson = JSON.stringify(node[1]);
+                    const diffVar = typeof node[2] === 'string' ? node[2] : 'x';
+                    return `funcs.evaluateDerivative(${exprJson}, '${diffVar}', Object.assign({}, scope, Object.fromEntries(paramNames.map((p, i) => [p, args[i] !== undefined ? args[i] : 0]))))`;
+                }
+
                 const args = node.slice(1).map(toJS);
                 args.push('scope');
                 return `(funcs['${op}'] ? funcs['${op}'](${args.join(', ')}) : 0)`;
@@ -349,6 +375,8 @@ export class MathEngine {
 
         try {
             MathEngine.compiledFuncs['realPow'] = MathEngine.realPow;
+            MathEngine.compiledFuncs['evaluateDefiniteIntegral'] = (MathEngine as any).evaluateDefiniteIntegral?.bind(MathEngine);
+            MathEngine.compiledFuncs['evaluateDerivative'] = (MathEngine as any).evaluateDerivative?.bind(MathEngine);
             const rawFunc = new Function('funcs', body)(MathEngine.compiledFuncs);
             (MathEngine.compileCache as any)[cacheKey] = rawFunc;
             return rawFunc;
@@ -570,5 +598,18 @@ export class MathEngine {
             sum += (i % 2 === 1 ? 4 : 2) * y;
         }
         return (h / 3) * sum;
+    }
+
+    /**
+     * Avaliação numérica de derivadas via diferença central
+     */
+    static evaluateDerivative(ast: any, variable: string = 'x', scope: Record<string, number> = {}): number {
+        const h = 1e-5;
+        const curVal = scope[variable] ?? 0;
+        const scopePlus = Object.assign({}, scope, { [variable]: curVal + h });
+        const scopeMinus = Object.assign({}, scope, { [variable]: curVal - h });
+        const fPlus = this.compile(ast, variable)(curVal + h, 0, scopePlus);
+        const fMinus = this.compile(ast, variable)(curVal - h, 0, scopeMinus);
+        return (fPlus - fMinus) / (2 * h);
     }
 }
