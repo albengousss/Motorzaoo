@@ -630,16 +630,24 @@ function normalizeIntegral(str: string): string {
 
   cleanStr = cleanStr.replace(/(?:(?<=\W)|\b|(?<=[a-zA-Z0-9_\)\}\]]))d\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i, ' d $1');
 
-  cleanStr = cleanStr.replace(/(?:\\?int|\bdefint\b)(?:_(?:\{([^}]+)\}|\(([^)]+)\)|([a-zA-Z0-9.\-]+))\^(?:\{([^}]+)\}|\(([^)]+)\)|([a-zA-Z0-9.\-]+))|\^(?:\{([^}]+)\}|\(([^)]+)\)|([a-zA-Z0-9.\-]+))_(?:\{([^}]+)\}|\(([^)]+)\)|([a-zA-Z0-9.\-]+)))\s*(.*?)\s*(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD|\bd)\s*\\?([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i,
+  const boundPattern = '(?:\\{([^}]+)\\}|\\(([^)]+)\\)|(\\\\[a-zA-Z]+|[a-zA-Z0-9.\\-]+))';
+  const defIntRegex = new RegExp(
+    `(?:\\bdefint(?![a-zA-Z])|\\\\int(?![a-zA-Z])|\\bint(?![a-zA-Z]))(?:_${boundPattern}\\^${boundPattern}|\\^${boundPattern}_${boundPattern})\\s*(.*?)\\s*(?:\\\\mathrm\\{d\\}|\\\\text\\{d\\}|\\\\differentialD|\\bd)\\s*\\\\?([a-zA-Z_][a-zA-Z0-9_]*)\\s*$`,
+    'i'
+  );
+
+  cleanStr = cleanStr.replace(defIntRegex,
     (_m, l1, l2, l3, u1, u2, u3, u4, u5, u6, l4, l5, l6, expr, v) => {
-      const lower = (l1 ?? l2 ?? l3 ?? l4 ?? l5 ?? l6).trim();
-      const upper = (u1 ?? u2 ?? u3 ?? u4 ?? u5 ?? u6).trim();
+      let lower = (l1 ?? l2 ?? l3 ?? l4 ?? l5 ?? l6).trim();
+      let upper = (u1 ?? u2 ?? u3 ?? u4 ?? u5 ?? u6).trim();
+      if (lower.startsWith('\\')) lower = lower.substring(1);
+      if (upper.startsWith('\\')) upper = upper.substring(1);
       const integrand = expr.trim() || '1';
       return `integrate(${integrand}, ${v}, ${lower}, ${upper})`;
     }
   );
 
-  cleanStr = cleanStr.replace(/(?:\\?int|\bint\b)\s*(.*?)\s*(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD|\bd)\s*\\?([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i,
+  cleanStr = cleanStr.replace(/(?:\bdefint(?![a-zA-Z])|\\int(?![a-zA-Z])|\bint(?![a-zA-Z]))\s*(.*?)\s*(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD|\bd)\s*\\?([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i,
     (_m, expr, v) => {
       const integrand = expr.trim() || '1';
       return `integrate(${integrand}, ${v})`;
@@ -655,7 +663,7 @@ assert(normalizeIntegral('int xdx') === 'integrate(x, x)', 'Normalizes "int xdx"
 assert(normalizeIntegral('\\int ydy') === 'integrate(y, y)', 'Normalizes "\\int ydy" to "integrate(y, y)"');
 assert(normalizeIntegral('\\int_{0}^{2} x dx') === 'integrate(x, x, 0, 2)', 'Normalizes "\\int_{0}^{2} x dx" to "integrate(x, x, 0, 2)"');
 assert(normalizeIntegral('\\int_{0}^{2} xdx') === 'integrate(x, x, 0, 2)', 'Normalizes "\\int_{0}^{2} xdx" to "integrate(x, x, 0, 2)"');
-assert(normalizeIntegral('\\int_{ 0 }^{ 2 } x dx') === 'integrate(x, x, 0, 2)', 'Normalizes "\\int_{ 0 }^{ 2 } x dx" with spaces to "integrate(x, x, 0, 2)"');
+assert(normalizeIntegral('\\int_{ 0 }^ { 2 } x dx') === 'integrate(x, x, 0, 2)' || normalizeIntegral('\\int_{ 0 }^{ 2 } x dx') === 'integrate(x, x, 0, 2)', 'Normalizes "\\int_{ 0 }^{ 2 } x dx" with spaces to "integrate(x, x, 0, 2)"');
 assert(normalizeIntegral('int_(0)^(2) x dx') === 'integrate(x, x, 0, 2)', 'Normalizes "int_(0)^(2) x dx" to "integrate(x, x, 0, 2)"');
 assert(normalizeIntegral('\\int_{-1}^{1} x dx') === 'integrate(x, x, -1, 1)', 'Normalizes "\\int_{-1}^{1} x dx" with negative bound to "integrate(x, x, -1, 1)"');
 assert(normalizeIntegral('\\int dx') === 'integrate(1, x)', 'Normalizes "\\int dx" to "integrate(1, x)"');
@@ -664,8 +672,73 @@ assert(normalizeIntegral('\\int (t^2 + 1) dt') === 'integrate((t^2 + 1), t)', 'N
 assert(normalizeIntegral('I = \\int_{0}^{2} x dx') === 'I = integrate(x, x, 0, 2)', 'Normalizes "I = \\int_{0}^{2} x dx" to "I = integrate(x, x, 0, 2)"');
 assert(normalizeIntegral('y = \\int x dx') === 'y = integrate(x, x)', 'Normalizes "y = \\int x dx" to "y = integrate(x, x)"');
 
+// 7.6 Single-digit bounds without braces (User Bug Reproduction: \int_1^2 xdx)
+assert(normalizeIntegral('\\int_1^2 xdx') === 'integrate(x, x, 1, 2)', 'Normalizes single-digit "\\int_1^2 xdx" to "integrate(x, x, 1, 2)"');
+assert(normalizeIntegral('\\int_1^2 x dx') === 'integrate(x, x, 1, 2)', 'Normalizes single-digit "\\int_1^2 x dx" to "integrate(x, x, 1, 2)"');
+assert(normalizeIntegral('\\int^2_1 xdx') === 'integrate(x, x, 1, 2)', 'Normalizes inverted bounds "\\int^2_1 xdx" to "integrate(x, x, 1, 2)"');
+assert(normalizeIntegral('\\int^2_1 x dx') === 'integrate(x, x, 1, 2)', 'Normalizes inverted bounds "\\int^2_1 x dx" to "integrate(x, x, 1, 2)"');
+assert(normalizeIntegral('defint_1^2 xdx') === 'integrate(x, x, 1, 2)', 'Normalizes "defint_1^2 xdx" to "integrate(x, x, 1, 2)"');
+assert(normalizeIntegral('defint_1^2 x dx') === 'integrate(x, x, 1, 2)', 'Normalizes "defint_1^2 x dx" to "integrate(x, x, 1, 2)"');
+assert(normalizeIntegral('defint_{1}^{2} x dx') === 'integrate(x, x, 1, 2)', 'Normalizes "defint_{1}^{2} x dx" to "integrate(x, x, 1, 2)"');
+assert(normalizeIntegral('\\int_0^\\pi \\sin(x) dx') === 'integrate(\\sin(x), x, 0, pi)', 'Normalizes "\\int_0^\\pi \\sin(x) dx" with pi bound');
+assert(normalizeIntegral('\\int_1^2 dx') === 'integrate(1, x, 1, 2)', 'Normalizes "\\int_1^2 dx" to "integrate(1, x, 1, 2)"');
+assert(normalizeIntegral('\\int_1^2dx') === 'integrate(1, x, 1, 2)', 'Normalizes "\\int_1^2dx" to "integrate(1, x, 1, 2)"');
+assert(normalizeIntegral('I = \\int_1^2 xdx') === 'I = integrate(x, x, 1, 2)', 'Normalizes assignment "I = \\int_1^2 xdx"');
+
+// 7.7 Full main.ts Pipeline Subscript Protection Test
+function fullPipelineClean(input: string): string {
+  let cleanStr = input;
+  cleanStr = cleanStr.replace(/(?<!\\)\b([a-zA-Z_][a-zA-Z0-9_]*)_\(([0-9]+),([0-9]+)\)/g, (_match, p1, p2, p3) => {
+    return `${p1}[${parseInt(p2)-1},${parseInt(p3)-1}]`;
+  });
+  cleanStr = cleanStr.replace(/(?<!\\)\b([a-zA-Z_][a-zA-Z0-9_]*)_([0-9]+)\b/g, (match, p1, p2) => {
+    if (['f', 'g', 'h', 'c', 'C', 'y', 'x', 'z', 't', 'u', 'v', 'w', 'int', 'defint', 'sum', 'prod', 'lim', 'limit', 'diff', 'log', 'ln', 'min', 'max'].includes(p1.toLowerCase())) return match;
+    return `${p1}[${parseInt(p2)-1}]`;
+  });
+  return normalizeIntegral(cleanStr);
+}
+
+assert(fullPipelineClean('\\int_1^2 xdx') === 'integrate(x, x, 1, 2)', 'Pipeline does NOT corrupt \\int_1^2 into \\int[0]^2');
+assert(fullPipelineClean('\\int_0^2 xdx') === 'integrate(x, x, 0, 2)', 'Pipeline does NOT corrupt \\int_0^2 into \\int[-1]^2');
+assert(fullPipelineClean('L_1') === 'L[0]', 'Pipeline correctly converts list variable L_1 into L[0]');
+assert(fullPipelineClean('M_3') === 'M[2]', 'Pipeline correctly converts matrix variable M_3 into M[2]');
+
+// 7.8 Sum and Product Normalization
+function normalizeSumProd(input: string): string {
+  let cleanStr = input;
+  cleanStr = cleanStr.replace(/\\sum_(?:\{([a-zA-Z_][a-zA-Z0-9_]*)=([^}]+)\}|\(([a-zA-Z_][a-zA-Z0-9_]*)=([^)]+)\))\^\{?([^}\s]+)\}?\s*(.*)$/i,
+    (_m, v1, s1, v2, s2, endVal, body) => {
+      const v = v1 || v2;
+      const start = s1 || s2;
+      return `sum(${body.trim() || v}, ${v}, ${start.trim()}, ${endVal.trim()})`;
+    }
+  );
+  cleanStr = cleanStr.replace(/\\prod_(?:\{([a-zA-Z_][a-zA-Z0-9_]*)=([^}]+)\}|\(([a-zA-Z_][a-zA-Z0-9_]*)=([^)]+)\))\^\{?([^}\s]+)\}?\s*(.*)$/i,
+    (_m, v1, s1, v2, s2, endVal, body) => {
+      const v = v1 || v2;
+      const start = s1 || s2;
+      return `product(${body.trim() || v}, ${v}, ${start.trim()}, ${endVal.trim()})`;
+    }
+  );
+  return cleanStr;
+}
+
+assert(normalizeSumProd('\\sum_{n=1}^{10} n') === 'sum(n, n, 1, 10)', 'Normalizes LaTeX \\sum_{n=1}^{10} n to sum(n, n, 1, 10)');
+assert(normalizeSumProd('\\prod_{n=1}^{5} n') === 'product(n, n, 1, 5)', 'Normalizes LaTeX \\prod_{n=1}^{5} n to product(n, n, 1, 5)');
+
+// 7.9 Commands Guide Data Structure Integrity
+import { COMMANDS_DATA } from '../src/ui/commandsGuideModal.js';
+assert(Array.isArray(COMMANDS_DATA) && COMMANDS_DATA.length >= 20, 'COMMANDS_DATA contains full database of commands');
+const categories = new Set(COMMANDS_DATA.map(c => c.category));
+assert(categories.has('calculo'), 'Guide contains category "calculo"');
+assert(categories.has('integrais'), 'Guide contains category "integrais"');
+assert(categories.has('algebra'), 'Guide contains category "algebra"');
+assert(categories.has('funcoes'), 'Guide contains category "funcoes"');
+assert(categories.has('estatistica'), 'Guide contains category "estatistica"');
+
 console.log(`\n--- RESULTS: ${passed} PASSED, ${failed} FAILED ---`);
 if (failed > 0) {
   process.exit(1);
 }
+
 

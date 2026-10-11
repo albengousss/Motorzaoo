@@ -17,6 +17,7 @@ import type { Surface3DItem } from './graphics/renderer3d';
 import { ExpressionManager } from './ui/expressionManager';
 import { MathAnalyzer } from './core/analyzer'; 
 import { ODESolver } from './core/odeSolver';
+import { CommandsGuideModal } from './ui/commandsGuideModal';
 
 const renderer = new Renderer('graphCanvas');
 const glRenderer = new GLRenderer('webglCanvas');
@@ -481,11 +482,11 @@ function compileAllExpressions() {
         cleanStr = cleanStr.replace(/([a-zA-Z_][a-zA-Z0-9_]*)_([a-zA-Z0-9_]+)\s*(?=\()/g, '$1_$2');
 
         // Indexação de matrizes e listas (MathLive subscript para Giac 0-indexed)
-        cleanStr = cleanStr.replace(/([a-zA-Z_][a-zA-Z0-9_]*)_\(([0-9]+),([0-9]+)\)/g, (_match, p1, p2, p3) => {
+        cleanStr = cleanStr.replace(/(?<!\\)\b([a-zA-Z_][a-zA-Z0-9_]*)_\(([0-9]+),([0-9]+)\)/g, (_match, p1, p2, p3) => {
             return `${p1}[${parseInt(p2)-1},${parseInt(p3)-1}]`;
         });
-        cleanStr = cleanStr.replace(/([a-zA-Z_][a-zA-Z0-9_]*)_([0-9]+)/g, (match, p1, p2) => {
-            if (['f', 'g', 'h', 'c', 'C', 'y', 'x'].includes(p1)) return match;
+        cleanStr = cleanStr.replace(/(?<!\\)\b([a-zA-Z_][a-zA-Z0-9_]*)_([0-9]+)\b/g, (match, p1, p2) => {
+            if (['f', 'g', 'h', 'c', 'C', 'y', 'x', 'z', 't', 'u', 'v', 'w', 'int', 'defint', 'sum', 'prod', 'lim', 'limit', 'diff', 'log', 'ln', 'min', 'max'].includes(p1.toLowerCase())) return match;
             return `${p1}[${parseInt(p2)-1}]`;
         }).replace(/²/g, '^2').replace(/³/g, '^3');
         
@@ -542,20 +543,44 @@ function compileAllExpressions() {
         cleanStr = cleanStr.replace(/(?:(?<=\W)|\b|(?<=[a-zA-Z0-9_\)\}\]]))d\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i, ' d $1');
 
         // 1. Integral definida (defint / \int_a^b): \int_0^2 x dx ou \int_{0}^{2} x dx ou \int^2_0 x dx
-        cleanStr = cleanStr.replace(/(?:\\?int|\bdefint\b)(?:_(?:\{([^}]+)\}|\(([^)]+)\)|([a-zA-Z0-9.\-]+))\^(?:\{([^}]+)\}|\(([^)]+)\)|([a-zA-Z0-9.\-]+))|\^(?:\{([^}]+)\}|\(([^)]+)\)|([a-zA-Z0-9.\-]+))_(?:\{([^}]+)\}|\(([^)]+)\)|([a-zA-Z0-9.\-]+)))\s*(.*?)\s*(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD|\bd)\s*\\?([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i,
+        const boundPattern = '(?:\\{([^}]+)\\}|\\(([^)]+)\\)|(\\\\[a-zA-Z]+|[a-zA-Z0-9.\\-]+))';
+        const defIntRegex = new RegExp(
+            `(?:\\bdefint(?![a-zA-Z])|\\\\int(?![a-zA-Z])|\\bint(?![a-zA-Z]))(?:_${boundPattern}\\^${boundPattern}|\\^${boundPattern}_${boundPattern})\\s*(.*?)\\s*(?:\\\\mathrm\\{d\\}|\\\\text\\{d\\}|\\\\differentialD|\\bd)\\s*\\\\?([a-zA-Z_][a-zA-Z0-9_]*)\\s*$`,
+            'i'
+        );
+
+        cleanStr = cleanStr.replace(defIntRegex,
             (_m, l1, l2, l3, u1, u2, u3, u4, u5, u6, l4, l5, l6, expr, v) => {
-                const lower = (l1 ?? l2 ?? l3 ?? l4 ?? l5 ?? l6).trim();
-                const upper = (u1 ?? u2 ?? u3 ?? u4 ?? u5 ?? u6).trim();
+                let lower = (l1 ?? l2 ?? l3 ?? l4 ?? l5 ?? l6).trim();
+                let upper = (u1 ?? u2 ?? u3 ?? u4 ?? u5 ?? u6).trim();
+                if (lower.startsWith('\\')) lower = lower.substring(1);
+                if (upper.startsWith('\\')) upper = upper.substring(1);
                 const integrand = expr.trim() || '1';
                 return `integrate(${integrand}, ${v}, ${lower}, ${upper})`;
             }
         );
 
         // 2. Integral indefinida (int / \int): \int x dx ou int x dx ou \int dx
-        cleanStr = cleanStr.replace(/(?:\\?int|\bint\b)\s*(.*?)\s*(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD|\bd)\s*\\?([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i,
+        cleanStr = cleanStr.replace(/(?:\bdefint(?![a-zA-Z])|\\int(?![a-zA-Z])|\bint(?![a-zA-Z]))\s*(.*?)\s*(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD|\bd)\s*\\?([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i,
             (_m, expr, v) => {
                 const integrand = expr.trim() || '1';
                 return `integrate(${integrand}, ${v})`;
+            }
+        );
+
+        // 3. Somatório (\sum_{n=a}^b expr) e Produtório (\prod_{n=a}^b expr)
+        cleanStr = cleanStr.replace(/\\sum_(?:\{([a-zA-Z_][a-zA-Z0-9_]*)=([^}]+)\}|\(([a-zA-Z_][a-zA-Z0-9_]*)=([^)]+)\))\^\{?([^}\s]+)\}?\s*(.*)$/i,
+            (_m, v1, s1, v2, s2, endVal, body) => {
+                const v = v1 || v2;
+                const start = s1 || s2;
+                return `sum(${body.trim() || v}, ${v}, ${start.trim()}, ${endVal.trim()})`;
+            }
+        );
+        cleanStr = cleanStr.replace(/\\prod_(?:\{([a-zA-Z_][a-zA-Z0-9_]*)=([^}]+)\}|\(([a-zA-Z_][a-zA-Z0-9_]*)=([^)]+)\))\^\{?([^}\s]+)\}?\s*(.*)$/i,
+            (_m, v1, s1, v2, s2, endVal, body) => {
+                const v = v1 || v2;
+                const start = s1 || s2;
+                return `product(${body.trim() || v}, ${v}, ${start.trim()}, ${endVal.trim()})`;
             }
         );
 
@@ -2008,6 +2033,12 @@ function drawFrame() {
 ExpressionManager.init(markExpressionsDirty);
 (window as any).ExpressionManager = ExpressionManager;
 (window as any).StateManager = StateManager;
+
+CommandsGuideModal.init((exampleExpr) => {
+    ExpressionManager.addExpression(exampleExpr);
+    scheduleFrame();
+});
+(window as any)._toggleCommandsGuide = () => CommandsGuideModal.show();
 
 // ─── HANDLERS GLOBAIS DOS BOTÕES DO HUD ───────────────────────────────────────
 

@@ -10,116 +10,6 @@ export class ExpressionManager {
     static blockCounter = 0;
     static activeMathfield: any = null;
 
-    static autocompleteDiv = document.createElement('div');
-    static casDocs: Record<string, string[]> = {
-        'det': ['det( <Matriz> )'],
-        'rref': ['rref( <Matriz> )'],
-        'trace': ['trace( <Matriz> )', 'tr( <Matriz> )'],
-        'tr': ['tr( <Matriz> )'],
-        'rank': ['rank( <Matriz> )'],
-        'transpose': ['transpose( <Matriz> )', 'A^T', 'A\''],
-        'inv': ['inv( <Matriz> )', 'A^{-1}'],
-        'Determinant': ['det( <Matriz> )'],
-        'ReducedRowEchelonForm': ['rref( <Matriz> )'],
-        'MatrixRank': ['rank( <Matriz> )'],
-        'Invert': ['inv( <Matriz> )'],
-        'Transpose': ['transpose( <Matriz> )'],
-        'Trace': ['trace( <Matriz> )'],
-        'Integral': ['Integral( <Função>, <Variável> )', 'Integral( <Função>, <Variável>, <Início>, <Fim> )'],
-        'IntegralSymbolic': ['IntegralSymbolic( <Função>, <Variável> )'],
-        'IntegralBetween': ['IntegralBetween( <Função f>, <Função g>, <Início>, <Fim> )', 'IntegralBetween( <Função f>, <Função g>, <Variável>, <Início>, <Fim> )'],
-        'NIntegral': ['NIntegral( <Função>, <Variável>, <Início>, <Fim> )'],
-        'Derivative': ['Derivative( <Função>, <Variável> )', 'Derivative( <Função>, <Variável>, <Ordem> )'],
-        'NDerivative': ['NDerivative( <Função> )', 'NDerivative( <Função>, <Ordem> )'],
-        'ImplicitDerivative': ['ImplicitDerivative( <Expressão> )', 'ImplicitDerivative( <Expressão>, <Var Dependente>, <Var Independente> )'],
-        'Solveode': ['Solveode( <Equação> )', 'Solveode( <Equação>, <Ponto> )', 'Solveode( <Equação>, <Ponto f>, <Ponto f\'> )'],
-        'NSolveODE': ['NSolveODE( <Lista de Derivadas>, <X Inicial>, <Lista de Y Iniciais>, <X Final> )'],
-        'Slopefield': ['Slopefield( <Equação Diferencial> )'],
-        'Locus': ['Locus( <Ponto Q>, <Ponto P> )', 'Locus( <Campo Vetorial>, <Ponto> )'],
-        'Factor': ['Factor( <Polinômio> )'],
-        'Expand': ['Expand( <Expressão> )'],
-        'Simplify': ['Simplify( <Expressão> )'],
-        'Limit': ['Limit( <Função>, <Variável>, <Valor> )'],
-        'Solutions': ['Solutions( <Equação> )'],
-        'NSolve': ['NSolve( <Equação> )'],
-        'Eigenvalues': ['Eigenvalues( <Matriz> )'],
-        'Eigenvectors': ['Eigenvectors( <Matriz> )'],
-        'LUDecomposition': ['LUDecomposition( <Matriz> )'],
-        'Laplace': ['Laplace( <Função> )', 'Laplace( <Função>, <Variável>, <S> )'],
-        'LCM': ['LCM( <Número>, <Número> )', 'LCM( <Polinómio>, <Polinómio> )'],
-        'JordanDiagonalization': ['JordanDiagonalization( <Matriz> )'],
-        'ApplyMatrix': ['ApplyMatrix( <Matriz>, <Objeto> )'],
-        'CharacteristicPolynomial': ['CharacteristicPolynomial( <Matriz> )'],
-        'MinimalPolynomial': ['MinimalPolynomial( <Matriz> )'],
-        'Dimension': ['Dimension( <Matriz> )'],
-        'Dot': ['Dot( <Vetor>, <Vetor> )'],
-        'Cross': ['Cross( <Vetor>, <Vetor> )'],
-        'Length': ['Length( <Vetor> )'],
-        'QRDecomposition': ['QRDecomposition( <Matriz> )'],
-        'SVD': ['SVD( <Matriz> )'],
-        'UnitVector': ['UnitVector( <Vetor> )']
-    };
-
-    static showAutocomplete(mf: any) {
-        // Remover espaços para evitar que 'I n' falhe na deteção
-        const ascii = mf.getValue('ascii-math').replace(/\s+/g, '');
-        // Check if cursor is typing a word. Mathlive might have a selection. 
-        // We'll just check if the last word typed matches a CAS command prefix (case-insensitive).
-        const match = ascii.match(/([A-Za-z]{2,})$/); // Requer pelo menos 2 letras para sugerir
-        
-        if (match) {
-            const prefix = match[1].toLowerCase();
-            const suggestions = Object.keys(this.casDocs).filter(k => k.toLowerCase().startsWith(prefix));
-            
-            if (suggestions.length > 0) {
-                this.autocompleteDiv.innerHTML = '';
-                suggestions.forEach(cmd => {
-                    const row = document.createElement('div');
-                    row.style.cssText = 'padding: 4px; border-bottom: 1px solid #eee; cursor: pointer;';
-                    
-                    const title = document.createElement('strong');
-                    title.innerText = cmd;
-                    row.appendChild(title);
-                    
-                    this.casDocs[cmd].forEach(docLine => {
-                        const div = document.createElement('div');
-                        div.style.cssText = 'color: #555; margin-left: 10px; font-family: monospace; font-size: 11px;';
-                        div.innerText = docLine;
-                        row.appendChild(div);
-                    });
-                    
-                    row.onmouseenter = () => row.style.background = '#f0f0f0';
-                    row.onmouseleave = () => row.style.background = 'white';
-                    
-                    row.onclick = () => {
-                        // Obter o ASCII original (com espaços) para fazer a substituição correta no final
-                        const originalAscii = mf.getValue('ascii-math');
-                        const regexMatch = originalAscii.match(/[A-Za-z\s]+$/);
-                        let typedRaw = regexMatch ? regexMatch[0] : match[1];
-                        
-                        const newAscii = originalAscii.substring(0, originalAscii.length - typedRaw.length) + cmd + '(';
-                        mf.setValue(newAscii, { format: 'ascii-math' });
-                        mf.executeCommand(['performWithFeedback', 'moveToMathFieldEnd']);
-                        mf.executeCommand(['performWithFeedback', 'moveToPreviousChar']);
-                        this.autocompleteDiv.style.display = 'none';
-                        this.onUpdateCallback();
-                    };
-                    
-                    this.autocompleteDiv.appendChild(row);
-                });
-                
-                const rect = mf.getBoundingClientRect();
-                this.autocompleteDiv.style.left = rect.left + 'px';
-                this.autocompleteDiv.style.top = (rect.bottom + window.scrollY) + 'px';
-                this.autocompleteDiv.style.display = 'block';
-            } else {
-                this.autocompleteDiv.style.display = 'none';
-            }
-        } else {
-            this.autocompleteDiv.style.display = 'none';
-        }
-    }
-
     // ─── POPOVER DE ESTILO (DESMOS STYLE) ──────────────────────────
     static stylePopover: HTMLDivElement = document.createElement('div');
     static currentStyledBlock: HTMLElement | null = null;
@@ -302,8 +192,6 @@ export class ExpressionManager {
     }
 
     static init(onUpdate: () => void) {
-        this.autocompleteDiv.style.cssText = 'position: absolute; background: white; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); font-family: sans-serif; font-size: 12px; z-index: 9999; display: none; padding: 5px; max-height: 200px; overflow-y: auto; width: 300px; text-align: left;';
-        document.body.appendChild(this.autocompleteDiv);
         this.initStylePopover();
 
         this.onUpdateCallback = onUpdate;
@@ -597,6 +485,7 @@ export class ExpressionManager {
             'det': '\\det',
             'rref': '\\operatorname{rref}',
             'trace': '\\operatorname{trace}',
+            'tr': '\\operatorname{tr}',
             'rank': '\\operatorname{rank}',
             'transpose': '\\operatorname{transpose}',
             'inv': '\\operatorname{inv}'
@@ -903,7 +792,6 @@ export class ExpressionManager {
                 }
             }
 
-            this.showAutocomplete(mf);
             this.onUpdateCallback();
             HistoryManager.recordState(false);
         });
@@ -914,11 +802,6 @@ export class ExpressionManager {
                     block.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                 }, 120);
             }
-        });
-        
-        // Esconder autocomplete se perder o foco
-        mf.addEventListener('focusout', () => {
-            setTimeout(() => { this.autocompleteDiv.style.display = 'none'; }, 200);
         });
 
         sliderInput.addEventListener('input', () => {
