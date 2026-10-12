@@ -111,7 +111,8 @@ export class MathEngine {
         'jordandiagonalization', 'matrixrank', 'rank', 'qrdecomposition', 
         'reducedrowechelonform', 'rref', 'svd', 'transpose', 'tran', 'trace', 'tr', 'cross', 'dot',
         'taylor', 'taylorpolynomial', 'sum', 'product', 'prod',
-        'mean', 'median', 'stdev', 'stddev', 'var', 'variance', 'samplesd', 'samplevariance', 'length', 'size'
+        'mean', 'median', 'stdev', 'stddev', 'var', 'variance', 'samplesd', 'samplevariance', 'length', 'size',
+        'desolve', 'solveode', 'edo', 'nsolveode', 'campo', 'slopefield'
     ];
 
     static isGiacCommand(ast: any): boolean {
@@ -187,6 +188,7 @@ export class MathEngine {
             else if (opLower === 'var') giacOp = 'variance';
             else if (opLower === 'length') giacOp = 'size';
             else if (opLower === 'lim') giacOp = 'limit';
+            else if (opLower === 'solveode' || opLower === 'edo' || opLower === 'nsolveode') giacOp = 'desolve';
             return `${giacOp}(${ast.slice(1).map((x: any) => this.formatForGiac(x)).join(', ')})`;
         }
         return '';

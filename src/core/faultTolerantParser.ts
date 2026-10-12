@@ -58,7 +58,15 @@ export class FaultTolerantParser {
      * com suporte completo a delimitadores aninhados (evita corromper x^(2) em x^(2, x)).
      */
     static normalizeDerivative(inputStr: string): string {
-        let str = inputStr;
+        // Limpa wrappers visuais \left e \right do LaTeX para normalização pura
+        let str = inputStr
+            .replace(/\\left\s*([(\[{|])/g, '$1')
+            .replace(/\\right\s*([)\]}|])/g, '$1')
+            .replace(/\\left\./g, '')
+            .replace(/\\right\./g, '')
+            .replace(/\\left\b/g, '')
+            .replace(/\\right\b/g, '');
+
         const derivOpRegex = /(?:\\frac\{\s*(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD|d)\s*\}\{\s*(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD|d)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}|frac\s*\(\s*(?:\\mathrm\{d\}|d)\s*\)\s*\(\s*(?:\\mathrm\{d\}|d)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)|(?:\(?\s*d\s*\)?\s*\/\s*\(?\s*d\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)?)|\\bdd([a-zA-Z_][a-zA-Z0-9_]*)\b)/i;
         
         let match: RegExpExecArray | null;
@@ -80,9 +88,9 @@ export class FaultTolerantParser {
             let operand = '';
             let endIndex = afterIndex;
             
-            if (str[afterIndex] === '(' || str[afterIndex] === '{') {
+            if (str[afterIndex] === '(' || str[afterIndex] === '{' || str[afterIndex] === '[') {
                 const openChar = str[afterIndex];
-                const closeChar = openChar === '(' ? ')' : '}';
+                const closeChar = openChar === '(' ? ')' : (openChar === '{' ? '}' : ']');
                 let depth = 0;
                 let i = afterIndex;
                 for (; i < str.length; i++) {
@@ -97,18 +105,34 @@ export class FaultTolerantParser {
                 }
                 operand = str.slice(afterIndex + 1, i - 1).trim();
                 endIndex = i;
-            } else {
-                const remaining = str.slice(afterIndex);
-                const directMatch = remaining.match(/^([a-zA-Z0-9_\\^+\-*/.]+(?:\([^)]*\))?|.+?)(?=\s*[=;,)]|$)/);
-                if (directMatch) {
-                    operand = directMatch[1].trim();
-                    endIndex = afterIndex + directMatch[0].length;
-                } else {
-                    operand = remaining.trim();
-                    endIndex = str.length;
+
+                // Se houver uma potência logo após os delimitadores fechados (ex: (x+1)^2 ou (x+1)^(2))
+                const powerMatch = str.slice(endIndex).match(/^\s*\^(\{[^}]*\}|\([^)]*\)|[a-zA-Z0-9.]+)/);
+                if (powerMatch) {
+                    operand = `(${operand})${powerMatch[0].trim()}`;
+                    endIndex += powerMatch[0].length;
                 }
+            } else {
+                let depth = 0;
+                let j = afterIndex;
+                for (; j < str.length; j++) {
+                    const ch = str[j];
+                    if (ch === '(' || ch === '{' || ch === '[') depth++;
+                    else if (ch === ')' || ch === '}' || ch === ']') {
+                        if (depth === 0) break;
+                        depth--;
+                    } else if (depth === 0 && (ch === '=' || ch === ';' || ch === ',')) {
+                        break;
+                    }
+                }
+                operand = str.slice(afterIndex, j).trim();
+                endIndex = j;
             }
             
+            if (!operand) {
+                break;
+            }
+
             const replacement = `diff(${operand}, ${derivVar})`;
             str = str.slice(0, matchIndex) + replacement + str.slice(endIndex);
         }
@@ -337,8 +361,8 @@ export class FaultTolerantParser {
             return { isIncomplete: true, warning: 'Falta o numerador da fração.' };
         }
 
-        // Expoente vazio ou incompleto: ^, ^{}, ^(), x^, x^{}, x^(), ou seguido de fechamento: (x^)
-        if (/\^\s*(?:\{\s*\}|\(\s*\)|\)|$|[,;])/.test(trimmedLatex) || /\^\s*(?:\{\s*\}|\(\s*\)|\)|$|[,;])/.test(trimmedAscii)) {
+        // Expoente vazio ou incompleto: ^, ^{}, ^(), x^, x^{}, x^(), ou seguido de fechamento: (x^) ou \left(x^\right)
+        if (/\^\s*(?:\{\s*\}|\(\s*\)|\)|\\right|\\le|\\ge|\\times|\\cdot|$|[,;])/.test(trimmedLatex) || /\^\s*(?:\{\s*\}|\(\s*\)|\)|$|[,;])/.test(trimmedAscii)) {
             return { isIncomplete: true, warning: 'Falta o expoente da potência.' };
         }
 
@@ -350,9 +374,17 @@ export class FaultTolerantParser {
             return { isIncomplete: true, warning: 'Falta um termo após o operador.' };
         }
 
-        // Função elementar com parênteses vazios (ex: sin(), cos(), sqrt(), diff())
-        if (/\b(?:sin|cos|tan|sinh|cosh|tanh|asin|acos|atan|log|ln|sqrt|cbrt|nthroot|diff|int)\(\s*\)/i.test(trimmedAscii)) {
-            return { isIncomplete: true, warning: 'Falta o argumento da função.' };
+        // Comandos e funções com parênteses vazios (ex: sin(), cos(), solveode(), det(), mean(), diff())
+        const emptyParenMatch = trimmedAscii.match(/\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\(\s*\)/) ||
+                                trimmedLatex.match(/(?:\\operatorname\{([^}]+)\}|\\([a-zA-Z]+)|\b([a-zA-Z_][a-zA-Z0-9_]*))\s*(?:\\left)?\(\s*(?:\\right)?\)/);
+        if (emptyParenMatch) {
+            const rawFn = (emptyParenMatch[1] || emptyParenMatch[2] || emptyParenMatch[3] || '').toLowerCase();
+            if (rawFn === 'diff' || rawFn === 'derivative' || rawFn === 'ddx' || rawFn === 'dx') {
+                return { isIncomplete: true, warning: 'Informe a função para derivar (ex: d/dx(x^2)).' };
+            }
+            if (this.RESERVED_FUNCTIONS.has(rawFn)) {
+                return { isIncomplete: true, warning: `Informe os argumentos de ${rawFn}.` };
+            }
         }
 
         // Parênteses desbalanceados

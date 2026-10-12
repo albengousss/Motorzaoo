@@ -1203,7 +1203,7 @@ assert(formatOdeGiacCommand('edo', "y' = 2x, y") === "desolve(y' = 2x, y)", 'Map
 console.log('\n[TEST GROUP 18: Defensive Rejection of Giac "pnt" Artifacts]');
 
 function sanitizeGiacResult(res: string): string {
-    if (res.includes('pnt(') || res.includes('pnt[') || res.includes('point[') || res.includes('536870912')) {
+    if (/\b(?:pnt|point)\b|pnt\(|pnt\[|point\[|536870912/i.test(res)) {
         return '- Erro no cálculo';
     }
     return res;
@@ -1212,13 +1212,141 @@ function sanitizeGiacResult(res: string): string {
 const bugArtifact = '= (i * ln(x) + (2 + i * x)/x) * x^(pnt(pnt[2 + i * x, [536870912]]))';
 assert(sanitizeGiacResult(bugArtifact) === '- Erro no cálculo', 'Defensively catches and suppresses bizarre pnt artifact output');
 
+const bugArtifact2 = 'pnt[2 + i * x, [536870912]]';
+assert(sanitizeGiacResult(bugArtifact2) === '- Erro no cálculo', 'Defensively catches pnt array artifact');
+
+const bugArtifact3 = 'point[1, 2]';
+assert(sanitizeGiacResult(bugArtifact3) === '- Erro no cálculo', 'Defensively catches point array artifact');
+
 const cleanResult = '= 2x';
 assert(sanitizeGiacResult(cleanResult) === '= 2x', 'Passes clean result without false positives');
+
+// =========================================================================
+// [TEST GROUP 19: Nested Derivatives, Left/Right Normalization & Power Preservation]
+// =========================================================================
+console.log('\n[TEST GROUP 19: Nested Derivatives & Power Preservation]');
+
+assert(
+  FaultTolerantParser.normalizeDerivative('\\frac{d}{dx}\\left(x^(2)\\right)') === 'diff(x^(2), x)',
+  'Normalizes \\frac{d}{dx}\\left(x^(2)\\right) without injecting comma into exponent',
+  FaultTolerantParser.normalizeDerivative('\\frac{d}{dx}\\left(x^(2)\\right)')
+);
+
+assert(
+  FaultTolerantParser.normalizeDerivative('\\frac{d}{dx}\\left(x^{2}\\right)') === 'diff(x^{2}, x)',
+  'Normalizes \\frac{d}{dx}\\left(x^{2}\\right) to diff(x^{2}, x)',
+  FaultTolerantParser.normalizeDerivative('\\frac{d}{dx}\\left(x^{2}\\right)')
+);
+
+assert(
+  FaultTolerantParser.normalizeDerivative('\\frac{d}{dx}\\left((x+1)^2\\right)') === 'diff((x+1)^2, x)',
+  'Normalizes \\frac{d}{dx}\\left((x+1)^2\\right) to diff((x+1)^2, x)',
+  FaultTolerantParser.normalizeDerivative('\\frac{d}{dx}\\left((x+1)^2\\right)')
+);
+
+assert(
+  FaultTolerantParser.normalizeDerivative('\\frac{d}{dx}\\left(\\sin(x^2)\\right)') === 'diff(\\sin(x^2), x)',
+  'Normalizes \\frac{d}{dx}\\left(\\sin(x^2)\\right) to diff(\\sin(x^2), x)',
+  FaultTolerantParser.normalizeDerivative('\\frac{d}{dx}\\left(\\sin(x^2)\\right)')
+);
+
+assert(
+  FaultTolerantParser.normalizeDerivative('d/dx (x+1)^2') === 'diff((x+1)^2, x)',
+  'Preserves outer power in d/dx (x+1)^2 as diff((x+1)^2, x)',
+  FaultTolerantParser.normalizeDerivative('d/dx (x+1)^2')
+);
+
+assert(
+  FaultTolerantParser.normalizeDerivative('\\frac{d}{dx} \\sin(x^2)') === 'diff(\\sin(x^2), x)',
+  'Normalizes unparenthesized trig derivative \\frac{d}{dx} \\sin(x^2)',
+  FaultTolerantParser.normalizeDerivative('\\frac{d}{dx} \\sin(x^2)')
+);
+
+assert(
+  FaultTolerantParser.normalizeDerivative('\\frac{d}{dx} \\cos(2x)') === 'diff(\\cos(2x), x)',
+  'Normalizes unparenthesized trig derivative \\frac{d}{dx} \\cos(2x)',
+  FaultTolerantParser.normalizeDerivative('\\frac{d}{dx} \\cos(2x)')
+);
+
+assert(
+  FaultTolerantParser.normalizeDerivative('\\frac{d}{dx} \\ln(x+1)') === 'diff(\\ln(x+1), x)',
+  'Normalizes unparenthesized log derivative \\frac{d}{dx} \\ln(x+1)',
+  FaultTolerantParser.normalizeDerivative('\\frac{d}{dx} \\ln(x+1)')
+);
+
+// Dangling power before \right
+const danglingRightCheck = FaultTolerantParser.checkIncompleteStatus('\\frac{d}{dx}\\left(x^\\right)', '\\frac{d}{dx}(x^)');
+assert(
+  danglingRightCheck.isIncomplete,
+  'Flags dangling power before \\right as incomplete',
+  danglingRightCheck
+);
+
+// Empty command parentheses
+const emptySolveode = FaultTolerantParser.checkIncompleteStatus('solveode()', 'solveode()');
+assert(emptySolveode.isIncomplete, 'Flags solveode() with empty parens as incomplete', emptySolveode);
+
+const emptyCampo = FaultTolerantParser.checkIncompleteStatus('campo()', 'campo()');
+assert(emptyCampo.isIncomplete, 'Flags campo() with empty parens as incomplete', emptyCampo);
+
+const emptyDet = FaultTolerantParser.checkIncompleteStatus('det()', 'det()');
+assert(emptyDet.isIncomplete, 'Flags det() with empty parens as incomplete', emptyDet);
+
+const emptyMean = FaultTolerantParser.checkIncompleteStatus('mean()', 'mean()');
+assert(emptyMean.isIncomplete, 'Flags mean() with empty parens as incomplete', emptyMean);
+
+// =========================================================================
+// [TEST GROUP 20: Exhaustive Verification of ALL System Commands]
+// =========================================================================
+console.log('\n[TEST GROUP 20: Exhaustive Command Suite Verification]');
+
+// 1. Differential equations
+assert(MathEngine.isGiacCommand(['solveode', "y' = y, y"]), 'MathEngine recognizes solveode as Giac command');
+assert(MathEngine.isGiacCommand(['edo', "y' = y, y"]), 'MathEngine recognizes edo as Giac command');
+assert(MathEngine.formatForGiac(['solveode', "y' = y, y"]) === "desolve(y' = y, y)", 'formatForGiac formats solveode to desolve');
+assert(MathEngine.formatForGiac(['edo', "y' = y, y"]) === "desolve(y' = y, y)", 'formatForGiac formats edo to desolve');
+
+// 2. Calculus
+assert(MathEngine.isGiacCommand(['diff', 'x^2', 'x']), 'MathEngine recognizes diff as Giac command');
+assert(MathEngine.isGiacCommand(['int', 'x', 'x']), 'MathEngine recognizes int as Giac command');
+assert(MathEngine.isGiacCommand(['defint', 'x', 'x', 0, 1]), 'MathEngine recognizes defint as Giac command');
+assert(MathEngine.isGiacCommand(['lim', 'sin(x)/x', 'x', 0]), 'MathEngine recognizes lim as Giac command');
+assert(MathEngine.isGiacCommand(['taylor', 'sin(x)', 'x', 0, 4]), 'MathEngine recognizes taylor as Giac command');
+assert(MathEngine.isGiacCommand(['sum', 'n', 'n', 1, 10]), 'MathEngine recognizes sum as Giac command');
+assert(MathEngine.isGiacCommand(['prod', 'n', 'n', 1, 5]), 'MathEngine recognizes prod as Giac command');
+
+// 3. Linear Algebra
+assert(MathEngine.isGiacCommand(['det', 'A']), 'MathEngine recognizes det as Giac command');
+assert(MathEngine.isGiacCommand(['rref', 'A']), 'MathEngine recognizes rref as Giac command');
+assert(MathEngine.isGiacCommand(['trace', 'A']), 'MathEngine recognizes trace as Giac command');
+assert(MathEngine.isGiacCommand(['tr', 'A']), 'MathEngine recognizes tr as Giac command');
+assert(MathEngine.isGiacCommand(['rank', 'A']), 'MathEngine recognizes rank as Giac command');
+assert(MathEngine.isGiacCommand(['inv', 'A']), 'MathEngine recognizes inv as Giac command');
+assert(MathEngine.isGiacCommand(['tran', 'A']), 'MathEngine recognizes tran as Giac command');
+assert(MathEngine.isGiacCommand(['eigenvals', 'A']), 'MathEngine recognizes eigenvals as Giac command');
+assert(MathEngine.isGiacCommand(['eigenvects', 'A']), 'MathEngine recognizes eigenvects as Giac command');
+
+// 4. Statistics & Lists
+assert(MathEngine.isGiacCommand(['mean', ['List', 1, 2, 3]]), 'MathEngine recognizes mean as Giac command');
+assert(MathEngine.isGiacCommand(['median', ['List', 1, 2, 3]]), 'MathEngine recognizes median as Giac command');
+assert(MathEngine.isGiacCommand(['stdev', ['List', 1, 2, 3]]), 'MathEngine recognizes stdev as Giac command');
+assert(MathEngine.isGiacCommand(['var', ['List', 1, 2, 3]]), 'MathEngine recognizes var as Giac command');
+assert(MathEngine.isGiacCommand(['length', ['List', 1, 2, 3]]), 'MathEngine recognizes length as Giac command');
+
+// 5. Functions & Multivariables
+const polyAst = new PrattParser('x^3 - 3*x + 1').parseExpression();
+const compiledPoly = MathEngine.compile(polyAst, 'x');
+assert(compiledPoly(2, 0, {}) === 3, 'compiledPoly(2) = 2^3 - 6 + 1 = 3', compiledPoly(2, 0, {}));
+
+const multiAst = new PrattParser('x^2 + y^2').parseExpression();
+const compiledMulti = MathEngine.compileMultivariable(multiAst, ['x', 'y']);
+assert(compiledMulti(3, 4) === 25, 'compiledMulti(3, 4) = 3^2 + 4^2 = 25', compiledMulti(3, 4));
 
 console.log(`\n--- RESULTS: ${passed} PASSED, ${failed} FAILED ---`);
 if (failed > 0) {
   process.exit(1);
 }
+
 
 
 

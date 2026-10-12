@@ -662,7 +662,7 @@ function compileAllExpressions() {
             const giacQuery = MathEngine.formatForGiac(expandedAst);
             StateManager.activeGiacQuery[item.id] = giacQuery;
             let cached: any = StateManager.casSolutions[item.id];
-            if (cached && (cached.result.includes('pnt') || cached.result.includes('point[') || cached.result.includes('536870912'))) {
+            if (cached && (cached.result.includes('pnt') || cached.result.includes('point[') || cached.result.includes('536870912') || cached.result.includes('Erro'))) {
                 delete StateManager.casSolutions[item.id];
                 cached = undefined;
             }
@@ -780,8 +780,10 @@ function compileAllExpressions() {
                     if (cleanResult.includes('Erro') || cleanResult.includes('undef') || cleanResult.includes('Bad Argument') || cleanResult.includes('pnt') || cleanResult.includes('point[') || cleanResult.includes('536870912')) {
                         cleanResult = numIntegralVal !== null ? `${parseFloat(numIntegralVal.toFixed(10))}` : 'Erro no cálculo';
                     }
-                    if (cleanResult !== 'Erro no cálculo') {
+                    if (cleanResult !== 'Erro no cálculo' && !cleanResult.includes('pnt') && !cleanResult.includes('point[') && !cleanResult.includes('536870912')) {
                         StateManager.casSolutions[item.id] = { query: giacQuery, result: cleanResult };
+                    } else {
+                        delete StateManager.casSolutions[item.id];
                     }
                     ExpressionManager.setResult(item.id, formatCasDisplay(cleanResult));
                     if (assignVarName && assignVarName !== 'y' && isDefiniteInt) {
@@ -862,16 +864,22 @@ function compileAllExpressions() {
                     const depVarMatch = odeEq.match(/([a-zA-Z_][a-zA-Z0-9_\{\}]*)'/);
                     const depVar = depVarMatch ? depVarMatch[1].replace(/[\{\}\\]/g, '') : 'y';
                     
-                    let giacQ = `desolve(${odeEq}, ${depVar})`;
-                    
                     // Extrair pontos de condição inicial: SolveODE(y' = y, (0, 2)) ou SolveODE(y''=y, (0,2), (0,1))
                     const doublePtMatch = odeEq.match(/(.+?),\s*\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)\s*,\s*\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/);
                     const singlePtMatch = !doublePtMatch ? odeEq.match(/(.+?),\s*\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/) : null;
                     
+                    let giacQ = '';
                     if (doublePtMatch) {
                         giacQ = `desolve([${doublePtMatch[1]}, ${depVar}(${doublePtMatch[2]})=${doublePtMatch[3]}, ${depVar}'(${doublePtMatch[4]})=${doublePtMatch[5]}], ${depVar})`;
                     } else if (singlePtMatch) {
                         giacQ = `desolve([${singlePtMatch[1]}, ${depVar}(${singlePtMatch[2]})=${singlePtMatch[3]}], ${depVar})`;
+                    } else {
+                        const trimmedEq = odeEq.trim();
+                        if (new RegExp(`,\\s*${depVar}\\s*$`).test(trimmedEq)) {
+                            giacQ = `desolve(${trimmedEq})`;
+                        } else {
+                            giacQ = `desolve(${trimmedEq}, ${depVar})`;
+                        }
                     }
                     
                     StateManager.activeGiacQuery[item.id] = giacQ;
@@ -949,7 +957,11 @@ function compileAllExpressions() {
                 }
             }
 
-            const cached = StateManager.casSolutions[item.id];
+            let cached: any = StateManager.casSolutions[item.id];
+            if (cached && (cached.result.includes('pnt') || cached.result.includes('point[') || cached.result.includes('536870912') || cached.result.includes('Erro'))) {
+                delete StateManager.casSolutions[item.id];
+                cached = undefined;
+            }
             if (cached && cached.query === currentQuery) {
                 ExpressionManager.setResult(item.id, cached.result.includes('Erro') ? `- Erro no cálculo` : `= ${cached.result}`);
                 ExpressionManager.setSliderSuggestions(item.id, [], () => {});
@@ -1093,12 +1105,18 @@ function compileAllExpressions() {
                             ExpressionManager.setResult(item.id, `(A carregar motor...)`);
                             StateManager.pendingCas[item.id] = false;
                         } else if (res.includes('Erro') || res.includes('ausente') || res.includes('Mock') || res.includes('pnt') || res.includes('point[') || res.includes('536870912')) {
-                            StateManager.casSolutions[item.id] = { query: currentQuery, result: 'Erro no cálculo' };
+                            delete StateManager.casSolutions[item.id];
                             ExpressionManager.setResult(item.id, `- Erro no cálculo`);
                             ExpressionManager.setSliderSuggestions(item.id, [], () => {});
                         } else {
                             // Limpa as aspas do Giac e espaços extras
                             let cleanResult = res.replace(/"/g, '').replace(/matrix\s*\[/g, '[').replace(/list\s*\[/g, '[').replace(/usr_/g, '').trim();
+                            if (cleanResult.includes('Erro') || cleanResult.includes('pnt') || cleanResult.includes('point[') || cleanResult.includes('536870912')) {
+                                delete StateManager.casSolutions[item.id];
+                                ExpressionManager.setResult(item.id, `- Erro no cálculo`);
+                                ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                                return;
+                            }
                             const arrowMatchClean = cleanResult.match(/^(?:\(?[a-zA-Z_]+\)?\s*->\s*)(.*)/);
                             if (arrowMatchClean) cleanResult = arrowMatchClean[1];
                             
@@ -1324,7 +1342,9 @@ function compileAllExpressions() {
                             if (MathEngine.isGiacCommand(ast)) {
                                 const giacQuery = MathEngine.formatForGiac(ast);
                                 const cached = StateManager.casSolutions[item.id];
-                                if (cached && cached.query === giacQuery) {
+                                if (cached && (cached.result.includes('pnt') || cached.result.includes('point[') || cached.result.includes('536870912') || cached.result.includes('Erro'))) {
+                                    delete StateManager.casSolutions[item.id];
+                                } else if (cached && cached.query === giacQuery) {
                                     try {
                                         const solvedAst = new PrattParser(cached.result).parseExpression();
                                         MathEngine.compiledFuncs[funcName] = MathEngine.compile(solvedAst, paramName);
@@ -1338,8 +1358,14 @@ function compileAllExpressions() {
                                 } else {
                                     ExpressionManager.setResult(item.id, 'Calculando...');
                                     ExpressionManager.setError(item.id, null);
+                                    StateManager.activeGiacQuery[item.id] = giacQuery;
                                     MathEngine.askGiac(giacQuery).then(res => {
+                                        if (StateManager.activeGiacQuery[item.id] !== giacQuery) return; // Stale query, discard!
                                         const cleanRes = res.replace(/"/g, '').trim();
+                                        if (cleanRes.includes('Erro') || cleanRes.includes('pnt') || cleanRes.includes('point[') || cleanRes.includes('536870912')) {
+                                            delete StateManager.casSolutions[item.id];
+                                            return;
+                                        }
                                         StateManager.casSolutions[item.id] = { query: giacQuery, result: cleanRes };
                                         markExpressionsDirty();
                                     });
@@ -1666,7 +1692,11 @@ function compileAllExpressions() {
                 if (hasGiacVar || isMatrixArithmetic) {
                     ExpressionManager.setSliderSuggestions(item.id, [], () => {});
                     const currentQuery = expressaoPlot;
-                    const cached = StateManager.casSolutions[item.id];
+                    let cached: any = StateManager.casSolutions[item.id];
+                    if (cached && (cached.result.includes('pnt') || cached.result.includes('point[') || cached.result.includes('536870912') || cached.result.includes('Erro'))) {
+                        delete StateManager.casSolutions[item.id];
+                        cached = undefined;
+                    }
                     if (cached && cached.query === currentQuery) {
                         ExpressionManager.setResult(item.id, cached.result.includes('Erro') ? `- Erro no cálculo` : `= ${cached.result}`);
                         ExpressionManager.setError(item.id, null);
@@ -1679,21 +1709,26 @@ function compileAllExpressions() {
                                          .replace(/\\left\[/g, '[').replace(/\\right\]/g, ']');
                         giacQuery = giacQuery.replace(/\]\s*\[/g, '],[');
 
+                        StateManager.activeGiacQuery[item.id] = currentQuery;
                         MathEngine.askGiac(giacQuery).then(res => {
                             StateManager.pendingCas[item.id] = false;
+                            if (StateManager.activeGiacQuery[item.id] !== currentQuery) return; // Stale query, discard!
                             let formattedRes = res.replace(/"/g, '')
                                                   .replace(/matrix\s*\[/g, '[')
                                                   .replace(/list\s*\[/g, '[')
                                                   .replace(/usr_/g, '')
                                                   .trim();
                             
-                            // If Giac returns an error, fallback to local eval if we can
-                            if (formattedRes.includes('Erro') || formattedRes.includes('undef') || formattedRes.includes('Bad Argument')) {
-                                formattedRes = 'Erro no cálculo';
+                            // If Giac returns an error or geometric artifact
+                            if (formattedRes.includes('Erro') || formattedRes.includes('undef') || formattedRes.includes('Bad Argument') || formattedRes.includes('pnt') || formattedRes.includes('point[') || formattedRes.includes('536870912')) {
+                                delete StateManager.casSolutions[item.id];
+                                ExpressionManager.setResult(item.id, `- Erro no cálculo`);
+                                scheduleFrame();
+                                return;
                             }
                             
                             StateManager.casSolutions[item.id] = { query: currentQuery, result: formattedRes, ast: null };
-                            ExpressionManager.setResult(item.id, formattedRes.includes('Erro') ? `- Erro no cálculo` : `= ${formattedRes}`);
+                            ExpressionManager.setResult(item.id, `= ${formattedRes}`);
                             ExpressionManager.setError(item.id, null);
                             ExpressionManager.setSliderSuggestions(item.id, [], () => {});
                             scheduleFrame();
