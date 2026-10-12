@@ -8,6 +8,7 @@ import { HistoryManager } from './core/historyManager';
 let validEquations: {id: string, ast?: any, isImplicit: boolean, operator: string, isEdo: boolean, isDerivative: boolean, derivVar?: string, isIvp?: boolean, isPoint?: boolean, pointX?: number, pointY?: number, pointLabel?: string, isParametric?: boolean, astX?: any, astY?: any, astZ?: any, isExplicitZ?: boolean, tMin?: number, tMax?: number, paramVar?: string, depVar?: string, indepVar?: string, condition?: (x: number, y: number, scope: any, t?: number) => boolean, name?: string, x0?: number, y0?: number, isHidden?: boolean, variable?: string, color?: string, lineStyle?: 'solid' | 'dashed' | 'dotted', lineWidth?: number, isTable?: boolean, tablePoints?: { x: number, y: number, rowIndex: number, tableBlockId: string }[], connectLines?: boolean}[] = [];
 let dragDistance = 0;
 import { MathEngine } from './core/mathEngine';
+import { ImplicitEngine } from './core/implicitEngine';
 import { Renderer } from './graphics/renderer';
 import { GLRenderer } from './graphics/glRenderer';
 import { Camera } from './graphics/camera';
@@ -218,48 +219,54 @@ function prefixGiac(str: string): string {
 /** Interpreta condições de domínio do tipo {x >= 0} ou {-2 <= x <= 2} ou {0 <= t <= 2pi} */
 function parseDomainCondition(condRaw: string): { condition: (x: number, y: number, scope: any, t?: number) => boolean, tBounds?: { tMin: number, tMax: number } } | null {
     let cleanCond = condRaw.trim()
-        .replace(/\\le/g, '<=')
-        .replace(/\\ge/g, '>=')
         .replace(/\\leq/g, '<=')
         .replace(/\\geq/g, '>=')
+        .replace(/\\le/g, '<=')
+        .replace(/\\ge/g, '>=')
         .replace(/\\pi/g, 'pi')
-        .replace(/π/g, 'pi');
+        .replace(/π/g, 'pi')
+        .replace(/\\infty/g, 'infinity')
+        .replace(/\\inf\b/g, 'infinity')
+        .replace(/\binf\b/g, 'infinity');
 
-    // 1. Desigualdade dupla: lower <= var <= upper (ex: -2 <= x <= 2, 0 <= t <= 2pi)
+    // 1. Desigualdade dupla: lower <= var <= upper (ex: -2 <= x <= 2, 0 <= t <= 2pi, -infinity <= t <= infinity)
     const doubleMatch = cleanCond.match(/^(.+?)\s*(<=|<)\s*([a-zA-Z_])\s*(<=|<)\s*(.+)$/);
     if (doubleMatch) {
-        const lowerStr = doubleMatch[1];
+        const lowerStr = doubleMatch[1].trim();
         const op1 = doubleMatch[2];
         const targetVar = doubleMatch[3];
         const op2 = doubleMatch[4];
-        const upperStr = doubleMatch[5];
+        const upperStr = doubleMatch[5].trim();
+
+        const isLowerInf = lowerStr.includes('infinity');
+        const isUpperInf = upperStr.includes('infinity');
+        const minInfVal = isLowerInf ? (lowerStr.startsWith('-') ? -Infinity : Infinity) : null;
+        const maxInfVal = isUpperInf ? (upperStr.startsWith('-') ? -Infinity : Infinity) : null;
 
         let lowerAst: any = null;
         let upperAst: any = null;
         try {
-            lowerAst = new PrattParser(lowerStr).parseExpression();
-            upperAst = new PrattParser(upperStr).parseExpression();
+            if (!isLowerInf) lowerAst = new PrattParser(lowerStr).parseExpression();
+            if (!isUpperInf) upperAst = new PrattParser(upperStr).parseExpression();
         } catch(e) {}
 
-        if (lowerAst && upperAst) {
-            const lowerF = MathEngine.compile(lowerAst);
-            const upperF = MathEngine.compile(upperAst);
+        if ((lowerAst !== null || isLowerInf) && (upperAst !== null || isUpperInf)) {
+            const lowerF = lowerAst !== null ? MathEngine.compile(lowerAst) : () => minInfVal!;
+            const upperF = upperAst !== null ? MathEngine.compile(upperAst) : () => maxInfVal!;
 
             let tBounds: { tMin: number, tMax: number } | undefined = undefined;
             if (targetVar === 't' || targetVar === 'theta') {
-                const minVal = lowerF(0, 0, StateManager.values);
-                const maxVal = upperF(0, 0, StateManager.values);
-                if (isFinite(minVal) && isFinite(maxVal)) {
-                    tBounds = { tMin: minVal, tMax: maxVal };
-                }
+                const minVal = isLowerInf ? minInfVal! : lowerF(0, 0, StateManager.values);
+                const maxVal = isUpperInf ? maxInfVal! : upperF(0, 0, StateManager.values);
+                tBounds = { tMin: minVal, tMax: maxVal };
             }
 
             const condition = (x: number, y: number, scope: any, t?: number) => {
                 const targetVal = targetVar === 'x' ? x : (targetVar === 'y' ? y : ((targetVar === 't' || targetVar === 'theta') ? (t ?? 0) : (scope[targetVar] ?? 0)));
-                const lVal = lowerF(0, 0, scope);
-                const uVal = upperF(0, 0, scope);
-                const ok1 = op1 === '<=' ? lVal <= targetVal : lVal < targetVal;
-                const ok2 = op2 === '<=' ? targetVal <= uVal : targetVal < uVal;
+                const lVal = isLowerInf ? minInfVal! : lowerF(0, 0, scope);
+                const uVal = isUpperInf ? maxInfVal! : upperF(0, 0, scope);
+                const ok1 = isLowerInf ? true : (op1 === '<=' ? lVal <= targetVal : lVal < targetVal);
+                const ok2 = isUpperInf ? true : (op2 === '<=' ? targetVal <= uVal : targetVal < uVal);
                 return ok1 && ok2;
             };
 
@@ -267,33 +274,74 @@ function parseDomainCondition(condRaw: string): { condition: (x: number, y: numb
         }
     }
 
-    // 2. Desigualdade simples: var >= bound ou var <= bound (ex: x >= 0, t <= 5)
+    // 2. Desigualdade simples: var >= bound ou var <= bound (ex: x >= 0, t <= 5, t >= -infinity)
     const singleMatch = cleanCond.match(/^([a-zA-Z_])\s*(<=|>=|<|>|==|=)\s*(.+)$/);
     if (singleMatch) {
         const targetVar = singleMatch[1];
         const op = singleMatch[2];
-        const boundStr = singleMatch[3];
+        const boundStr = singleMatch[3].trim();
+        const isBoundInf = boundStr.includes('infinity');
+        const infBoundVal = isBoundInf ? (boundStr.startsWith('-') ? -Infinity : Infinity) : null;
 
         let boundAst: any = null;
         try {
-            boundAst = new PrattParser(boundStr).parseExpression();
+            if (!isBoundInf) boundAst = new PrattParser(boundStr).parseExpression();
         } catch(e) {}
 
-        if (boundAst) {
-            const boundF = MathEngine.compile(boundAst);
+        if (boundAst !== null || isBoundInf) {
+            const boundF = boundAst !== null ? MathEngine.compile(boundAst) : () => infBoundVal!;
 
             let tBounds: { tMin: number, tMax: number } | undefined = undefined;
             if (targetVar === 't' || targetVar === 'theta') {
-                const val = boundF(0, 0, StateManager.values);
-                if (isFinite(val)) {
-                    if (op === '>=' || op === '>') tBounds = { tMin: val, tMax: 10 };
-                    else if (op === '<=' || op === '<') tBounds = { tMin: -10, tMax: val };
-                }
+                const val = isBoundInf ? infBoundVal! : boundF(0, 0, StateManager.values);
+                if (op === '>=' || op === '>') tBounds = { tMin: val, tMax: Infinity };
+                else if (op === '<=' || op === '<') tBounds = { tMin: -Infinity, tMax: val };
             }
 
             const condition = (x: number, y: number, scope: any, t?: number) => {
                 const targetVal = targetVar === 'x' ? x : (targetVar === 'y' ? y : ((targetVar === 't' || targetVar === 'theta') ? (t ?? 0) : (scope[targetVar] ?? 0)));
-                const bVal = boundF(0, 0, scope);
+                const bVal = isBoundInf ? infBoundVal! : boundF(0, 0, scope);
+                if (op === '>=') return targetVal >= bVal;
+                if (op === '>') return targetVal > bVal;
+                if (op === '<=') return targetVal <= bVal;
+                if (op === '<') return targetVal < bVal;
+                if (op === '==' || op === '=') return Math.abs(targetVal - bVal) < 1e-4;
+                return true;
+            };
+
+            return { condition, tBounds };
+        }
+    }
+
+    // 3. Desigualdade simples invertida: bound <= var ou bound >= var (ex: 0 <= t, -5 <= t)
+    const invSingleMatch = cleanCond.match(/^(.+?)\s*(<=|>=|<|>|==|=)\s*([a-zA-Z_])$/);
+    if (invSingleMatch) {
+        const boundStr = invSingleMatch[1].trim();
+        const rawOp = invSingleMatch[2];
+        const targetVar = invSingleMatch[3];
+        // Inverte o operador: bound <= var  =>  var >= bound
+        const op = rawOp === '<=' ? '>=' : (rawOp === '<' ? '>' : (rawOp === '>=' ? '<=' : (rawOp === '>' ? '<' : rawOp)));
+        const isBoundInf = boundStr.includes('infinity');
+        const infBoundVal = isBoundInf ? (boundStr.startsWith('-') ? -Infinity : Infinity) : null;
+
+        let boundAst: any = null;
+        try {
+            if (!isBoundInf) boundAst = new PrattParser(boundStr).parseExpression();
+        } catch(e) {}
+
+        if (boundAst !== null || isBoundInf) {
+            const boundF = boundAst !== null ? MathEngine.compile(boundAst) : () => infBoundVal!;
+
+            let tBounds: { tMin: number, tMax: number } | undefined = undefined;
+            if (targetVar === 't' || targetVar === 'theta') {
+                const val = isBoundInf ? infBoundVal! : boundF(0, 0, StateManager.values);
+                if (op === '>=' || op === '>') tBounds = { tMin: val, tMax: Infinity };
+                else if (op === '<=' || op === '<') tBounds = { tMin: -Infinity, tMax: val };
+            }
+
+            const condition = (x: number, y: number, scope: any, t?: number) => {
+                const targetVal = targetVar === 'x' ? x : (targetVar === 'y' ? y : ((targetVar === 't' || targetVar === 'theta') ? (t ?? 0) : (scope[targetVar] ?? 0)));
+                const bVal = isBoundInf ? infBoundVal! : boundF(0, 0, scope);
                 if (op === '>=') return targetVal >= bVal;
                 if (op === '>') return targetVal > bVal;
                 if (op === '<=') return targetVal <= bVal;
@@ -454,23 +502,24 @@ function compileAllExpressions() {
         // SANITIZAÇÃO: O Triturador de Sujeira do MathLive
         // =========================================================
         let cleanStr = ascii
+            .replace(/\\left\./g, '')
+            .replace(/\\right\./g, '')
             .replace(/\\left/g, '')
             .replace(/\\right/g, '')
-            .replace(/\\cdot/g, '*')
-            .replace(/\\times/g, '*')
-            .replace(/\\ast/g, '*')
+            .replace(/\s*\\cdot\s*/g, '*')
+            .replace(/\s*\\times\s*/g, '*')
+            .replace(/\s*\\ast\s*/g, '*')
             .replace(/∗/g, '*')
             .replace(/⋅/g, '*')
             .replace(/×/g, '*')
             .replace(/"/g, '');
 
-        // Consertar letras espaçadas geradas quando o utilizador escreve manualmente no teclado
+        // Consertar letras espaçadas geradas quando o utilizador escreve manualmente no teclado (ordenadas por tamanho decrescente)
         const spacedFuncs = [
-            's i n', 'c o s', 't a n', 's i n h', 'c o s h', 't a n h', 's e c', 'c s c', 'c o s s e c', 'c o t', 'c o t a n', 
-            'a r c s i n', 'a r c c o s', 'a r c t a n', 'l o g', 'l n', 'e x p',
-            'r r e f', 'd e t', 't r a c e', 't r', 'r a n k', 't r a n', 't r a n s p o s e',
-            'i n v', 'i n v e r t', 'd e t e r m i n a n t', 'm a t r i x r a n k', 
-            'r e d u c e d r o w e c h e l o n f o r m'
+            'r e d u c e d r o w e c h e l o n f o r m', 'd e t e r m i n a n t', 'm a t r i x r a n k',
+            't r a n s p o s e', 'a r c s i n', 'a r c c o s', 'a r c t a n', 's i n h', 'c o s h', 't a n h',
+            'c o s s e c', 'c o t a n', 't r a n', 't r a c e', 'i n v e r t', 'r r e f', 'r a n k',
+            's i n', 'c o s', 't a n', 's e c', 'c s c', 'c o t', 'l o g', 'l n', 'e x p', 'd e t', 'i n v', 't r'
         ];
         spacedFuncs.forEach(func => {
             const regex = new RegExp(func.split('').join('\\s*'), 'gi');
@@ -487,13 +536,15 @@ function compileAllExpressions() {
         cleanStr = cleanStr.replace(/([a-zA-Z_][a-zA-Z0-9_]*)_[\{\(]([a-zA-Z0-9_]+)[\}\)]\s*(?=\()/g, '$1_$2');
         cleanStr = cleanStr.replace(/([a-zA-Z_][a-zA-Z0-9_]*)_([a-zA-Z0-9_]+)\s*(?=\()/g, '$1_$2');
 
-        // Indexação de matrizes e listas (MathLive subscript para Giac 0-indexed)
-        cleanStr = cleanStr.replace(/(?<!\\)\b([a-zA-Z_][a-zA-Z0-9_]*)_\(([0-9]+),([0-9]+)\)/g, (_match, p1, p2, p3) => {
-            return `${p1}[${parseInt(p2)-1},${parseInt(p3)-1}]`;
+        // Normalização de subscript do MathLive para sintaxe universal de colchetes A[r, c] e A[i]
+        cleanStr = cleanStr.replace(/(?<!\\)\b([a-zA-Z_][a-zA-Z0-9_]*)_[\(\{]\s*([0-9]+)\s*,\s*([0-9]+)\s*[\)\}]/g, '$1[$2, $3]');
+        cleanStr = cleanStr.replace(/(?<!\\)\b([a-zA-Z_][a-zA-Z0-9_]*)_\{([0-9]+)\}/g, (match, p1, p2) => {
+            if (['f', 'g', 'h', 'c', 'C', 'y', 'x', 'z', 't', 'int', 'defint', 'sum', 'prod', 'lim', 'limit', 'diff', 'log', 'ln', 'min', 'max'].includes(p1.toLowerCase())) return match;
+            return `${p1}[${p2}]`;
         });
         cleanStr = cleanStr.replace(/(?<!\\)\b([a-zA-Z_][a-zA-Z0-9_]*)_([0-9]+)\b/g, (match, p1, p2) => {
-            if (['f', 'g', 'h', 'c', 'C', 'y', 'x', 'z', 't', 'u', 'v', 'w', 'int', 'defint', 'sum', 'prod', 'lim', 'limit', 'diff', 'log', 'ln', 'min', 'max'].includes(p1.toLowerCase())) return match;
-            return `${p1}[${parseInt(p2)-1}]`;
+            if (['f', 'g', 'h', 'c', 'C', 'y', 'x', 'z', 't', 'int', 'defint', 'sum', 'prod', 'lim', 'limit', 'diff', 'log', 'ln', 'min', 'max'].includes(p1.toLowerCase())) return match;
+            return `${p1}[${p2}]`;
         }).replace(/²/g, '^2').replace(/³/g, '^3');
         
         // Normalização universal de plicas (derivadas): suporta apóstrofo ('), unicode prime (′), acento agudo (´), etc.
@@ -526,7 +577,7 @@ function compileAllExpressions() {
         cleanStr = cleanStr.replace(/([\^_](?:\{[^}]+\}|\([^)]+\)|[0-9.]+))\s*([a-zA-Z_])/g, '$1 $2');
 
         // Multiplicação escalar implícita para matrizes e variáveis: 2B -> 2*B, MAS NÃO em limites _2 ou ^2
-        cleanStr = cleanStr.replace(/(?<![\^_])(\d+(?:\.\d+)?)\s*([A-Za-z_][A-Za-z0-9_]*)/g, '$1*$2');
+        cleanStr = cleanStr.replace(/(?<![\^_]\s*)(\d+(?:\.\d+)?)\s*([A-Za-z_][A-Za-z0-9_]*)/g, '$1*$2');
 
         // Raiz enésima \sqrt[n]{x} -> nthroot(x, n) e AsciiMath root(n)(x) -> nthroot(x, n)
         cleanStr = cleanStr
@@ -539,10 +590,16 @@ function compileAllExpressions() {
         // Converter d/dx(expr), \frac{d}{dx}(expr), frac(d)(dx)(expr), d/dx expr, \frac{d}{dx} expr, \frac{d}{dx}x para diff(expr, x) ANTES de normalizar frações
         cleanStr = normalizeDerivative(cleanStr);
 
-        // Normalização de frações (LaTeX \frac{a}{b} e AsciiMath frac(a)(b))
-        cleanStr = cleanStr
-            .replace(/frac\s*\(([^)]+)\)\s*\(([^)]+)\)/g, '(($1)/($2))')
-            .replace(/\\frac\s*\{([^}]+)\}\s*\{([^}]+)\}/g, '(($1)/($2))');
+        // Normalização de frações (LaTeX \frac{a}{b} e AsciiMath frac(a)(b)) com loop iterativo para aninhadas
+        let fracPasses = 0;
+        let prevFrac = '';
+        while (prevFrac !== cleanStr && fracPasses < 10) {
+            prevFrac = cleanStr;
+            cleanStr = cleanStr
+                .replace(/\\frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}/g, '(($1)/($2))')
+                .replace(/frac\s*\(([^()]+)\)\s*\(([^()]+)\)/g, '(($1)/($2))');
+            fracPasses++;
+        }
 
         // Normalização universal de diferenciais e integrais (LaTeX e MathLive)
         cleanStr = cleanStr
@@ -552,7 +609,7 @@ function compileAllExpressions() {
             .replace(/\\,/g, ' ')
             .replace(/\\!/g, ' ');
 
-        cleanStr = cleanStr.replace(/(?:(?<=\W)|\b|(?<=[a-zA-Z0-9_\)\}\]]))d\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*$/i, ' d $1');
+        cleanStr = cleanStr.replace(/(?<=[a-zA-Z0-9_\)\}\]])\s*d\s*([a-zA-Z_])(?=\s*(?:[+\-*/=,\)\}\]]|$))/gi, ' d $1');
 
         // 1. Integral definida (defint / \int_a^b): \int_0^2 x dx ou \int_{0}^{2} x dx ou \int^2_0 x dx ou int _1^2 x dx
         // Processa do integrando mais interno para o mais externo para suportar integrais múltiplas e compostas
@@ -657,12 +714,23 @@ function compileAllExpressions() {
         }
 
         if (ast && MathEngine.isGiacCommand(ast)) {
+            const matrixOnlyCmdsEarly = new Set(['det', 'determinant', 'rref', 'reducedrowechelonform', 'trace', 'tr', 'matrixrank', 'rank', 'invert', 'inv', 'transpose', 'tran', 'eigenvalues', 'eigenvals', 'eigenvectors', 'eigenvects', 'ludecomposition', 'jordandiagonalization', 'index']);
+            if (matrixOnlyCmdsEarly.has(ast[0].toLowerCase())) {
+                const targetName = typeof ast[1] === 'string' ? ast[1].replace(/[\{\}\\]/g, '') : '';
+                if (targetName && !definedMatrixNames.has(targetName)) {
+                    ExpressionManager.setError(item.id, `Erro: Matriz "${targetName}" não definida`);
+                    ExpressionManager.setResult(item.id, '- Erro no cálculo');
+                    ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                    return;
+                }
+            }
+
             ExpressionManager.setSliderSuggestions(item.id, [], () => {});
             const expandedAst = MathEngine.expandUserFunctions(ast);
             const giacQuery = MathEngine.formatForGiac(expandedAst);
             StateManager.activeGiacQuery[item.id] = giacQuery;
             let cached: any = StateManager.casSolutions[item.id];
-            if (cached && (cached.result.includes('pnt') || cached.result.includes('point[') || cached.result.includes('536870912') || cached.result.includes('Erro'))) {
+            if (cached && (cached.result.includes('pnt') || cached.result.includes('point[') || cached.result.includes('point(') || cached.result.includes('536870912') || cached.result.includes('Erro'))) {
                 delete StateManager.casSolutions[item.id];
                 cached = undefined;
             }
@@ -684,21 +752,25 @@ function compileAllExpressions() {
             }
 
             const formatCasDisplay = (rawRes: string): string => {
-                if (rawRes.includes('Erro') || rawRes.includes('pnt') || rawRes.includes('536870912')) {
+                if (rawRes.includes('Erro') || rawRes.includes('pnt') || rawRes.includes('point[') || rawRes.includes('point(') || rawRes.includes('536870912')) {
                     if (numIntegralVal !== null) {
                         return `= ${parseFloat(numIntegralVal.toFixed(6))}`;
                     }
                     return '- Erro no cálculo';
                 }
+                let cleanRes = rawRes;
+                if (isDefiniteInt && cleanRes.includes('=')) {
+                    cleanRes = cleanRes.split('=')[0].trim();
+                }
                 if (isDefiniteInt) {
-                    return `= ${rawRes}`;
+                    return `= ${cleanRes}`;
                 }
                 if (isIntegralCmd) {
-                    if (!/[+\-]\s*c\b/i.test(rawRes)) {
-                        return `= ${rawRes} + C`;
+                    if (!/[+\-]\s*c\b/i.test(cleanRes)) {
+                        return `= ${cleanRes} + C`;
                     }
                 }
-                return `= ${rawRes}`;
+                return `= ${cleanRes}`;
             };
 
             const updateSlidersForGiac = () => {
@@ -1027,15 +1099,16 @@ function compileAllExpressions() {
                     else if (cmdName === 'limitbelow') giacCommand = `limit(${giacArgs}, -1)`;
                     else if (cmdName === 'taylor' || cmdName === 'taylorpolynomial') {
                         const args = giacArgs.split(',').map(s => s.trim());
-                        if (args.length === 1) giacCommand = `taylor(${args[0]}, x, 0, 4)`;
-                        else if (args.length === 2) giacCommand = `taylor(${args[0]}, ${args[1]}, 0, 4)`;
+                        if (args.length === 1) giacCommand = `taylor(${args[0]}, x=0, 4)`;
+                        else if (args.length === 2) giacCommand = `taylor(${args[0]}, ${args[1]}=0, 4)`;
+                        else if (args.length === 4) giacCommand = `taylor(${args[0]}, ${args[1]}=${args[2]}, ${args[3]})`;
                         else giacCommand = `taylor(${giacArgs})`;
                     }
                     else if (cmdName === 'completesquare') giacCommand = `canonical_form(${giacArgs})`;
                     else if (cmdName === 'nsolve' || cmdName === 'nsolutions') giacCommand = `fsolve(${giacArgs})`;
                     else if (cmdName === 'solutions') giacCommand = `solve(${giacArgs})`;
-                    else if (cmdName === 'cross') giacCommand = `cross_point(${giacArgs})`; 
-                    else if (cmdName === 'dot') giacCommand = `dot_product(${giacArgs})`;
+                    else if (cmdName === 'cross') giacCommand = `cross(${giacArgs})`; 
+                    else if (cmdName === 'dot') giacCommand = `dot(${giacArgs})`;
                     else if (cmdName === 'primefactors') giacCommand = `ifactors(${giacArgs})`;
                     else if (cmdName === 'matrixrank' || cmdName === 'rank') giacCommand = `rank(${giacArgs})`;
                     else if (cmdName === 'reducedrowechelonform' || cmdName === 'rref') giacCommand = `rref(${giacArgs})`;
@@ -1051,19 +1124,23 @@ function compileAllExpressions() {
                     else if (cmdName === 'minimalpolynomial') giacCommand = `pmin(${giacArgs})`;
                     else if (cmdName === 'dimension') giacCommand = `dim(${giacArgs})`;
                     else if (cmdName === 'length' || cmdName === 'size') {
-                        const listArg = (!giacArgs.trim().startsWith('[') && !definedMatrixNames.has(giacArgs.trim())) ? `[${giacArgs}]` : giacArgs;
+                        const isIdent = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(giacArgs.replace(/^usr_/, '').trim());
+                        const listArg = (!giacArgs.trim().startsWith('[') && !definedMatrixNames.has(giacArgs.trim()) && !isIdent) ? `[${giacArgs}]` : giacArgs;
                         giacCommand = `size(${listArg})`;
                     }
                     else if (cmdName === 'mean' || cmdName === 'median') {
-                        const listArg = !giacArgs.trim().startsWith('[') ? `[${giacArgs}]` : giacArgs;
+                        const isIdent = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(giacArgs.replace(/^usr_/, '').trim());
+                        const listArg = (!giacArgs.trim().startsWith('[') && !isIdent) ? `[${giacArgs}]` : giacArgs;
                         giacCommand = `${cmdName}(${listArg})`;
                     }
                     else if (cmdName === 'stdev' || cmdName === 'stddev' || cmdName === 'samplesd') {
-                        const listArg = !giacArgs.trim().startsWith('[') ? `[${giacArgs}]` : giacArgs;
+                        const isIdent = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(giacArgs.replace(/^usr_/, '').trim());
+                        const listArg = (!giacArgs.trim().startsWith('[') && !isIdent) ? `[${giacArgs}]` : giacArgs;
                         giacCommand = `stddev(${listArg})`;
                     }
                     else if (cmdName === 'var' || cmdName === 'variance' || cmdName === 'samplevariance') {
-                        const listArg = !giacArgs.trim().startsWith('[') ? `[${giacArgs}]` : giacArgs;
+                        const isIdent = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(giacArgs.replace(/^usr_/, '').trim());
+                        const listArg = (!giacArgs.trim().startsWith('[') && !isIdent) ? `[${giacArgs}]` : giacArgs;
                         giacCommand = `variance(${listArg})`;
                     }
                     else if (cmdName === 'sum') giacCommand = `sum(${giacArgs})`;
@@ -1623,12 +1700,18 @@ function compileAllExpressions() {
                 const varsX = StateManager.extractVariables(ast[1]);
                 const varsY = StateManager.extractVariables(ast[2]);
                 const varsZ = is3D ? StateManager.extractVariables(ast[3]) : [];
-                const isParametric = varsX.includes('t') || varsY.includes('t') || varsZ.includes('t');
+                const allVars = [...varsX, ...varsY, ...varsZ];
+                const isParametric = allVars.includes('t') || allVars.includes('theta') || allVars.includes('u');
+                const paramVar = (allVars.includes('theta')) ? 'theta' : (allVars.includes('u') ? 'u' : 't');
 
                 if (isParametric) {
                     const hasTrig = JSON.stringify(ast).toLowerCase().includes('sin') || JSON.stringify(ast).toLowerCase().includes('cos');
-                    const tMin = explicitTBounds?.tMin ?? (hasTrig ? 0 : -10);
-                    const tMax = explicitTBounds?.tMax ?? (hasTrig ? 2 * Math.PI : 10);
+                    let tMin = explicitTBounds?.tMin ?? (hasTrig ? 0 : -10);
+                    let tMax = explicitTBounds?.tMax ?? (hasTrig ? 2 * Math.PI : 10);
+                    const rawTMin = explicitTBounds?.tMin;
+                    const rawTMax = explicitTBounds?.tMax;
+                    if (tMin === -Infinity) tMin = -100;
+                    if (tMax === Infinity) tMax = 100;
 
                     validEquations.push({
                         color: item.color,
@@ -1643,12 +1726,25 @@ function compileAllExpressions() {
                         astZ: is3D ? ast[3] : undefined,
                         tMin,
                         tMax,
-                        paramVar: 't',
+                        paramVar,
                         condition: conditionFn,
                         operator: '=',
                         isHidden: !item.visible
                     });
-                    ExpressionManager.setResult(item.id, `Curva Paramétrica ${is3D ? '3D ' : ''}(t ∈ [${parseFloat(tMin.toFixed(2))}, ${parseFloat(tMax.toFixed(2))}])`);
+                    const dispMin = rawTMin === -Infinity ? '-∞' : parseFloat(tMin.toFixed(2));
+                    const dispMax = rawTMax === Infinity ? '∞' : parseFloat(tMax.toFixed(2));
+                    ExpressionManager.setResult(item.id, `Curva Paramétrica ${is3D ? '3D ' : ''}(${paramVar} ∈ [${dispMin}, ${dispMax}])`);
+
+                    // Sugestões de sliders para variáveis livres (ex: a, b em (a*cos(t), b*sin(t)))
+                    const freeParams = getFreeVariables(ast, [paramVar, 'x', 'y', 'z', 'd', 'pi', 'e']);
+                    if (freeParams.length > 0) {
+                        ExpressionManager.setSliderSuggestions(item.id, freeParams, (varName) => {
+                            StateManager.updateSlider(varName, 1);
+                            markExpressionsDirty();
+                        });
+                    } else {
+                        ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                    }
                     return;
                 } else {
                     const evalX = MathEngine.compile(ast[1])(0, 0, StateManager.values);
@@ -2081,6 +2177,15 @@ function drawFrame() {
 
         } else if (item.isImplicit) {
             glRenderer.drawImplicit(item.ast, item.operator, StateManager.values, color);
+            // Marching Squares para popular renderMemory_segments quando for igualdade '=' (hover e snapping de pontos)
+            if (item.operator === '=') {
+                const marchRes = ImplicitEngine.generateImplicit(item.id, item.ast, item.operator, StateManager.values, Camera.xMin, Camera.xMax, Camera.yMin, Camera.yMax);
+                if (marchRes && marchRes.segments) {
+                    for (const seg of marchRes.segments) {
+                        renderMemory_segments.push({ x1: seg.x1, y1: seg.y1, x2: seg.x2, y2: seg.y2, color });
+                    }
+                }
+            }
 
         } else if (Array.isArray(item.ast) && item.ast[0] === 'Integrate' && !isNaN(MathEngine.evaluateAST(item.ast[3], StateManager.values)) && !isNaN(MathEngine.evaluateAST(item.ast[4], StateManager.values))) {
             const funcAst = item.ast[1]; const minAst = item.ast[3]; const maxAst = item.ast[4];

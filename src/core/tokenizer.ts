@@ -17,8 +17,9 @@ const TokenSpec: Array<[RegExp, string | null]> = [
     [/^\\?[a-zA-Z][a-zA-Z0-9]*_(?:\{[a-zA-Z0-9]+\}|\([a-zA-Z0-9]+\)|[a-zA-Z0-9]+)/, TokenTypes.IDENTIFIER],
     [/^_/, TokenTypes.UNDERSCORE],
     [/^\bd\b/, TokenTypes.DIFFERENTIAL],
-    [/^\\?[a-zA-Z_][a-zA-Z0-9_\{\}]*/, TokenTypes.IDENTIFIER],
-    [/^(?:\d+(?:\.\d*)?|\.\d+)/, TokenTypes.NUMBER],
+    [/^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?/, TokenTypes.NUMBER],
+    [/^\\?[a-zA-Z_][a-zA-Z0-9_]*'+/, TokenTypes.IDENTIFIER],
+    [/^\\?[a-zA-Z_][a-zA-Z0-9_]*/, TokenTypes.IDENTIFIER],
     [/^\+/, TokenTypes.ADDITION],
     [/^\-/, TokenTypes.SUBTRACTION],
     [/^\*/, TokenTypes.MULTIPLICATION],
@@ -44,6 +45,9 @@ export class Tokenizer {
 
     init(str: string) {
         let processed = str.trim()
+            .replace(/π/g, 'pi')
+            .replace(/θ/g, 'theta')
+            .replace(/√\s*([a-zA-Z0-9_\(])/g, 'sqrt($1)')
             .replace(/(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD)\s*([a-zA-Z_][a-zA-Z0-9_]*)/gi, ' d $1')
             .replace(/(?:(?<=\W)|\b|(?<=[a-zA-Z0-9_\)\}\]]))d\s*([a-zA-Z_][a-zA-Z0-9_]*)(?=\s*[+\-*\/,;\)\]]|\s*d\s*[a-zA-Z_]|\s*$)/gi, ' d $1');
         
@@ -52,22 +56,65 @@ export class Tokenizer {
         processed = processed.replace(/\)\s*\(/g, ')*(');
         // 2. (x+1)x ou (x+1)2 -> (x+1)*x ou (x+1)*2 (MAS NÃO antes de diferencial d x, dt, dx, etc.)
         processed = processed.replace(/\)\s*(?!d\s+[a-zA-Z_]|d[a-zA-Z_]\b)([a-zA-Z0-9])/g, ')*$1');
-        // 3. 2(x+1) -> 2*(x+1) (MAS NÃO em limites de integral ^1( ou _0()
-        processed = processed.replace(/(?<![\^_])(\d)\s*\(/g, '$1*(');
-        // 4. 2x, 2y, 2z, etc. -> 2*x, 2*y, 2*z
-        processed = processed.replace(/(\d)\s*([a-zA-Z])/g, '$1*$2');
+        // 3. 2(x+1) -> 2*(x+1) (MAS NÃO em f2(x) nem em limites ^1( ou _0()
+        processed = processed.replace(/(?<![\^_a-zA-Z])(\d)\s*\(/g, '$1*(');
+        // 4. 2x, 2y, 2z, etc. (evitando quebrar notação científica 2e-5)
+        processed = processed.replace(/(\d)\s*(?!e[+-]?\d)([a-zA-Z])/gi, '$1*$2');
         // 5. x(...), y(...), z(...), t(...) -> x*(...), y*(...), z*(...)
         processed = processed.replace(/(^|[^a-zA-Z_])([xyzt])\s*\(/g, '$1$2*(');
-        // 6. Multiplicação implícita entre variáveis quaisquer: xy, xz, yz, zx, zy, yx, etc. (incluindo espaços: x z, y z)
+        // 6. Exponenciação com chaves seguida de identificador, parênteses ou função: x^{2}y, x^{2}(x+1)
+        processed = processed.replace(/\}\s*(?=[a-zA-Z0-9_\(\\|])/g, '}*');
+        // 7. Potências numéricas soltas: x^2(x+1)
+        processed = processed.replace(/(\^[0-9]+)\s*\(/g, '$1*(');
+        // 8. Módulos matemáticos (|...|) com multiplicação implícita inteligente
+        let pipeOpen = false;
+        let pipeAdjusted = '';
+        for (let i = 0; i < processed.length; i++) {
+            const ch = processed[i];
+            if (ch === '|') {
+                if (!pipeOpen) {
+                    // Pipe de abertura: se precedido por operando não-espaço, insere '*' antes dele (ex: 2|x| -> 2*|x|, (x)|y| -> (x)*|y|)
+                    let prevNonSpace = '';
+                    for (let j = pipeAdjusted.length - 1; j >= 0; j--) {
+                        if (pipeAdjusted[j] !== ' ') { prevNonSpace = pipeAdjusted[j]; break; }
+                    }
+                    if (prevNonSpace && /[0-9a-zA-Z_\)\}\]]/.test(prevNonSpace)) {
+                        pipeAdjusted += '*';
+                    }
+                    pipeAdjusted += '|';
+                    pipeOpen = true;
+                } else {
+                    // Pipe de fechamento: após ele, se seguido por operando, insere '*' (ex: |x|2 -> |x|*2, |x|y -> |x|*y, |x|(y) -> |x|*(y))
+                    pipeAdjusted += '|';
+                    pipeOpen = false;
+                    let nextNonSpace = '';
+                    for (let j = i + 1; j < processed.length; j++) {
+                        if (processed[j] !== ' ') { nextNonSpace = processed[j]; break; }
+                    }
+                    if (nextNonSpace && /[0-9a-zA-Z_\(\{]/.test(nextNonSpace)) {
+                        pipeAdjusted += '*';
+                    }
+                }
+            } else {
+                pipeAdjusted += ch;
+            }
+        }
+        processed = pipeAdjusted;
+
+        // 9. Multiplicação implícita entre variáveis quaisquer: xy, xz, yz, zx, zy, yx, etc. (incluindo espaços: x z, y z)
         let prev = '';
         while (prev !== processed) {
             prev = processed;
             processed = processed.replace(/(^|[^a-zA-Z_])([xyzt])\s*([xyzt])(?![a-zA-Z_])/g, '$1$2*$3');
         }
-        // 7. Multiplicação implícita entre x/y/z/t e funções (ex: x sin(y) ou z cos(x) -> x*sin(y))
-        processed = processed.replace(/(^|[^a-zA-Z_])([xyzt])\s*\\?(sin|cos|tan|sinh|cosh|tanh|asin|acos|atan|asinh|acosh|atanh|log|ln|exp|abs|sqrt|cbrt|nthroot|sec|csc|cot)(?![a-zA-Z_])/g, '$1$2*$3');
-        // 8. \pi x ou \pi(x) -> \pi*x ou \pi*(x)
-        processed = processed.replace(/(\\pi|π)\s*([a-zA-Z0-9\(])/g, '$1*$2');
+        // 10. Multiplicação implícita com coordenadas x, y, z, t: x sin(x), xsin(x)
+        processed = processed.replace(/(^|[^a-zA-Z_])([xyzt])\s*\\?(asinh|acosh|atanh|asin|acos|atan|sinh|cosh|tanh|cbrt|nthroot|sqrt|sec|csc|cot|sin|cos|tan|log|ln|exp|abs)(?![a-zA-Z_])/g, '$1$2*$3');
+        // Letras genéricas/sliders exigem espaço antes de função (ex: a sin(x), a asinh(x)), evitando quebrar asin(x), asinh(x), acos(x), atan(x)
+        processed = processed.replace(/(^|[^a-zA-Z_])([a-zA-Z])\s+\\?(asinh|acosh|atanh|asin|acos|atan|sinh|cosh|tanh|cbrt|nthroot|sqrt|sec|csc|cot|sin|cos|tan|log|ln|exp|abs)(?![a-zA-Z_])/g, '$1$2*$3');
+        // Letras separadas por espaço: MAS NUNCA quando envolver diferencial d (ex: x dx ou d x ou dt)
+        processed = processed.replace(/(^|[^a-zA-Z_])(?![dD]\s+[a-zA-Z_])([a-zA-Z])\s+(?![dD]\s+[a-zA-Z_])([a-zA-Z])(?![a-zA-Z_])/g, '$1$2*$3');
+        // 11. \pi x ou \pi(x) -> \pi*x ou \pi*(x)
+        processed = processed.replace(/(\\pi|pi)\s*([a-zA-Z0-9\(])/g, '$1*$2');
 
         this.string = processed;
         this.cursor = 0;

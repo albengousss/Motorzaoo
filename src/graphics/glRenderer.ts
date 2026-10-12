@@ -101,6 +101,16 @@ export class GLRenderer {
             if (op === 'Sin') return `sin(${L})`;
             if (op === 'Cos') return `cos(${L})`;
             if (op === 'Tan') return `tan(${L})`;
+            if (op === 'Sinh') return `sinh(${L})`;
+            if (op === 'Cosh') return `cosh(${L})`;
+            if (op === 'Tanh') return `tanh(${L})`;
+            if (op === 'Asin') return `asin(clamp(${L}, -1.0, 1.0))`;
+            if (op === 'Acos') return `acos(clamp(${L}, -1.0, 1.0))`;
+            if (op === 'Atan') return node.length > 2 ? `atan(${L}, ${R})` : `atan(${L})`;
+            if (op === 'Sec') return `(1.0 / cos(${L}))`;
+            if (op === 'Csc') return `(1.0 / sin(${L}))`;
+            if (op === 'Cot') return `(1.0 / tan(${L}))`;
+            if (op === 'Cbrt') return `(pow(abs(${L}) + 1e-9, 1.0 / 3.0) * (${L} < 0.0 ? -1.0 : 1.0))`;
             if (op === 'Sqrt') return `sqrt(max(0.0, ${L}))`;
             if (op === 'Exp') return `exp(${L})`;
             if (op === 'Log') return `log(max(1e-8, ${L}))`;

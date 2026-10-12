@@ -374,8 +374,8 @@ export class Renderer {
         let levantarPincel = true;
 
         for (let i = 0; i < points.length; i++) {
-            // Se o motor mandou um NaN, é uma assíntota! Levantamos o pincel.
-            if (isNaN(points[i].y)) {
+            // Se o ponto contiver NaN ou Infinity, levantamos o pincel.
+            if (isNaN(points[i].y) || isNaN(points[i].x) || !isFinite(points[i].x) || !isFinite(points[i].y)) {
                 levantarPincel = true;
                 continue;
             }

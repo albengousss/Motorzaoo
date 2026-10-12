@@ -106,13 +106,13 @@ export class MathEngine {
     }
     
     static readonly GIAC_COMMANDS = [
-        'limit', 'lim', 'int', 'integrate', 'defint', 'diff', 'desolve', 'applymatrix', 'characteristicpolynomial', 
+        'limit', 'lim', 'int', 'integrate', 'defint', 'diff', 'applymatrix', 'characteristicpolynomial', 
         'determinant', 'det', 'eigenvalues', 'eigenvals', 'eigenvectors', 'eigenvects', 'identity', 'invert', 'inv',
         'jordandiagonalization', 'matrixrank', 'rank', 'qrdecomposition', 
         'reducedrowechelonform', 'rref', 'svd', 'transpose', 'tran', 'trace', 'tr', 'cross', 'dot',
         'taylor', 'taylorpolynomial', 'sum', 'product', 'prod',
         'mean', 'median', 'stdev', 'stddev', 'var', 'variance', 'samplesd', 'samplevariance', 'length', 'size',
-        'desolve', 'solveode', 'edo', 'nsolveode', 'campo', 'slopefield'
+        'desolve', 'solveode', 'edo', 'nsolveode', 'campo', 'slopefield', 'laplace', 'inverselaplace', 'index'
     ];
 
     static isGiacCommand(ast: any): boolean {
@@ -169,11 +169,31 @@ export class MathEngine {
                 const target = this.formatForGiac(ast[3]);
                 return `limit(${expr}, ${variable}, ${target})`;
             }
+            if (op === 'Index') {
+                const target = this.formatForGiac(ast[1]);
+                const indices = ast.slice(2).map((idxNode: any) => {
+                    if (typeof idxNode === 'number') {
+                        return (idxNode - 1).toString();
+                    }
+                    const formatted = this.formatForGiac(idxNode);
+                    if (/^\d+$/.test(formatted)) {
+                        return (parseInt(formatted) - 1).toString();
+                    }
+                    return `(${formatted} - 1)`;
+                });
+                return `${target}${indices.map((idx: string) => `[${idx}]`).join('')}`;
+            }
+            const opLower = op.toLowerCase();
+            if (opLower === 'taylor' || opLower === 'taylorpolynomial') {
+                const args = ast.slice(1);
+                if (args.length >= 4) {
+                    return `taylor(${this.formatForGiac(args[0])}, ${this.formatForGiac(args[1])}=${this.formatForGiac(args[2])}, ${this.formatForGiac(args[3])})`;
+                }
+            }
             // Function call: se for função do utilizador registrada no Giac, prefixa com usr_
             if (this.userFunctions[op]) {
                 return `usr_${op}(${ast.slice(1).map((x: any) => this.formatForGiac(x)).join(', ')})`;
             }
-            const opLower = op.toLowerCase();
             let giacOp = opLower;
             if (opLower === 'reducedrowechelonform') giacOp = 'rref';
             else if (opLower === 'matrixrank') giacOp = 'rank';
@@ -433,7 +453,8 @@ export class MathEngine {
      * Expande chamadas a funções de utilizador (ex: f(x, y)) de volta para a sua expressão analítica
      * permitindo que o WebGL renderize curvas implícitas f(x, y) = 0 diretamente na GPU.
      */
-    static expandUserFunctions(ast: any): any {
+    static expandUserFunctions(ast: any, depth: number = 0): any {
+        if (depth > 12) return ast;
         if (typeof ast === 'string' || typeof ast === 'number') return ast;
         if (Array.isArray(ast)) {
             const op = ast[0];
@@ -442,11 +463,12 @@ export class MathEngine {
                 const mapping: Record<string, any> = {};
                 for (let i = 0; i < def.params.length; i++) {
                     const p = def.params[i];
-                    mapping[p] = this.expandUserFunctions(ast[i + 1] ?? p);
+                    mapping[p] = this.expandUserFunctions(ast[i + 1] ?? p, depth + 1);
                 }
-                return this.substituteAST(def.ast, mapping);
+                const substituted = this.substituteAST(def.ast, mapping);
+                return this.expandUserFunctions(substituted, depth + 1);
             }
-            return [op, ...ast.slice(1).map(child => this.expandUserFunctions(child))];
+            return [op, ...ast.slice(1).map(child => this.expandUserFunctions(child, depth))];
         }
         return ast;
     }

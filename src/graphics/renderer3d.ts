@@ -569,6 +569,7 @@ export class Renderer3D {
         for (let i = 0; i <= steps; i++) {
             const t = t0 + (t1 - t0) * (i / steps);
             const pt = surf.parametric(t, scope);
+            if (!isFinite(pt[0]) || !isFinite(pt[1]) || !isFinite(pt[2])) continue;
             curveData.push(pt[0], pt[1], pt[2], rgb[0], rgb[1], rgb[2], 1.0);
         }
 

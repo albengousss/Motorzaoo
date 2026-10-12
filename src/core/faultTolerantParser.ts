@@ -192,17 +192,24 @@ export class FaultTolerantParser {
             }
         }
 
+        // Índices mudos de somatórios e produtórios (\sum_{n=1}^{10}, \prod_{i=1}^5)
+        const sumProdMatches = cleaned.matchAll(/(?:\\sum|\\prod|\bsum\b|\bprod\b)\s*_\s*\{?\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*=/gi);
+        for (const spm of sumProdMatches) {
+            if (spm[1]) boundSet.add(spm[1]);
+        }
 
-        // Remove fragmentos de operadores diferenciais
-        cleaned = cleaned
-            .replace(/\\frac\{\s*(?:\\mathrm\{d\}|d)\s*\}\{\s*(?:\\mathrm\{d\}|d)([a-zA-Z_][a-zA-Z0-9_]*)\s*\}/gi, ' ')
-            .replace(/(?:^|[^a-zA-Z0-9_])\(?\s*d\s*\)?\s*\/\s*\(?\s*d(?:[a-zA-Z_][a-zA-Z0-9_]*)?\s*\)?/gi, ' ')
-            .replace(/\bd\/d(?:[a-zA-Z_][a-zA-Z0-9_]*)?\b/gi, ' ')
-            .replace(/\bddx\b/gi, ' ')
-            .replace(/\\differentialD/gi, ' ')
-            .replace(/\\mathrm\{d\}/gi, ' ')
-            .replace(/\\text\{d\}/gi, ' ')
-            .replace(/\\partial/gi, ' ');
+        // Preserva letras gregas matemáticas antes da remoção geral de LaTeX
+        const greekLetters = ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta', 'eta', 'theta', 'iota', 'kappa', 'lambda', 'mu', 'nu', 'xi', 'rho', 'sigma', 'tau', 'upsilon', 'phi', 'chi', 'psi', 'omega'];
+        greekLetters.forEach(g => {
+            const reg = new RegExp(`\\\\${g}\\b`, 'gi');
+            cleaned = cleaned.replace(reg, g);
+        });
+
+        // 'd' só deve ser protegido se houver operador diferencial ou integral na expressão
+        const hasDiffOp = derivVarMatch || hasIntCmd || /(?:\\frac\{\s*(?:\\mathrm\{d\}|d)|\bd\^?\d*\/d|\bddx\b|\\differentialD|\\partial)/i.test(rawStr);
+        if (hasDiffOp) {
+            boundSet.add('d');
+        }
 
         // Operadores de matriz: transposta (^T, ^\top, ') e inversa (^-1) não são variáveis livres!
         cleaned = cleaned
@@ -366,12 +373,24 @@ export class FaultTolerantParser {
             return { isIncomplete: true, warning: 'Falta o expoente da potência.' };
         }
 
-        // Operador binário solto no fim ou antes de delimitador: +, -, *, /, ^
-        if (/[+\-*/^=]$/.test(trimmedAscii) || /[+\-*/^=]$/.test(trimmedLatex)) {
+        // Parênteses vazios isolados ou em expressão: () ou 1 + ()
+        if (/\(\s*\)/.test(trimmedAscii) || /(?:\\left\s*)?\(\s*(?:\\right\s*)?\)/.test(trimmedLatex)) {
+            return { isIncomplete: true, warning: 'Preencha a expressão entre parênteses.' };
+        }
+
+        // Operador binário ou relacional solto no fim: +, -, *, /, ^, =, <, >, <=, >=, \cdot, \times
+        if (/[+\-*/^=<>]$|\\le$|\\ge$|<=|>=|\\cdot$|\\times$/.test(trimmedAscii) || /[+\-*/^=<>]$|\\le$|\\ge$|\\cdot$|\\times$/.test(trimmedLatex)) {
             return { isIncomplete: true, warning: 'Falta um termo após o operador.' };
         }
         if (/[+\-*/^]\s*[,;\)\]\}]/.test(trimmedAscii) || /[+\-*/^]\s*[,;\)\]\}]/.test(trimmedLatex)) {
             return { isIncomplete: true, warning: 'Falta um termo após o operador.' };
+        }
+
+        // Módulo incompleto (|x)
+        let pipes = 0;
+        for (const ch of trimmedAscii) if (ch === '|') pipes++;
+        if (pipes % 2 !== 0) {
+            return { isIncomplete: true, warning: 'Feche a barra de módulo para concluir.' };
         }
 
         // Comandos e funções com parênteses vazios (ex: sin(), cos(), solveode(), det(), mean(), diff())

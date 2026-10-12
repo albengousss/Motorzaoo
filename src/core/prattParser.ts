@@ -35,6 +35,7 @@ export class PrattParser {
     nud(token: Token): any {
         if (token.type === TokenTypes.NUMBER) return parseFloat(token.value);
         if (token.type === TokenTypes.DIFFERENTIAL) return "d";
+        if (token.type === TokenTypes.ADDITION) return this.parseExpression(14);
         if (token.type === TokenTypes.SUBTRACTION) return ["Negate", this.parseExpression(14)];
         
         if (token.type === TokenTypes.PARENTHESIS_LEFT) {
@@ -142,6 +143,9 @@ export class PrattParser {
             let diffVar: string | null = null;
             if (this.lookahead && this.lookahead.type === TokenTypes.DIFFERENTIAL) {
                 this.eat(TokenTypes.DIFFERENTIAL);
+                if (this.lookahead && this.lookahead.type === TokenTypes.MULTIPLICATION) {
+                    this.eat(TokenTypes.MULTIPLICATION);
+                }
                 if (this.lookahead && (this.lookahead.type === TokenTypes.IDENTIFIER || this.lookahead.type === TokenTypes.VAR)) {
                     diffVar = this.lookahead.value.replace(/[\{\}\\]/g, '');
                     this.eat(this.lookahead.type);
@@ -165,7 +169,28 @@ export class PrattParser {
         }
 
         // LIMITE
-        if (token.type === TokenTypes.LIMIT || token.value === '\\lim') {
+        if (token.type === TokenTypes.LIMIT || token.value === '\\lim' || token.value === 'lim') {
+            // Suporte a forma funcional: lim(expr, var, target)
+            if (this.lookahead && this.lookahead.type === TokenTypes.PARENTHESIS_LEFT) {
+                this.eat(TokenTypes.PARENTHESIS_LEFT);
+                const expr = this.parseExpression(0);
+                let variable = "x";
+                let target: any = 0;
+                if (this.lookahead && this.lookahead.type === TokenTypes.COMMA) {
+                    this.eat(TokenTypes.COMMA);
+                    if (this.lookahead && (this.lookahead.type === TokenTypes.IDENTIFIER || this.lookahead.type === TokenTypes.VAR)) {
+                        variable = this.lookahead.value.replace(/[\{\}\\]/g, '');
+                        this.eat(this.lookahead.type);
+                    }
+                    if (this.lookahead && this.lookahead.type === TokenTypes.COMMA) {
+                        this.eat(TokenTypes.COMMA);
+                        target = this.parseExpression(0);
+                    }
+                }
+                this.eat(TokenTypes.PARENTHESIS_RIGHT);
+                return ["Limit", expr, variable, target];
+            }
+
             const list: any[] = ["Limit"];
             let variable = "x";
             let target: any = 0;
@@ -177,24 +202,28 @@ export class PrattParser {
             // pode estar entre chaves {x->0} ou parenteses (x->0)
             let expectClose = null;
             if (this.lookahead && (this.lookahead.type === TokenTypes.PARENTHESIS_LEFT || this.lookahead.value === '{')) {
-                expectClose = this.lookahead.type === TokenTypes.PARENTHESIS_LEFT ? TokenTypes.PARENTHESIS_RIGHT : TokenTypes.PARENTHESIS_RIGHT; // tokenizer converte { e } para PARENTHESIS
+                expectClose = TokenTypes.PARENTHESIS_RIGHT; // tokenizer converte { e } para PARENTHESIS
                 this.eat(this.lookahead.type);
             }
                 
-                if (this.lookahead && this.lookahead.type === TokenTypes.IDENTIFIER) {
-                    variable = this.lookahead.value.replace(/[\{\}\\]/g, '');
-                    this.eat(TokenTypes.IDENTIFIER);
-                }
-                
-                if (this.lookahead && this.lookahead.type === TokenTypes.ARROW) {
-                    this.eat(TokenTypes.ARROW);
-                }
-                
-                target = this.parseExpression(0);
-                
-                if (expectClose && this.lookahead && this.lookahead.type === expectClose) {
-                    this.eat(expectClose);
-                }
+            if (this.lookahead && this.lookahead.type === TokenTypes.IDENTIFIER) {
+                variable = this.lookahead.value.replace(/[\{\}\\]/g, '');
+                this.eat(TokenTypes.IDENTIFIER);
+            }
+            
+            if (this.lookahead && this.lookahead.type === TokenTypes.ARROW) {
+                this.eat(TokenTypes.ARROW);
+            }
+            
+            target = this.parseExpression(0);
+            
+            if (expectClose && this.lookahead && this.lookahead.type === expectClose) {
+                this.eat(expectClose);
+            }
+            // Descarta multiplicação implícita residual após fechar o limite (ex: lim_{x -> 0} *(sin(x)/x))
+            if (this.lookahead && this.lookahead.type === TokenTypes.MULTIPLICATION) {
+                this.eat(TokenTypes.MULTIPLICATION);
+            }
             const expr = this.parseExpression(0);
             list.push(expr);
             list.push(variable);
@@ -246,10 +275,20 @@ export class PrattParser {
         if (token.type === TokenTypes.MULTIPLICATION) return ["Multiply", left, this.parseExpression(20)];
         if (token.type === TokenTypes.DIVISION) return ["Divide", left, this.parseExpression(20)];
         if (token.type === TokenTypes.EXPONENTIATION) return ["Power", left, this.parseExpression(30 - 1)];
+        if (token.type === TokenTypes.BRACKET_LEFT) {
+            const indices = [this.parseExpression(0)];
+            while (this.lookahead && this.lookahead.type === TokenTypes.COMMA) {
+                this.eat(TokenTypes.COMMA);
+                indices.push(this.parseExpression(0));
+            }
+            this.eat(TokenTypes.BRACKET_RIGHT);
+            return ["Index", left, ...indices];
+        }
         throw new SyntaxError(`Infixo desconhecido para: ${token.value}`);
     }
 
     getPrecedence(type: string): number {
+        if (type === TokenTypes.BRACKET_LEFT) return 40;
         if (type === TokenTypes.ADDITION || type === TokenTypes.SUBTRACTION) return 10;
         if (type === TokenTypes.MULTIPLICATION || type === TokenTypes.DIVISION) return 20;
         if (type === TokenTypes.EXPONENTIATION) return 30;

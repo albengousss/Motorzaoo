@@ -682,9 +682,15 @@ export class ExpressionManager {
             (mf as any).executeCommand('moveToSuperscript');
         };
 
+        let lastFractionTime = 0;
         const handleFraction = (e: Event) => {
             e.preventDefault();
             e.stopPropagation();
+            const now = Date.now();
+            if (now - lastFractionTime < 250) {
+                return;
+            }
+            lastFractionTime = now;
             (mf as any).executeCommand(['insert', '\\frac{#@}{#?}']);
         };
 
