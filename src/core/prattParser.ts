@@ -227,8 +227,11 @@ export class PrattParser {
                 if (name === 'arccos') name = 'acos';
                 if (name === 'arctan') name = 'atan';
 
-                if (['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'asin', 'acos', 'atan', 'log', 'exp', 'sqrt', 'cbrt', 'abs'].includes(name)) {
+                if (['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh', 'log', 'ln', 'exp', 'sqrt', 'cbrt', 'abs'].includes(name)) {
                     return [name.charAt(0).toUpperCase() + name.slice(1), args[0]];
+                }
+                if (name === 'nthroot' && args.length === 2) {
+                    return ['Nthroot', args[0], args[1]];
                 }
                 return [rawName, ...args];
             }

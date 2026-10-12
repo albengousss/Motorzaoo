@@ -65,7 +65,7 @@ export class Tokenizer {
             processed = processed.replace(/(^|[^a-zA-Z_])([xyzt])\s*([xyzt])(?![a-zA-Z_])/g, '$1$2*$3');
         }
         // 7. Multiplicação implícita entre x/y/z/t e funções (ex: x sin(y) ou z cos(x) -> x*sin(y))
-        processed = processed.replace(/(^|[^a-zA-Z_])([xyzt])\s*\\?(sin|cos|tan|log|ln|exp|abs|sqrt|asin|acos|atan|sec|csc|cot)(?![a-zA-Z_])/g, '$1$2*$3');
+        processed = processed.replace(/(^|[^a-zA-Z_])([xyzt])\s*\\?(sin|cos|tan|sinh|cosh|tanh|asin|acos|atan|asinh|acosh|atanh|log|ln|exp|abs|sqrt|cbrt|nthroot|sec|csc|cot)(?![a-zA-Z_])/g, '$1$2*$3');
         // 8. \pi x ou \pi(x) -> \pi*x ou \pi*(x)
         processed = processed.replace(/(\\pi|π)\s*([a-zA-Z0-9\(])/g, '$1*$2');
 

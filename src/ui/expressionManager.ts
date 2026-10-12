@@ -2407,6 +2407,9 @@ export class ExpressionManager {
                     resDisplay.innerHTML = '';
                     return;
                 }
+                if (result.includes('pnt(') || result.includes('pnt[') || result.includes('point[') || result.includes('536870912')) {
+                    result = '- Erro no cálculo';
+                }
                 resDisplay.classList.remove('hidden');
                 resDisplay.title = result;
                 const win = window as any;

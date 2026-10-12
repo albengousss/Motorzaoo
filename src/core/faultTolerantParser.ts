@@ -20,13 +20,17 @@ export class FaultTolerantParser {
         'asinh', 'acosh', 'atanh',
         'sqrt', 'cbrt', 'nthroot', 'exp', 'log', 'ln', 'lg',
         'abs', 'floor', 'ceil', 'round', 'sign', 'sgn',
-        'int', 'integrate', 'integral', 'diff', 'derivative',
-        'lim', 'limit', 'sum', 'prod',
+        'int', 'integrate', 'integral', 'defint', 'diff', 'derivative',
+        'lim', 'limit', 'limitabove', 'limitbelow', 'sum', 'prod', 'product',
         'det', 'determinant', 'inv', 'invert', 'tran', 'transpose',
         'rref', 'reducedrowechelonform', 'rank', 'matrixrank',
-        'trace', 'tr', 'eigenvalues', 'eigenvectors',
+        'trace', 'tr', 'eigenvalues', 'eigenvals', 'eigenvectors', 'eigenvects',
         'matrix', 'matriz', 'ddx', 'dx',
-        'solve', 'nsolve', 'factor', 'expand', 'simplify'
+        'solve', 'nsolve', 'factor', 'expand', 'simplify',
+        'solveode', 'nsolveode', 'edo', 'campo', 'slopefield', 'campovetorial',
+        'taylor', 'taylorpolynomial', 'laplace', 'inverselaplace',
+        'mean', 'median', 'stdev', 'stddev', 'var', 'variance', 'samplesd', 'samplevariance',
+        'length', 'size'
     ]);
 
     // Coordenadas universais e constantes matemáticas protegidas
@@ -47,6 +51,68 @@ export class FaultTolerantParser {
         s = s.replace(/\\(?:mathrm|text|operatorname)\{d\}/gi, 'd');
         s = s.replace(/\\text\{[^}]*\}/g, '');
         return s;
+    }
+
+    /**
+     * Normaliza derivadas em LaTeX e AsciiMath para diff(expr, var) de forma resiliente
+     * com suporte completo a delimitadores aninhados (evita corromper x^(2) em x^(2, x)).
+     */
+    static normalizeDerivative(inputStr: string): string {
+        let str = inputStr;
+        const derivOpRegex = /(?:\\frac\{\s*(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD|d)\s*\}\{\s*(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD|d)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}|frac\s*\(\s*(?:\\mathrm\{d\}|d)\s*\)\s*\(\s*(?:\\mathrm\{d\}|d)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)|(?:\(?\s*d\s*\)?\s*\/\s*\(?\s*d\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)?)|\\bdd([a-zA-Z_][a-zA-Z0-9_]*)\b)/i;
+        
+        let match: RegExpExecArray | null;
+        let guard = 0;
+        while ((match = derivOpRegex.exec(str)) !== null && guard++ < 10) {
+            const fullMatch = match[0];
+            const matchIndex = match.index;
+            const derivVar = match[1] || match[2] || match[3] || match[4] || 'x';
+            
+            let afterIndex = matchIndex + fullMatch.length;
+            while (afterIndex < str.length && /\s/.test(str[afterIndex])) {
+                afterIndex++;
+            }
+            
+            if (afterIndex >= str.length) {
+                break;
+            }
+            
+            let operand = '';
+            let endIndex = afterIndex;
+            
+            if (str[afterIndex] === '(' || str[afterIndex] === '{') {
+                const openChar = str[afterIndex];
+                const closeChar = openChar === '(' ? ')' : '}';
+                let depth = 0;
+                let i = afterIndex;
+                for (; i < str.length; i++) {
+                    if (str[i] === openChar) depth++;
+                    else if (str[i] === closeChar) {
+                        depth--;
+                        if (depth === 0) {
+                            i++;
+                            break;
+                        }
+                    }
+                }
+                operand = str.slice(afterIndex + 1, i - 1).trim();
+                endIndex = i;
+            } else {
+                const remaining = str.slice(afterIndex);
+                const directMatch = remaining.match(/^([a-zA-Z0-9_\\^+\-*/.]+(?:\([^)]*\))?|.+?)(?=\s*[=;,)]|$)/);
+                if (directMatch) {
+                    operand = directMatch[1].trim();
+                    endIndex = afterIndex + directMatch[0].length;
+                } else {
+                    operand = remaining.trim();
+                    endIndex = str.length;
+                }
+            }
+            
+            const replacement = `diff(${operand}, ${derivVar})`;
+            str = str.slice(0, matchIndex) + replacement + str.slice(endIndex);
+        }
+        return str;
     }
 
     /**
@@ -242,11 +308,18 @@ export class FaultTolerantParser {
             }
         }
 
+        // Placeholders ativos do MathLive (#?, #@ ou \placeholder)
+        if (/(?:#\?|#@|\\placeholder\{)/.test(trimmedLatex) || /(?:#\?|#@)/.test(trimmedAscii)) {
+            if (/\\frac\{\s*(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD|d)\s*\}\{\s*(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD|d)[a-zA-Z_]?\s*\}\s*(?:\\left)?\(\s*(?:#\?|#@|\))/i.test(trimmedLatex) || /d\/d[a-zA-Z_]?\s*\(\s*(?:#\?|#@|\))/i.test(trimmedAscii)) {
+                return { isIncomplete: true, warning: 'Informe a função para derivar (ex: d/dx(x^2)).' };
+            }
+            return { isIncomplete: true, warning: 'Preencha o termo em falta.' };
+        }
 
-        // Operador diferencial incompleto: \frac{d}{dx} ou d/dx sem argumento
+        // Operador diferencial incompleto: \frac{d}{dx} ou d/dx sem argumento, ou com argumento vazio () ou {}
         if (
-            /^(?:\\frac\{\s*(?:\\mathrm\{d\}|d)\s*\}\{\s*(?:\\mathrm\{d\}|d)[a-zA-Z_]?\s*\}|frac\s*\(\s*(?:\\mathrm\{d\}|d)\s*\)\s*\(\s*(?:\\mathrm\{d\}|d)[a-zA-Z_]?\s*\)|d\/d[a-zA-Z_]?|\(?d\)?\/\(?d[a-zA-Z_]?\)?)\s*$/i.test(trimmedLatex) ||
-            /^(?:d\/d[a-zA-Z_]?|\(?d\)?\/\(?d[a-zA-Z_]?\)?|frac\s*\(\s*d\s*\)\s*\(\s*d[a-zA-Z_]?\s*\))\s*$/i.test(trimmedAscii)
+            /^(?:\\frac\{\s*(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD|d)\s*\}\{\s*(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD|d)[a-zA-Z_]?\s*\}|frac\s*\(\s*(?:\\mathrm\{d\}|d)\s*\)\s*\(\s*(?:\\mathrm\{d\}|d)[a-zA-Z_]?\s*\)|d\/d[a-zA-Z_]?|\(?d\)?\/\(?d[a-zA-Z_]?\)?)\s*(?:(?:\(|\{)\s*(?:\)|\})|\\left\(\s*\\right\))?\s*$/i.test(trimmedLatex) ||
+            /^(?:d\/d[a-zA-Z_]?|\(?d\)?\/\(?d[a-zA-Z_]?\)?|frac\s*\(\s*d\s*\)\s*\(\s*d[a-zA-Z_]?\s*\))\s*(?:\(\s*\))?\s*$/i.test(trimmedAscii)
         ) {
             return { isIncomplete: true, warning: 'Informe a função para derivar (ex: d/dx(x^2)).' };
         }
@@ -264,9 +337,22 @@ export class FaultTolerantParser {
             return { isIncomplete: true, warning: 'Falta o numerador da fração.' };
         }
 
-        // Operador binário solto no fim: +, -, *, /, ^
-        if (/[+\-*/^=]$/.test(trimmedAscii)) {
+        // Expoente vazio ou incompleto: ^, ^{}, ^(), x^, x^{}, x^(), ou seguido de fechamento: (x^)
+        if (/\^\s*(?:\{\s*\}|\(\s*\)|\)|$|[,;])/.test(trimmedLatex) || /\^\s*(?:\{\s*\}|\(\s*\)|\)|$|[,;])/.test(trimmedAscii)) {
+            return { isIncomplete: true, warning: 'Falta o expoente da potência.' };
+        }
+
+        // Operador binário solto no fim ou antes de delimitador: +, -, *, /, ^
+        if (/[+\-*/^=]$/.test(trimmedAscii) || /[+\-*/^=]$/.test(trimmedLatex)) {
             return { isIncomplete: true, warning: 'Falta um termo após o operador.' };
+        }
+        if (/[+\-*/^]\s*[,;\)\]\}]/.test(trimmedAscii) || /[+\-*/^]\s*[,;\)\]\}]/.test(trimmedLatex)) {
+            return { isIncomplete: true, warning: 'Falta um termo após o operador.' };
+        }
+
+        // Função elementar com parênteses vazios (ex: sin(), cos(), sqrt(), diff())
+        if (/\b(?:sin|cos|tan|sinh|cosh|tanh|asin|acos|atan|log|ln|sqrt|cbrt|nthroot|diff|int)\(\s*\)/i.test(trimmedAscii)) {
+            return { isIncomplete: true, warning: 'Falta o argumento da função.' };
         }
 
         // Parênteses desbalanceados

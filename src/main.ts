@@ -137,27 +137,27 @@ const casCommandsList = new Set([
     'groebnerlex', 'groebnerlexdeg', 'groebnerdegrevlex', 'eliminate',
     'solve', 'csolve', 'solvecubic', 'solvequartic', 'plotsolve', 'root',
     'nsolve', 'nsolutions', 'min', 'max',
-    'limit', 'limitabove', 'limitbelow',
-    'derivative', 'implicitderivative', 'nderivative',
-    'integral', 'integralsymbolic', 'integralbetween', 'nintegral',
-    'solveode', 'nsolveode',
-    'taylorpolynomial', 'laplace', 'inverselaplace',
+    'limit', 'limitabove', 'limitbelow', 'lim',
+    'derivative', 'implicitderivative', 'nderivative', 'diff',
+    'integral', 'integralsymbolic', 'integralbetween', 'nintegral', 'int', 'defint',
+    'solveode', 'nsolveode', 'edo', 'resolvere', 'resolveredo',
+    'taylor', 'taylorpolynomial', 'laplace', 'inverselaplace',
     'dimension', 'dot', 'cross', 'unitvector', 'unitperpendicularvector', 'perpendicularvector',
     'transpose', 'tran', 'matrixrank', 'rank', 'reducedrowechelonform', 'rref', 'invert', 'inv', 'characteristicpolynomial', 'minimalpolynomial',
-    'eigenvalues', 'eigenvectors', 'jordandiagonalization', 'qrdecomposition', 'svd', 'ludecomposition',
+    'eigenvalues', 'eigenvals', 'eigenvectors', 'eigenvects', 'jordandiagonalization', 'qrdecomposition', 'svd', 'ludecomposition',
     'isprime', 'nextprime', 'previousprime', 'primefactors', 'factors',
     'divisors', 'divisorslist', 'divisorssum',
     'gcd', 'lcm', 'extendedgcd',
     'div', 'mod', 'division', 'modularexponent', 'mixednumber', 'rationalize',
     'binomialdist', 'pascal', 'hypergeometric', 'poisson', 'zipf', 'normal', 'cauchy', 'exponential', 'weibull', 'gamma', 'chisquared', 'tdistribution',
     'determinant', 'det', 'trace', 'tr', 'applymatrix',
-    'samplesd', 'covariance', 'variance', 'samplevariance',
+    'samplesd', 'covariance', 'variance', 'samplevariance', 'stdev', 'stddev', 'var',
     'mean', 'median', 'unique', 'frequency',
     'fitpoly', 'fitpow', 'fitexp', 'fitsin', 'fitlog', 'normalize',
     'setseed', 'randomuniform', 'randombetween', 'shuffle', 'randomelement', 'sample', 'randompolynomial',
-    'sequence', 'iterationlist', 'element', 'first', 'last', 'take', 'append', 'flatten', 'length',
-    'sum', 'product', 'rootlist',
-    'tocomplex', 'topoint', 'topolar', 'toexponential',
+    'sequence', 'iterationlist', 'element', 'first', 'last', 'take', 'append', 'flatten', 'length', 'size',
+    'sum', 'product', 'prod', 'rootlist',
+    'tocomplex', 'topoint', 'topolar', 'toexponential', 'nthroot',
     'intersect', 'radius', 'distance', 'angle', 'perpendicularbisector', 'applymatrix', 'reflect', 'rotate', 'shear', 'stretch', 'translate', 'infinitecone', 'surdtext', 'setviewdirection', 'setvisibleinview', 'attachcopytoview', 'setdecoration'
 ]);
 
@@ -323,6 +323,14 @@ function scheduleFrame() {
     requestAnimationFrame(() => { _rafPending = false; drawFrame(); });
 }
 
+/**
+ * Normaliza derivadas em LaTeX e AsciiMath para diff(expr, var) de forma resiliente
+ * com suporte completo a delimitadores aninhados (evita corromper x^(2) em x^(2, x)).
+ */
+function normalizeDerivative(inputStr: string): string {
+    return FaultTolerantParser.normalizeDerivative(inputStr);
+}
+
 function compileAllExpressions() {
     // Limpa apenas as funções compiladas de EDOs/CAS
     MathEngine.compiledFuncs = { realPow: MathEngine.realPow };
@@ -458,7 +466,7 @@ function compileAllExpressions() {
 
         // Consertar letras espaçadas geradas quando o utilizador escreve manualmente no teclado
         const spacedFuncs = [
-            's i n', 'c o s', 't a n', 's e c', 'c s c', 'c o s s e c', 'c o t', 'c o t a n', 
+            's i n', 'c o s', 't a n', 's i n h', 'c o s h', 't a n h', 's e c', 'c s c', 'c o s s e c', 'c o t', 'c o t a n', 
             'a r c s i n', 'a r c c o s', 'a r c t a n', 'l o g', 'l n', 'e x p',
             'r r e f', 'd e t', 't r a c e', 't r', 'r a n k', 't r a n', 't r a n s p o s e',
             'i n v', 'i n v e r t', 'd e t e r m i n a n t', 'm a t r i x r a n k', 
@@ -520,17 +528,16 @@ function compileAllExpressions() {
         // Multiplicação escalar implícita para matrizes e variáveis: 2B -> 2*B, MAS NÃO em limites _2 ou ^2
         cleanStr = cleanStr.replace(/(?<![\^_])(\d+(?:\.\d+)?)\s*([A-Za-z_][A-Za-z0-9_]*)/g, '$1*$2');
 
+        // Raiz enésima \sqrt[n]{x} -> nthroot(x, n) e AsciiMath root(n)(x) -> nthroot(x, n)
+        cleanStr = cleanStr
+            .replace(/\\sqrt\[([^\]]+)\]\{([^}]+)\}/g, 'nthroot($2, $1)')
+            .replace(/root\s*\(([^)]+)\)\s*\(([^)]+)\)/g, 'nthroot($2, $1)');
+
+        // Logaritmo com base personalizada: \log_{b}(x) ou log_b(x) -> ((log(x))/(log(b)))
+        cleanStr = cleanStr.replace(/\\?log_\{?([a-zA-Z0-9.]+)\}?\s*\(([^)]+)\)/gi, '((log($2))/(log($1)))');
+
         // Converter d/dx(expr), \frac{d}{dx}(expr), frac(d)(dx)(expr), d/dx expr, \frac{d}{dx} expr, \frac{d}{dx}x para diff(expr, x) ANTES de normalizar frações
-        // 1. Derivada com argumentos entre parênteses ou chaves
-        cleanStr = cleanStr.replace(
-            /(?:\\frac\{\s*(?:\\mathrm\{d\}|\\text\{d\}|d)\s*\}\{\s*(?:\\mathrm\{d\}|\\text\{d\}|d)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}|frac\s*\(\s*(?:\\mathrm\{d\}|d)\s*\)\s*\(\s*(?:\\mathrm\{d\}|d)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)|(?:\(?\s*d\s*\)?\s*\/\s*\(?\s*d\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)?)|\\bdd([a-zA-Z_][a-zA-Z0-9_]*)\b)\s*(?:\(([^)]+)\)|\{([^}]+)\})/gi,
-            (_m, v1, v2, v3, v4, e1, e2) => `diff(${(e1 || e2).trim()}, ${v1 || v2 || v3 || v4})`
-        );
-        // 2. Derivada com expressão direta (com ou sem espaço, ex: \frac{d}{dx} x, \frac{d}{dx}x, \frac{d}{dx}\sin(x), d/dx x)
-        cleanStr = cleanStr.replace(
-            /(?:\\frac\{\s*(?:\\mathrm\{d\}|\\text\{d\}|d)\s*\}\{\s*(?:\\mathrm\{d\}|\\text\{d\}|d)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}|frac\s*\(\s*(?:\\mathrm\{d\}|d)\s*\)\s*\(\s*(?:\\mathrm\{d\}|d)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)|(?:\(?\s*d\s*\)?\s*\/\s*\(?\s*d\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)?)|\\bdd([a-zA-Z_][a-zA-Z0-9_]*)\b)\s*([a-zA-Z0-9_\\^]+(?:\([^)]*\))?|.+)$/gi,
-            (_m, v1, v2, v3, v4, expr) => `diff(${expr.trim()}, ${v1 || v2 || v3 || v4})`
-        );
+        cleanStr = normalizeDerivative(cleanStr);
 
         // Normalização de frações (LaTeX \frac{a}{b} e AsciiMath frac(a)(b))
         cleanStr = cleanStr
@@ -651,9 +658,14 @@ function compileAllExpressions() {
 
         if (ast && MathEngine.isGiacCommand(ast)) {
             ExpressionManager.setSliderSuggestions(item.id, [], () => {});
-            ExpressionManager.setError(item.id, null);
-            const giacQuery = MathEngine.formatForGiac(ast);
-            const cached = StateManager.casSolutions[item.id];
+            const expandedAst = MathEngine.expandUserFunctions(ast);
+            const giacQuery = MathEngine.formatForGiac(expandedAst);
+            StateManager.activeGiacQuery[item.id] = giacQuery;
+            let cached: any = StateManager.casSolutions[item.id];
+            if (cached && (cached.result.includes('pnt') || cached.result.includes('point[') || cached.result.includes('536870912'))) {
+                delete StateManager.casSolutions[item.id];
+                cached = undefined;
+            }
             const isIntegralCmd = ast[0] === 'Integrate';
             const isDefiniteInt = isIntegralCmd && ast.length > 3;
 
@@ -672,7 +684,7 @@ function compileAllExpressions() {
             }
 
             const formatCasDisplay = (rawRes: string): string => {
-                if (rawRes.includes('Erro')) {
+                if (rawRes.includes('Erro') || rawRes.includes('pnt') || rawRes.includes('536870912')) {
                     if (numIntegralVal !== null) {
                         return `= ${parseFloat(numIntegralVal.toFixed(6))}`;
                     }
@@ -759,15 +771,18 @@ function compileAllExpressions() {
                     ExpressionManager.setResult(item.id, 'Calculando...');
                 }
                 MathEngine.askGiac(giacQuery).then(res => {
+                    if (StateManager.activeGiacQuery[item.id] !== giacQuery) return; // Stale query from typing, discard!
                     let cleanResult = res.replace(/"/g, '')
                                           .replace(/matrix\s*\[/g, '[')
                                           .replace(/list\s*\[/g, '[')
                                           .replace(/usr_/g, '')
                                           .trim();
-                    if (cleanResult.includes('Erro') || cleanResult.includes('undef') || cleanResult.includes('Bad Argument')) {
+                    if (cleanResult.includes('Erro') || cleanResult.includes('undef') || cleanResult.includes('Bad Argument') || cleanResult.includes('pnt') || cleanResult.includes('point[') || cleanResult.includes('536870912')) {
                         cleanResult = numIntegralVal !== null ? `${parseFloat(numIntegralVal.toFixed(10))}` : 'Erro no cálculo';
                     }
-                    StateManager.casSolutions[item.id] = { query: giacQuery, result: cleanResult };
+                    if (cleanResult !== 'Erro no cálculo') {
+                        StateManager.casSolutions[item.id] = { query: giacQuery, result: cleanResult };
+                    }
                     ExpressionManager.setResult(item.id, formatCasDisplay(cleanResult));
                     if (assignVarName && assignVarName !== 'y' && isDefiniteInt) {
                         try {
@@ -859,8 +874,10 @@ function compileAllExpressions() {
                         giacQ = `desolve([${singlePtMatch[1]}, ${depVar}(${singlePtMatch[2]})=${singlePtMatch[3]}], ${depVar})`;
                     }
                     
+                    StateManager.activeGiacQuery[item.id] = giacQ;
                     MathEngine.askGiac(giacQ).then(res => {
                         StateManager.pendingOdes[item.id] = false;
+                        if (StateManager.activeGiacQuery[item.id] !== giacQ) return; // Stale query from typing, discard!
                         const cleanResult = res.replace(/"/g, '').replace(/list\[/g, '[').replace(/usr_/g, '').trim();
                         
                         let finalExpr = cleanResult;
@@ -870,7 +887,7 @@ function compileAllExpressions() {
                             else finalExpr = 'Erro: Sem solução';
                         }
                         
-                        if (finalExpr.includes('Erro') || finalExpr.includes('ausente') || finalExpr.includes('Mock')) {
+                        if (finalExpr.includes('Erro') || finalExpr.includes('ausente') || finalExpr.includes('Mock') || finalExpr.includes('pnt') || finalExpr.includes('point[') || finalExpr.includes('536870912')) {
                             StateManager.odeSolutions[item.id] = { query: currentQuery, name: 'Erro', expr: 'Falha ou Mock', ast: null, index: -1 };
                             ExpressionManager.setResult(item.id, `Erro EDO: Giac ausente/Falha`);
                         } else if (finalExpr.includes('carregar')) {
@@ -918,7 +935,7 @@ function compileAllExpressions() {
             }
 
             // Validação estrita de sensibilidade a maiúsculas/minúsculas para comandos de matriz (ex: det(A) vs det(a))
-            const matrixOnlyCmds = new Set(['det', 'determinant', 'rref', 'reducedrowechelonform', 'trace', 'tr', 'matrixrank', 'rank', 'invert', 'inv', 'transpose', 'tran', 'eigenvalues', 'eigenvectors', 'ludecomposition', 'jordandiagonalization']);
+            const matrixOnlyCmds = new Set(['det', 'determinant', 'rref', 'reducedrowechelonform', 'trace', 'tr', 'matrixrank', 'rank', 'invert', 'inv', 'transpose', 'tran', 'eigenvalues', 'eigenvals', 'eigenvectors', 'eigenvects', 'ludecomposition', 'jordandiagonalization']);
             if (matrixOnlyCmds.has(cmdName)) {
                 const rawArg = cmdArgs.trim().replace(/[\{\}\\]/g, '');
                 if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(rawArg) && !definedMatrixNames.has(rawArg)) {
@@ -962,7 +979,7 @@ function compileAllExpressions() {
                     // Tenta extrair a variável do comando (ex: Integral(x^2, x) -> x)
                     const argsList = cmdArgs.split(',').map(s => s.trim());
                     let extractVar = 'x';
-                    if (argsList.length >= 2 && (cmdName === 'integral' || cmdName === 'derivative' || cmdName === 'limit')) {
+                    if (argsList.length >= 2 && (cmdName === 'integral' || cmdName === 'derivative' || cmdName === 'limit' || cmdName === 'lim')) {
                         extractVar = argsList[1].replace(/[\{\}\\]/g, '');
                     }
 
@@ -977,17 +994,18 @@ function compileAllExpressions() {
                     } catch (_) {}
 
                     // Mapeia comandos para Giac nativo!
-                    const giacArgs = prefixGiac(expandedArgs.replace(/\{/g, '[').replace(/\}/g, ']'));
+                    let giacArgs = prefixGiac(expandedArgs.replace(/\{/g, '[').replace(/\}/g, ']'));
 
                     let giacCommand = `${cmdName}(${giacArgs})`;
                     
-                    if (cmdName === 'derivative' || cmdName === 'nderivative') giacCommand = `diff(${giacArgs})`;
+                    if (cmdName === 'derivative' || cmdName === 'nderivative' || cmdName === 'diff') giacCommand = `diff(${giacArgs})`;
+                    else if (cmdName === 'lim' || cmdName === 'limit') giacCommand = `limit(${giacArgs})`;
                     else if (cmdName === 'implicitderivative') {
                         const args = giacArgs.split(',').map(s => s.trim());
                         if (args.length === 1) giacCommand = `-(diff(${args[0]}, x))/(diff(${args[0]}, y))`;
                         else if (args.length === 3) giacCommand = `-(diff(${args[0]}, ${args[2]}))/(diff(${args[0]}, ${args[1]}))`;
                     }
-                    else if (cmdName === 'integral' || cmdName === 'integralsymbolic' || cmdName === 'nintegral') giacCommand = `integrate(${giacArgs})`;
+                    else if (cmdName === 'integral' || cmdName === 'integralsymbolic' || cmdName === 'nintegral' || cmdName === 'int') giacCommand = `integrate(${giacArgs})`;
                     else if (cmdName === 'integralbetween') {
                         const args = giacArgs.split(',').map(s => s.trim());
                         if (args.length === 4) giacCommand = `integrate(${args[0]} - (${args[1]}), x, ${args[2]}, ${args[3]})`;
@@ -995,6 +1013,12 @@ function compileAllExpressions() {
                     }
                     else if (cmdName === 'limitabove') giacCommand = `limit(${giacArgs}, 1)`;
                     else if (cmdName === 'limitbelow') giacCommand = `limit(${giacArgs}, -1)`;
+                    else if (cmdName === 'taylor' || cmdName === 'taylorpolynomial') {
+                        const args = giacArgs.split(',').map(s => s.trim());
+                        if (args.length === 1) giacCommand = `taylor(${args[0]}, x, 0, 4)`;
+                        else if (args.length === 2) giacCommand = `taylor(${args[0]}, ${args[1]}, 0, 4)`;
+                        else giacCommand = `taylor(${giacArgs})`;
+                    }
                     else if (cmdName === 'completesquare') giacCommand = `canonical_form(${giacArgs})`;
                     else if (cmdName === 'nsolve' || cmdName === 'nsolutions') giacCommand = `fsolve(${giacArgs})`;
                     else if (cmdName === 'solutions') giacCommand = `solve(${giacArgs})`;
@@ -1005,8 +1029,8 @@ function compileAllExpressions() {
                     else if (cmdName === 'reducedrowechelonform' || cmdName === 'rref') giacCommand = `rref(${giacArgs})`;
                     else if (cmdName === 'determinant' || cmdName === 'det') giacCommand = `det(${giacArgs})`;
                     else if (cmdName === 'trace' || cmdName === 'tr') giacCommand = `trace(${giacArgs})`;
-                    else if (cmdName === 'eigenvalues') giacCommand = `eigenvals(${giacArgs})`;
-                    else if (cmdName === 'eigenvectors') giacCommand = `eigenvects(${giacArgs})`;
+                    else if (cmdName === 'eigenvalues' || cmdName === 'eigenvals') giacCommand = `eigenvals(${giacArgs})`;
+                    else if (cmdName === 'eigenvectors' || cmdName === 'eigenvects') giacCommand = `eigenvects(${giacArgs})`;
                     else if (cmdName === 'invert' || cmdName === 'inv') giacCommand = `inv(${giacArgs})`;
                     else if (cmdName === 'ludecomposition') giacCommand = `lu(${giacArgs})`;
                     else if (cmdName === 'lcm') giacCommand = `lcm(${giacArgs})`;
@@ -1014,7 +1038,28 @@ function compileAllExpressions() {
                     else if (cmdName === 'characteristicpolynomial') giacCommand = `charpoly(${giacArgs})`;
                     else if (cmdName === 'minimalpolynomial') giacCommand = `pmin(${giacArgs})`;
                     else if (cmdName === 'dimension') giacCommand = `dim(${giacArgs})`;
-                    else if (cmdName === 'length') giacCommand = `abs(${giacArgs})`;
+                    else if (cmdName === 'length' || cmdName === 'size') {
+                        const listArg = (!giacArgs.trim().startsWith('[') && !definedMatrixNames.has(giacArgs.trim())) ? `[${giacArgs}]` : giacArgs;
+                        giacCommand = `size(${listArg})`;
+                    }
+                    else if (cmdName === 'mean' || cmdName === 'median') {
+                        const listArg = !giacArgs.trim().startsWith('[') ? `[${giacArgs}]` : giacArgs;
+                        giacCommand = `${cmdName}(${listArg})`;
+                    }
+                    else if (cmdName === 'stdev' || cmdName === 'stddev' || cmdName === 'samplesd') {
+                        const listArg = !giacArgs.trim().startsWith('[') ? `[${giacArgs}]` : giacArgs;
+                        giacCommand = `stddev(${listArg})`;
+                    }
+                    else if (cmdName === 'var' || cmdName === 'variance' || cmdName === 'samplevariance') {
+                        const listArg = !giacArgs.trim().startsWith('[') ? `[${giacArgs}]` : giacArgs;
+                        giacCommand = `variance(${listArg})`;
+                    }
+                    else if (cmdName === 'sum') giacCommand = `sum(${giacArgs})`;
+                    else if (cmdName === 'product' || cmdName === 'prod') giacCommand = `product(${giacArgs})`;
+                    else if (cmdName === 'nthroot') {
+                        const args = giacArgs.split(',').map(s => s.trim());
+                        if (args.length === 2) giacCommand = `root(${args[1]}, ${args[0]})`;
+                    }
                     else if (cmdName === 'transpose' || cmdName === 'tran') giacCommand = `tran(${giacArgs})`;
                     else if (cmdName === 'unitvector') giacCommand = `normalize(${giacArgs})`;
                     else if (cmdName === 'svd') giacCommand = `svd(${giacArgs})`;
@@ -1029,9 +1074,9 @@ function compileAllExpressions() {
                         const args = giacArgs.split(',').map(s => s.trim());
                         if (args.length >= 2) giacCommand = `${args[0]} * ${args[1]}`;
                     }
-                    else if (cmdName === 'nsolveode') giacCommand = `desolve(${giacArgs})`;
+                    else if (cmdName === 'nsolveode' || cmdName === 'solveode' || cmdName === 'edo') giacCommand = `desolve(${giacArgs})`;
 
-                    const noSimplifyCmds = ['simplify', 'factor', 'expand', 'nsolve', 'nsolutions', 'solutions', 'solve', 'limit', 'limitabove', 'limitbelow', 'cross', 'dot', 'primefactors', 'matrixrank', 'rank', 'reducedrowechelonform', 'rref', 'determinant', 'det', 'trace', 'tr', 'invert', 'inv', 'transpose', 'tran', 'qrdecomposition', 'laplace', 'applymatrix', 'nsolveode', 'desolve'];
+                    const noSimplifyCmds = ['simplify', 'factor', 'expand', 'nsolve', 'nsolutions', 'solutions', 'solve', 'limit', 'lim', 'limitabove', 'limitbelow', 'cross', 'dot', 'primefactors', 'matrixrank', 'rank', 'reducedrowechelonform', 'rref', 'determinant', 'det', 'trace', 'tr', 'invert', 'inv', 'transpose', 'tran', 'qrdecomposition', 'laplace', 'applymatrix', 'nsolveode', 'desolve', 'solveode', 'edo', 'taylor', 'taylorpolynomial', 'mean', 'median', 'stdev', 'stddev', 'samplesd', 'var', 'variance', 'samplevariance', 'length', 'size', 'eigenvalues', 'eigenvals', 'eigenvectors', 'eigenvects', 'sum', 'product', 'prod'];
                     if (!noSimplifyCmds.includes(cmdName)) {
                         giacCommand = `simplify(${giacCommand})`;
                     }
@@ -1040,12 +1085,14 @@ function compileAllExpressions() {
                         giacCommand = `${assignTarget}:=${giacCommand}`;
                     }
                     
+                    StateManager.activeGiacQuery[item.id] = currentQuery;
                     MathEngine.askGiac(giacCommand).then(res => {
                         StateManager.pendingCas[item.id] = false;
+                        if (StateManager.activeGiacQuery[item.id] !== currentQuery) return; // Stale query from typing, discard!
                         if (res.includes('carregar')) {
                             ExpressionManager.setResult(item.id, `(A carregar motor...)`);
                             StateManager.pendingCas[item.id] = false;
-                        } else if (res.includes('Erro') || res.includes('ausente') || res.includes('Mock')) {
+                        } else if (res.includes('Erro') || res.includes('ausente') || res.includes('Mock') || res.includes('pnt') || res.includes('point[') || res.includes('536870912')) {
                             StateManager.casSolutions[item.id] = { query: currentQuery, result: 'Erro no cálculo' };
                             ExpressionManager.setResult(item.id, `- Erro no cálculo`);
                             ExpressionManager.setSliderSuggestions(item.id, [], () => {});

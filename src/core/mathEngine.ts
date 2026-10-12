@@ -106,10 +106,12 @@ export class MathEngine {
     }
     
     static readonly GIAC_COMMANDS = [
-        'limit', 'int', 'integrate', 'diff', 'desolve', 'applymatrix', 'characteristicpolynomial', 
-        'determinant', 'det', 'eigenvalues', 'eigenvectors', 'identity', 'invert', 'inv',
+        'limit', 'lim', 'int', 'integrate', 'defint', 'diff', 'desolve', 'applymatrix', 'characteristicpolynomial', 
+        'determinant', 'det', 'eigenvalues', 'eigenvals', 'eigenvectors', 'eigenvects', 'identity', 'invert', 'inv',
         'jordandiagonalization', 'matrixrank', 'rank', 'qrdecomposition', 
-        'reducedrowechelonform', 'rref', 'svd', 'transpose', 'tran', 'trace', 'tr', 'cross', 'dot'
+        'reducedrowechelonform', 'rref', 'svd', 'transpose', 'tran', 'trace', 'tr', 'cross', 'dot',
+        'taylor', 'taylorpolynomial', 'sum', 'product', 'prod',
+        'mean', 'median', 'stdev', 'stddev', 'var', 'variance', 'samplesd', 'samplevariance', 'length', 'size'
     ];
 
     static isGiacCommand(ast: any): boolean {
@@ -178,6 +180,13 @@ export class MathEngine {
             else if (opLower === 'invert') giacOp = 'inv';
             else if (opLower === 'transpose') giacOp = 'tran';
             else if (opLower === 'tr') giacOp = 'trace';
+            else if (opLower === 'eigenvalues') giacOp = 'eigenvals';
+            else if (opLower === 'eigenvectors') giacOp = 'eigenvects';
+            else if (opLower === 'prod') giacOp = 'product';
+            else if (opLower === 'stdev' || opLower === 'stddev') giacOp = 'stddev';
+            else if (opLower === 'var') giacOp = 'variance';
+            else if (opLower === 'length') giacOp = 'size';
+            else if (opLower === 'lim') giacOp = 'limit';
             return `${giacOp}(${ast.slice(1).map((x: any) => this.formatForGiac(x)).join(', ')})`;
         }
         return '';
@@ -262,6 +271,13 @@ export class MathEngine {
                 if (op === 'Asin') return `Math.asin(${toJS(node[1])})`;
                 if (op === 'Acos') return `Math.acos(${toJS(node[1])})`;
                 if (op === 'Atan') return `Math.atan(${toJS(node[1])})`;
+                if (op === 'Sinh') return `Math.sinh(${toJS(node[1])})`;
+                if (op === 'Cosh') return `Math.cosh(${toJS(node[1])})`;
+                if (op === 'Tanh') return `Math.tanh(${toJS(node[1])})`;
+                if (op === 'Asinh') return `Math.asinh(${toJS(node[1])})`;
+                if (op === 'Acosh') return `Math.acosh(${toJS(node[1])})`;
+                if (op === 'Atanh') return `Math.atanh(${toJS(node[1])})`;
+                if (op === 'Nthroot') return `funcs.realPow(${toJS(node[1])}, 1 / (${toJS(node[2])}))`;
                 if (op === 'Log') return `Math.log(${toJS(node[1])})`;
                 if (op === 'Abs') return `Math.abs(${toJS(node[1])})`;
                 if (op === 'Exp') return `Math.exp(${toJS(node[1])})`;
@@ -339,7 +355,15 @@ export class MathEngine {
                 if (op === 'Sin') return `Math.sin(${toJS(node[1])})`;
                 if (op === 'Cos') return `Math.cos(${toJS(node[1])})`;
                 if (op === 'Tan') return `Math.tan(${toJS(node[1])})`;
+                if (op === 'Sinh') return `Math.sinh(${toJS(node[1])})`;
+                if (op === 'Cosh') return `Math.cosh(${toJS(node[1])})`;
+                if (op === 'Tanh') return `Math.tanh(${toJS(node[1])})`;
+                if (op === 'Asinh') return `Math.asinh(${toJS(node[1])})`;
+                if (op === 'Acosh') return `Math.acosh(${toJS(node[1])})`;
+                if (op === 'Atanh') return `Math.atanh(${toJS(node[1])})`;
                 if (op === 'Sqrt') return `Math.sqrt(${toJS(node[1])})`;
+                if (op === 'Cbrt') return `Math.cbrt(${toJS(node[1])})`;
+                if (op === 'Nthroot') return `funcs.realPow(${toJS(node[1])}, 1 / (${toJS(node[2])}))`;
                 if (op === 'Abs') return `Math.abs(${toJS(node[1])})`;
                 if (op === 'Exp') return `Math.exp(${toJS(node[1])})`;
                 if (op === 'Log') return `Math.log(${toJS(node[1])})`;

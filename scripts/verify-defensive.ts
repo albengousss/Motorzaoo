@@ -795,27 +795,22 @@ assert(Math.abs(MathEngine.evaluateAST('e') - Math.E) < 1e-10, 'evaluateAST eval
 console.log('\n[TEST GROUP 8: Derivative Normalization & Numerical Evaluation]');
 
 function normalizeDerivative(str: string): string {
-  let cleanStr = str.trim();
-  // 1. Derivada com argumentos entre parênteses ou chaves
-  cleanStr = cleanStr.replace(
-    /(?:\\frac\{\s*(?:\\mathrm\{d\}|\\text\{d\}|d)\s*\}\{\s*(?:\\mathrm\{d\}|\\text\{d\}|d)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}|frac\s*\(\s*(?:\\mathrm\{d\}|d)\s*\)\s*\(\s*(?:\\mathrm\{d\}|d)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)|(?:\(?\s*d\s*\)?\s*\/\s*\(?\s*d\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)?)|\\bdd([a-zA-Z_][a-zA-Z0-9_]*)\b)\s*(?:\(([^)]+)\)|\{([^}]+)\})/gi,
-    (_m, v1, v2, v3, v4, e1, e2) => `diff(${(e1 || e2).trim()}, ${v1 || v2 || v3 || v4})`
-  );
-  // 2. Derivada com expressão direta (com ou sem espaço, ex: \frac{d}{dx} x, \frac{d}{dx}x, \frac{d}{dx}\sin(x), d/dx x)
-  cleanStr = cleanStr.replace(
-    /(?:\\frac\{\s*(?:\\mathrm\{d\}|d)\s*\}\{\s*(?:\\mathrm\{d\}|d)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}|frac\s*\(\s*(?:\\mathrm\{d\}|d)\s*\)\s*\(\s*(?:\\mathrm\{d\}|d)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)|(?:\(?\s*d\s*\)?\s*\/\s*\(?\s*d\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)?)|\\bdd([a-zA-Z_][a-zA-Z0-9_]*)\b)\s*([a-zA-Z0-9_\\^]+(?:\([^)]*\))?|.+)$/gi,
-    (_m, v1, v2, v3, v4, expr) => `diff(${expr.trim()}, ${v1 || v2 || v3 || v4})`
-  );
-  return cleanStr;
+  return FaultTolerantParser.normalizeDerivative(str);
 }
 
 assert(normalizeDerivative('\\frac{d}{dx} x') === 'diff(x, x)', 'Normalizes LaTeX \\frac{d}{dx} x to diff(x, x)');
 assert(normalizeDerivative('\\frac{d}{dx}x') === 'diff(x, x)', 'Normalizes unspaced LaTeX \\frac{d}{dx}x to diff(x, x)');
 assert(normalizeDerivative('\\frac{d}{dx}(x^2)') === 'diff(x^2, x)', 'Normalizes parenthesized LaTeX \\frac{d}{dx}(x^2) to diff(x^2, x)');
+assert(normalizeDerivative('\\frac{d}{dx}(x^(2))') === 'diff(x^(2), x)', 'Normalizes nested parenthesized MathLive ascii \\frac{d}{dx}(x^(2)) to diff(x^(2), x)');
+assert(normalizeDerivative('\\frac{d}{dx}(\\sin(x))') === 'diff(\\sin(x), x)', 'Normalizes nested parenthesized \\frac{d}{dx}(\\sin(x)) to diff(\\sin(x), x)');
+assert(normalizeDerivative('\\frac{d}{dx}((x+1)^2)') === 'diff((x+1)^2, x)', 'Normalizes nested compound \\frac{d}{dx}((x+1)^2) to diff((x+1)^2, x)');
+assert(normalizeDerivative('\\frac{d}{dx}{x^2}') === 'diff(x^2, x)', 'Normalizes braced LaTeX \\frac{d}{dx}{x^2} to diff(x^2, x)');
 assert(normalizeDerivative('d/dx x') === 'diff(x, x)', 'Normalizes ascii d/dx x to diff(x, x)');
 assert(normalizeDerivative('d/dx(x^3)') === 'diff(x^3, x)', 'Normalizes ascii d/dx(x^3) to diff(x^3, x)');
+assert(normalizeDerivative('d/dx(x^(2))') === 'diff(x^(2), x)', 'Normalizes ascii nested d/dx(x^(2)) to diff(x^(2), x)');
 assert(normalizeDerivative('frac(d)(dx) x') === 'diff(x, x)', 'Normalizes AsciiMath frac(d)(dx) x to diff(x, x)');
 assert(normalizeDerivative('frac(d)(dx)(x^2)') === 'diff(x^2, x)', 'Normalizes AsciiMath frac(d)(dx)(x^2) to diff(x^2, x)');
+assert(normalizeDerivative('frac(d)(dx)(x^(2))') === 'diff(x^(2), x)', 'Normalizes AsciiMath nested frac(d)(dx)(x^(2)) to diff(x^(2), x)');
 assert(normalizeDerivative('\\frac{\\mathrm{d}}{\\mathrm{d}t} t') === 'diff(t, t)', 'Normalizes \\mathrm{d} in \\frac{\\mathrm{d}}{\\mathrm{d}t} t to diff(t, t)');
 
 // Incomplete derivative check
@@ -825,6 +820,20 @@ const incDeriv2 = FaultTolerantParser.checkIncompleteStatus('d/dx');
 assert(incDeriv2.isIncomplete && incDeriv2.warning === 'Informe a função para derivar (ex: d/dx(x^2)).', 'Detects incomplete Ascii d/dx without operand');
 const incDeriv3 = FaultTolerantParser.checkIncompleteStatus('frac(d)(dx)');
 assert(incDeriv3.isIncomplete && incDeriv3.warning === 'Informe a função para derivar (ex: d/dx(x^2)).', 'Detects incomplete frac(d)(dx) without operand');
+const incDerivEmpty1 = FaultTolerantParser.checkIncompleteStatus('\\frac{d}{dx}()');
+assert(incDerivEmpty1.isIncomplete && incDerivEmpty1.warning === 'Informe a função para derivar (ex: d/dx(x^2)).', 'Detects \\frac{d}{dx}() with empty parens as incomplete');
+const incDerivEmpty2 = FaultTolerantParser.checkIncompleteStatus('d/dx()');
+assert(incDerivEmpty2.isIncomplete && incDerivEmpty2.warning === 'Informe a função para derivar (ex: d/dx(x^2)).', 'Detects d/dx() with empty parens as incomplete');
+const incDerivEmpty3 = FaultTolerantParser.checkIncompleteStatus('\\frac{d}{dx}{}');
+assert(incDerivEmpty3.isIncomplete && incDerivEmpty3.warning === 'Informe a função para derivar (ex: d/dx(x^2)).', 'Detects \\frac{d}{dx}{} with empty braces as incomplete');
+const incDerivPlaceholder = FaultTolerantParser.checkIncompleteStatus('\\frac{d}{dx}(#?)');
+assert(incDerivPlaceholder.isIncomplete, 'Detects \\frac{d}{dx}(#?) with placeholder as incomplete');
+const incExp1 = FaultTolerantParser.checkIncompleteStatus('x^');
+assert(incExp1.isIncomplete && incExp1.warning === 'Falta o expoente da potência.', 'Detects incomplete exponent x^');
+const incExp2 = FaultTolerantParser.checkIncompleteStatus('d/dx(x^)');
+assert(incExp2.isIncomplete && incExp2.warning === 'Falta o expoente da potência.', 'Detects incomplete exponent d/dx(x^)');
+const incExp3 = FaultTolerantParser.checkIncompleteStatus('\\frac{d}{dx}(x^{#?})');
+assert(incExp3.isIncomplete, 'Detects incomplete exponent with placeholder \\frac{d}{dx}(x^{#?})');
 
 // MathEngine numerical differentiation
 const derivVal1 = MathEngine.evaluateDerivative('x', 'x', { x: 5 });
@@ -1046,6 +1055,165 @@ assert(f1_6 !== null && f1_6.num === 1 && f1_6.den === 6, 'toFraction(1/6) retur
 
 const f1_7 = toFraction(1 / 7);
 assert(f1_7 !== null && f1_7.num === 1 && f1_7.den === 7, 'toFraction(1/7) returns 1/7', f1_7);
+
+// =========================================================================
+// [TEST GROUP 13: Hyperbolic Functions Parsing & Compilation]
+// =========================================================================
+console.log('\n[TEST GROUP 13: Hyperbolic Functions]');
+
+const sinhAst = new PrattParser('sinh(x)').parseExpression();
+assert(Array.isArray(sinhAst) && sinhAst[0] === 'Sinh' && sinhAst[1] === 'x', 'PrattParser parses sinh(x) as ["Sinh", "x"]', sinhAst);
+
+const coshAst = new PrattParser('cosh(x)').parseExpression();
+assert(Array.isArray(coshAst) && coshAst[0] === 'Cosh' && coshAst[1] === 'x', 'PrattParser parses cosh(x) as ["Cosh", "x"]', coshAst);
+
+const tanhAst = new PrattParser('tanh(x)').parseExpression();
+assert(Array.isArray(tanhAst) && tanhAst[0] === 'Tanh' && tanhAst[1] === 'x', 'PrattParser parses tanh(x) as ["Tanh", "x"]', tanhAst);
+
+const asinhAst = new PrattParser('asinh(x)').parseExpression();
+assert(Array.isArray(asinhAst) && asinhAst[0] === 'Asinh' && asinhAst[1] === 'x', 'PrattParser parses asinh(x) as ["Asinh", "x"]', asinhAst);
+
+const compiledSinh = MathEngine.compile(sinhAst, 'x');
+assert(Math.abs(compiledSinh(0, 0, {}) - 0) < 1e-10, 'compiledSinh(0) = 0');
+assert(Math.abs(compiledSinh(1, 0, {}) - Math.sinh(1)) < 1e-10, 'compiledSinh(1) = sinh(1)');
+
+const compiledCosh = MathEngine.compile(coshAst, 'x');
+assert(Math.abs(compiledCosh(0, 0, {}) - 1) < 1e-10, 'compiledCosh(0) = 1');
+assert(Math.abs(compiledCosh(2, 0, {}) - Math.cosh(2)) < 1e-10, 'compiledCosh(2) = cosh(2)');
+
+const compiledTanh = MathEngine.compile(tanhAst, 'x');
+assert(Math.abs(compiledTanh(0, 0, {}) - 0) < 1e-10, 'compiledTanh(0) = 0');
+
+const compiledMultiHyp = MathEngine.compileMultivariable(['Add', ['Sinh', 'x'], ['Cosh', 'y']], ['x', 'y']);
+const multiHypVal = compiledMultiHyp(0, 0);
+assert(Math.abs(multiHypVal - 1) < 1e-10, 'compileMultivariable evaluates sinh(0) + cosh(0) = 1', multiHypVal);
+
+// =========================================================================
+// [TEST GROUP 14: Root & Custom Log Functions]
+// =========================================================================
+console.log('\n[TEST GROUP 14: Root & Custom Log Functions]');
+
+const cbrtAst = new PrattParser('cbrt(x)').parseExpression();
+assert(Array.isArray(cbrtAst) && cbrtAst[0] === 'Cbrt' && cbrtAst[1] === 'x', 'PrattParser parses cbrt(x) as ["Cbrt", "x"]', cbrtAst);
+
+const compiledCbrt = MathEngine.compile(cbrtAst, 'x');
+assert(Math.abs(compiledCbrt(27, 0, {}) - 3) < 1e-10, 'compiledCbrt(27) = 3', compiledCbrt(27, 0, {}));
+assert(Math.abs(compiledCbrt(-8, 0, {}) - (-2)) < 1e-10, 'compiledCbrt(-8) = -2', compiledCbrt(-8, 0, {}));
+
+const nthrootAst = new PrattParser('nthroot(8, 3)').parseExpression();
+assert(Array.isArray(nthrootAst) && nthrootAst[0] === 'Nthroot' && nthrootAst[1] === 8 && nthrootAst[2] === 3, 'PrattParser parses nthroot(8, 3) as ["Nthroot", 8, 3]', nthrootAst);
+
+const compiledNthroot = MathEngine.compile(nthrootAst);
+assert(Math.abs(compiledNthroot(0, 0, {}) - 2) < 1e-10, 'compiledNthroot evaluates nthroot(8, 3) = 2', compiledNthroot(0, 0, {}));
+
+// Normalização de \\sqrt[n]{x} e root(n)(x)
+function normalizeRootsAndLogs(str: string): string {
+  let cleanStr = str;
+  cleanStr = cleanStr
+    .replace(/\\sqrt\[([^\]]+)\]\{([^}]+)\}/g, 'nthroot($2, $1)')
+    .replace(/root\s*\(([^)]+)\)\s*\(([^)]+)\)/g, 'nthroot($2, $1)');
+  cleanStr = cleanStr.replace(/\\?log_\{?([a-zA-Z0-9.]+)\}?\s*\(([^)]+)\)/gi, '((log($2))/(log($1)))');
+  return cleanStr;
+}
+
+assert(normalizeRootsAndLogs('\\sqrt[3]{8}') === 'nthroot(8, 3)', 'Normalizes LaTeX \\sqrt[3]{8} to nthroot(8, 3)');
+assert(normalizeRootsAndLogs('root(3)(8)') === 'nthroot(8, 3)', 'Normalizes AsciiMath root(3)(8) to nthroot(8, 3)');
+assert(normalizeRootsAndLogs('\\log_{2}(8)') === '((log(8))/(log(2)))', 'Normalizes LaTeX \\log_{2}(8) to ((log(8))/(log(2)))');
+assert(normalizeRootsAndLogs('\\log_2(8)') === '((log(8))/(log(2)))', 'Normalizes unbraced \\log_2(8) to ((log(8))/(log(2)))');
+
+const customLogAst = new PrattParser(normalizeRootsAndLogs('\\log_2(8)')).parseExpression();
+const compiledLog = MathEngine.compile(customLogAst);
+assert(Math.abs(compiledLog(0, 0, {}) - 3) < 1e-10, 'Compiled custom base log \\log_2(8) evaluates to 3', compiledLog(0, 0, {}));
+
+// =========================================================================
+// [TEST GROUP 15: Statistics Commands & List Parsing]
+// =========================================================================
+console.log('\n[TEST GROUP 15: Statistics Commands & List Parsing]');
+
+assert(FaultTolerantParser.RESERVED_FUNCTIONS.has('mean'), 'RESERVED_FUNCTIONS contains "mean"');
+assert(FaultTolerantParser.RESERVED_FUNCTIONS.has('median'), 'RESERVED_FUNCTIONS contains "median"');
+assert(FaultTolerantParser.RESERVED_FUNCTIONS.has('stdev'), 'RESERVED_FUNCTIONS contains "stdev"');
+assert(FaultTolerantParser.RESERVED_FUNCTIONS.has('var'), 'RESERVED_FUNCTIONS contains "var"');
+assert(FaultTolerantParser.RESERVED_FUNCTIONS.has('length'), 'RESERVED_FUNCTIONS contains "length"');
+
+assert(MathEngine.formatForGiac(['mean', ['List', 1, 2, 3, 4, 5]]) === 'mean([1,2,3,4,5])', 'formatForGiac formats mean with List');
+assert(MathEngine.formatForGiac(['stdev', ['List', 1, 2, 3]]) === 'stddev([1,2,3])', 'formatForGiac maps stdev to stddev');
+assert(MathEngine.formatForGiac(['var', ['List', 1, 2, 3]]) === 'variance([1,2,3])', 'formatForGiac maps var to variance');
+assert(MathEngine.formatForGiac(['length', ['List', 1, 2, 3]]) === 'size([1,2,3])', 'formatForGiac maps length to size');
+
+function formatStatGiacCommand(cmdName: string, giacArgs: string): string {
+    const listArg = !giacArgs.trim().startsWith('[') ? `[${giacArgs}]` : giacArgs;
+    if (cmdName === 'stdev') return `stddev(${listArg})`;
+    if (cmdName === 'var') return `variance(${listArg})`;
+    if (cmdName === 'length') return `size(${listArg})`;
+    return `${cmdName}(${listArg})`;
+}
+assert(formatStatGiacCommand('mean', '1, 2, 3, 4, 5') === 'mean([1, 2, 3, 4, 5])', 'Auto-wraps comma separated mean args to list');
+assert(formatStatGiacCommand('median', '10, 20, 30') === 'median([10, 20, 30])', 'Auto-wraps comma separated median args to list');
+assert(formatStatGiacCommand('stdev', '2, 4, 6') === 'stddev([2, 4, 6])', 'Auto-wraps comma separated stdev args to list');
+assert(formatStatGiacCommand('var', '2, 4, 6') === 'variance([2, 4, 6])', 'Auto-wraps comma separated var args to list');
+assert(formatStatGiacCommand('length', '1, 2, 3') === 'size([1, 2, 3])', 'Auto-wraps comma separated length args to list');
+assert(formatStatGiacCommand('mean', '[1, 2, 3]') === 'mean([1, 2, 3])', 'Preserves already bracketed list for mean');
+
+// =========================================================================
+// [TEST GROUP 16: Linear Algebra & Matrix Commands]
+// =========================================================================
+console.log('\n[TEST GROUP 16: Linear Algebra & Matrix Commands]');
+
+assert(FaultTolerantParser.RESERVED_FUNCTIONS.has('det'), 'RESERVED_FUNCTIONS contains "det"');
+assert(FaultTolerantParser.RESERVED_FUNCTIONS.has('rref'), 'RESERVED_FUNCTIONS contains "rref"');
+assert(FaultTolerantParser.RESERVED_FUNCTIONS.has('trace'), 'RESERVED_FUNCTIONS contains "trace"');
+assert(FaultTolerantParser.RESERVED_FUNCTIONS.has('rank'), 'RESERVED_FUNCTIONS contains "rank"');
+assert(FaultTolerantParser.RESERVED_FUNCTIONS.has('inv'), 'RESERVED_FUNCTIONS contains "inv"');
+assert(FaultTolerantParser.RESERVED_FUNCTIONS.has('eigenvals'), 'RESERVED_FUNCTIONS contains "eigenvals"');
+assert(FaultTolerantParser.RESERVED_FUNCTIONS.has('eigenvects'), 'RESERVED_FUNCTIONS contains "eigenvects"');
+
+assert(MathEngine.formatForGiac(['det', 'A']) === 'det(A)', 'formatForGiac det(A)');
+assert(MathEngine.formatForGiac(['rref', 'A']) === 'rref(A)', 'formatForGiac rref(A)');
+assert(MathEngine.formatForGiac(['tr', 'A']) === 'trace(A)', 'formatForGiac tr(A) -> trace(A)');
+assert(MathEngine.formatForGiac(['matrixrank', 'A']) === 'rank(A)', 'formatForGiac matrixrank(A) -> rank(A)');
+assert(MathEngine.formatForGiac(['Power', 'A', -1]) === 'inv(A)', 'formatForGiac A^-1 -> inv(A)');
+assert(MathEngine.formatForGiac(['Power', 'A', 'T']) === 'tran(A)', 'formatForGiac A^T -> tran(A)');
+assert(MathEngine.formatForGiac(['eigenvalues', 'A']) === 'eigenvals(A)', 'formatForGiac eigenvalues(A) -> eigenvals(A)');
+assert(MathEngine.formatForGiac(['eigenvectors', 'A']) === 'eigenvects(A)', 'formatForGiac eigenvectors(A) -> eigenvects(A)');
+
+// =========================================================================
+// [TEST GROUP 17: Differential Equations & ODE Commands]
+// =========================================================================
+console.log('\n[TEST GROUP 17: Differential Equations & ODE Commands]');
+
+assert(FaultTolerantParser.RESERVED_FUNCTIONS.has('solveode'), 'RESERVED_FUNCTIONS contains "solveode"');
+assert(FaultTolerantParser.RESERVED_FUNCTIONS.has('nsolveode'), 'RESERVED_FUNCTIONS contains "nsolveode"');
+assert(FaultTolerantParser.RESERVED_FUNCTIONS.has('edo'), 'RESERVED_FUNCTIONS contains "edo"');
+assert(FaultTolerantParser.RESERVED_FUNCTIONS.has('campo'), 'RESERVED_FUNCTIONS contains "campo"');
+assert(FaultTolerantParser.RESERVED_FUNCTIONS.has('slopefield'), 'RESERVED_FUNCTIONS contains "slopefield"');
+
+function formatOdeGiacCommand(cmdName: string, giacArgs: string): string {
+    if (cmdName === 'nsolveode' || cmdName === 'solveode' || cmdName === 'edo') {
+        return `desolve(${giacArgs})`;
+    }
+    return `${cmdName}(${giacArgs})`;
+}
+assert(formatOdeGiacCommand('solveode', "y' = y, y") === "desolve(y' = y, y)", 'Maps solveode to Giac desolve');
+assert(formatOdeGiacCommand('edo', "y' = 2x, y") === "desolve(y' = 2x, y)", 'Maps edo to Giac desolve');
+
+// =========================================================================
+// [TEST GROUP 18: Defensive Rejection of Giac "pnt" Artifacts]
+// =========================================================================
+console.log('\n[TEST GROUP 18: Defensive Rejection of Giac "pnt" Artifacts]');
+
+function sanitizeGiacResult(res: string): string {
+    if (res.includes('pnt(') || res.includes('pnt[') || res.includes('point[') || res.includes('536870912')) {
+        return '- Erro no cálculo';
+    }
+    return res;
+}
+
+const bugArtifact = '= (i * ln(x) + (2 + i * x)/x) * x^(pnt(pnt[2 + i * x, [536870912]]))';
+assert(sanitizeGiacResult(bugArtifact) === '- Erro no cálculo', 'Defensively catches and suppresses bizarre pnt artifact output');
+
+const cleanResult = '= 2x';
+assert(sanitizeGiacResult(cleanResult) === '= 2x', 'Passes clean result without false positives');
 
 console.log(`\n--- RESULTS: ${passed} PASSED, ${failed} FAILED ---`);
 if (failed > 0) {

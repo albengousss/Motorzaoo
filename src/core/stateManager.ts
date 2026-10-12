@@ -15,6 +15,7 @@ export class StateManager {
     static pendingCas: Record<string, boolean> = {};
     static casSpawnedBlocks: Record<string, string> = {};
     static casIndices: Record<string, number> = {};
+    static activeGiacQuery: Record<string, string> = {};
     
     // Armazena as definições enviadas ao Giac para evitar spam de _caseval
     static giacDefinitions: Record<string, string> = {};
