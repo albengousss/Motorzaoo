@@ -1,7 +1,4 @@
-import { ComputeEngine } from '@cortex-js/compute-engine';
-
 export class MathEngine {
-    private static ce = new ComputeEngine();
     private static giacWorker: Worker | null = null;
     private static giacCallbacks: Record<string, (result: string) => void> = {};
     private static reqCounter = 0;
@@ -38,46 +35,16 @@ export class MathEngine {
      * O Método Mágico Assíncrono: Avaliação ultra-rápida e resiliente via Giac WebAssembly!
      */
     static async askGiac(expression: string): Promise<string> {
-        const executeOnModule = (m: any): string => {
-            try {
-                if (typeof m.cwrap === 'function') {
-                    const evaluateGiac = m.cwrap('caseval', 'string', ['string']);
-                    return evaluateGiac(expression);
-                } else if (typeof m._caseval === 'function') {
-                    const ptr = m.allocate(m.intArrayFromString(expression), 'i8', 0);
-                    const resPtr = m._caseval(ptr);
-                    const res = m.UTF8ToString(resPtr);
-                    m._free(ptr);
-                    return res;
-                }
-                return 'Erro: Funções de avaliação não encontradas';
-            } catch (err: any) {
-                return `Erro: ${err?.message || String(err)}`;
-            }
-        };
-
-        // 1. Execução direta e instantânea na thread principal se o Module estiver pronto
-        const m = (typeof window !== 'undefined' ? (window as any).Module : null);
-        if (m && (typeof m.cwrap === 'function' || typeof m._caseval === 'function')) {
-            return executeOnModule(m);
-        }
-
-        // 2. Se o Worker estiver pronto, tenta executar nele com timeout curto de fallback
         this.initGiacWorker();
-        if (this.giacWorker && this.isGiacReady) {
+        if (this.giacWorker) {
             const id = 'giac_' + (++this.reqCounter) + '_' + Date.now();
             return new Promise((resolve) => {
                 const timer = setTimeout(() => {
                     if (this.giacCallbacks[id]) {
                         delete this.giacCallbacks[id];
-                        const fallbackM = (typeof window !== 'undefined' ? (window as any).Module : null);
-                        if (fallbackM && (typeof fallbackM.cwrap === 'function' || typeof fallbackM._caseval === 'function')) {
-                            resolve(executeOnModule(fallbackM));
-                        } else {
-                            resolve('(A carregar motor matemático... aguarde)');
-                        }
+                        resolve('(Tempo limite de cálculo excedido)');
                     }
-                }, 2000);
+                }, 12000);
 
                 this.giacCallbacks[id] = (res) => {
                     clearTimeout(timer);
@@ -88,21 +55,7 @@ export class MathEngine {
             });
         }
 
-        // 3. Polling rápido enquanto o Giac carrega (resolve assim que inicializar)
-        return new Promise((resolve) => {
-            let attempts = 0;
-            const poll = setInterval(() => {
-                attempts++;
-                const mod = (typeof window !== 'undefined' ? (window as any).Module : null);
-                if (mod && (typeof mod.cwrap === 'function' || typeof mod._caseval === 'function')) {
-                    clearInterval(poll);
-                    resolve(executeOnModule(mod));
-                } else if (attempts > 50) { // 10 segundos
-                    clearInterval(poll);
-                    resolve('(A carregar motor matemático... aguarde)');
-                }
-            }, 200);
-        });
+        return Promise.resolve('(A carregar motor matemático... aguarde)');
     }
     
     static readonly GIAC_COMMANDS = [
@@ -219,27 +172,95 @@ export class MathEngine {
     static userFunctions: Record<string, { params: string[], expr: string, ast: any, blockId?: string }> = {};
 
     static evaluateAST(ast: any, scope: Record<string, number> = {}): number {
+        if (ast === null || ast === undefined) return NaN;
         if (typeof ast === 'number') return ast;
         if (typeof ast === 'string') {
             const clean = ast.toLowerCase().replace(/[\{\}\\]/g, '').trim();
-            if (clean === 'pi') return Math.PI;
+            if (clean === 'pi' || clean === 'π') return Math.PI;
             if (clean === 'e') return Math.E;
             if (scope[ast] !== undefined) return scope[ast];
             if (scope[clean] !== undefined) return scope[clean];
+            const parsed = parseFloat(clean);
+            if (!isNaN(parsed) && isFinite(parsed)) return parsed;
+            return NaN;
         }
+
+        // Suporte a nós AST do PrattParser ({ type: 'Number', ... })
+        if (typeof ast === 'object' && !Array.isArray(ast)) {
+            if (ast.type === 'Number') {
+                return typeof ast.value === 'number' ? ast.value : parseFloat(ast.value);
+            }
+            if (ast.type === 'Identifier') {
+                return this.evaluateAST(ast.value, scope);
+            }
+            if (ast.type === 'BinaryOp') {
+                const L = this.evaluateAST(ast.left, scope);
+                const R = this.evaluateAST(ast.right, scope);
+                if (ast.operator === '+') return L + R;
+                if (ast.operator === '-') return L - R;
+                if (ast.operator === '*') return L * R;
+                if (ast.operator === '/') return R === 0 ? NaN : L / R;
+                if (ast.operator === '^') return this.realPow(L, R);
+            }
+            if (ast.type === 'UnaryOp') {
+                const arg = this.evaluateAST(ast.argument, scope);
+                if (ast.operator === '-') return -arg;
+                if (ast.operator === '+') return arg;
+            }
+            if (ast.type === 'FunctionCall') {
+                const fn = (ast.name || '').toLowerCase();
+                const args = (ast.arguments || []).map((a: any) => this.evaluateAST(a, scope));
+                if (fn === 'sin') return Math.sin(args[0]);
+                if (fn === 'cos') return Math.cos(args[0]);
+                if (fn === 'tan') return Math.tan(args[0]);
+                if (fn === 'sqrt') return Math.sqrt(args[0]);
+                if (fn === 'cbrt') return Math.cbrt(args[0]);
+                if (fn === 'abs') return Math.abs(args[0]);
+                if (fn === 'exp') return Math.exp(args[0]);
+                if (fn === 'log' || fn === 'ln') return Math.log(args[0]);
+                if (fn === 'asin') return Math.asin(args[0]);
+                if (fn === 'acos') return Math.acos(args[0]);
+                if (fn === 'atan') return args.length > 1 ? Math.atan2(args[0], args[1]) : Math.atan(args[0]);
+                if (fn === 'sinh') return Math.sinh(args[0]);
+                if (fn === 'cosh') return Math.cosh(args[0]);
+                if (fn === 'tanh') return Math.tanh(args[0]);
+            }
+        }
+
+        // Suporte a arrays MathJSON (['Add', 1, 2], etc.)
+        if (Array.isArray(ast)) {
+            const op = ast[0];
+            if (op === 'Add') return this.evaluateAST(ast[1], scope) + this.evaluateAST(ast[2], scope);
+            if (op === 'Subtract') return this.evaluateAST(ast[1], scope) - this.evaluateAST(ast[2], scope);
+            if (op === 'Multiply') return this.evaluateAST(ast[1], scope) * this.evaluateAST(ast[2], scope);
+            if (op === 'Divide') {
+                const den = this.evaluateAST(ast[2], scope);
+                return den === 0 ? NaN : this.evaluateAST(ast[1], scope) / den;
+            }
+            if (op === 'Power') return this.realPow(this.evaluateAST(ast[1], scope), this.evaluateAST(ast[2], scope));
+            if (op === 'Negate') return -this.evaluateAST(ast[1], scope);
+            if (op === 'Abs') return Math.abs(this.evaluateAST(ast[1], scope));
+            if (op === 'Sqrt') return Math.sqrt(this.evaluateAST(ast[1], scope));
+            if (op === 'Cbrt') return Math.cbrt(this.evaluateAST(ast[1], scope));
+            if (op === 'Sin') return Math.sin(this.evaluateAST(ast[1], scope));
+            if (op === 'Cos') return Math.cos(this.evaluateAST(ast[1], scope));
+            if (op === 'Tan') return Math.tan(this.evaluateAST(ast[1], scope));
+            if (op === 'Log' || op === 'Ln') return Math.log(this.evaluateAST(ast[1], scope));
+            if (op === 'Exp') return Math.exp(this.evaluateAST(ast[1], scope));
+            if (op === 'Asin') return Math.asin(this.evaluateAST(ast[1], scope));
+            if (op === 'Acos') return Math.acos(this.evaluateAST(ast[1], scope));
+            if (op === 'Atan') return Math.atan(this.evaluateAST(ast[1], scope));
+            if (op === 'Sinh') return Math.sinh(this.evaluateAST(ast[1], scope));
+            if (op === 'Cosh') return Math.cosh(this.evaluateAST(ast[1], scope));
+            if (op === 'Tanh') return Math.tanh(this.evaluateAST(ast[1], scope));
+        }
+
+        // Fallback rápido via compilador JIT nativo
         try {
-            this.ce.pushScope();
-            Object.entries(scope).forEach(([k, v]) => {
-                if (typeof v === 'number' && !isNaN(v)) {
-                    this.ce.assign(k, v);
-                }
-            });
-            const result = this.ce.box(ast).evaluate();
-            return Number((result as any).numericValue ?? (result as any).json ?? result.valueOf());
+            const fn = this.compile(ast);
+            return fn(0, 0, scope);
         } catch (_) {
             return NaN;
-        } finally {
-            try { this.ce.popScope(); } catch (_) {}
         }
     }
 
@@ -546,11 +567,29 @@ export class MathEngine {
         },
         intNeg: (a: any) => ({ min: -a.max, max: -a.min }),
         intPow: (a: any, b: any) => {
-            if (b.min === b.max && b.min % 2 === 0) {
-                if (a.min <= 0 && a.max >= 0) return { min: 0, max: Math.max(Math.pow(a.min, b.min), Math.pow(a.max, b.min)) };
-                return { min: Math.min(Math.pow(a.min, b.min), Math.pow(a.max, b.min)), max: Math.max(Math.pow(a.min, b.min), Math.pow(a.max, b.min)) };
+            if (b.min === b.max && Math.round(b.min) === b.min) {
+                const n = Math.round(b.min);
+                if (n === 0) return { min: 1, max: 1 };
+                if (n % 2 === 0) {
+                    if (a.min <= 0 && a.max >= 0) {
+                        return { min: 0, max: Math.max(Math.pow(a.min, n), Math.pow(a.max, n)) };
+                    }
+                    const v1 = Math.pow(a.min, n);
+                    const v2 = Math.pow(a.max, n);
+                    return { min: Math.min(v1, v2), max: Math.max(v1, v2) };
+                } else {
+                    const v1 = MathEngine.realPow(a.min, n);
+                    const v2 = MathEngine.realPow(a.max, n);
+                    return { min: Math.min(v1, v2), max: Math.max(v1, v2) };
+                }
             }
-            return { min: Math.min(Math.pow(a.min, b.min), Math.pow(a.max, b.min)), max: Math.max(Math.pow(a.min, b.max), Math.pow(a.max, b.max)) };
+            const p1 = MathEngine.realPow(a.min, b.min);
+            const p2 = MathEngine.realPow(a.min, b.max);
+            const p3 = MathEngine.realPow(a.max, b.min);
+            const p4 = MathEngine.realPow(a.max, b.max);
+            const valid = [p1, p2, p3, p4].filter(x => !isNaN(x) && isFinite(x));
+            if (valid.length === 0) return { min: 0, max: 0 };
+            return { min: Math.min(...valid), max: Math.max(...valid) };
         },
         intSin: (a: any) => {
             if (a.max - a.min >= 2 * Math.PI) return { min: -1, max: 1 };

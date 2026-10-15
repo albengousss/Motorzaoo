@@ -63,8 +63,10 @@ export class GLRenderer {
         this.gl.clear(this.gl.COLOR_BUFFER_BIT);
     }
 
+    private programUniforms: Record<string, string[]> = {};
+
     /** Converte nó da AST em float expression GLSL */
-    static astToGLSL(node: any, scope: Record<string, number>): string {
+    static astToGLSL(node: any, scope: Record<string, number> = {}, usedUniforms?: Set<string>): string {
         if (typeof node === 'number') {
             const str = node.toString();
             return str.includes('.') ? str : str + '.0';
@@ -77,14 +79,20 @@ export class GLRenderer {
             if (clean === 'pi' || clean === '\\pi' || clean === 'π') return '3.141592653589793';
             if (clean === 'e') return '2.718281828459045';
             
-            const val = scope[clean] !== undefined ? scope[clean] : 0.0;
+            if (usedUniforms) {
+                const safe = clean.replace(/[^a-zA-Z0-9_]/g, '_');
+                usedUniforms.add(clean);
+                return `u_var_${safe}`;
+            }
+
+            const val = scope[clean] !== undefined ? scope[clean] : (scope[clean.toLowerCase()] !== undefined ? scope[clean.toLowerCase()] : 0.0);
             const str = val.toString();
             return str.includes('.') ? str : str + '.0';
         }
         if (Array.isArray(node)) {
             const op = node[0];
-            const L = node.length > 1 ? this.astToGLSL(node[1], scope) : '0.0';
-            const R = node.length > 2 ? this.astToGLSL(node[2], scope) : '0.0';
+            const L = node.length > 1 ? this.astToGLSL(node[1], scope, usedUniforms) : '0.0';
+            const R = node.length > 2 ? this.astToGLSL(node[2], scope, usedUniforms) : '0.0';
 
             if (op === 'Add') return `(${L} + ${R})`;
             if (op === 'Subtract') return `(${L} - ${R})`;
@@ -92,11 +100,24 @@ export class GLRenderer {
             if (op === 'Divide') return `(${L} / (${R} == 0.0 ? 1e-7 : ${R}))`;
             if (op === 'Power') {
                 if (typeof node[2] === 'number') {
-                    if (node[2] === 2) return `(${L} * ${L})`;
-                    if (node[2] === 3) return `(${L} * ${L} * ${L})`;
-                    if (node[2] === 4) return `((${L} * ${L}) * (${L} * ${L}))`;
+                    const exp = node[2];
+                    if (exp === 2) return `(${L} * ${L})`;
+                    if (exp === 3) return `(${L} * ${L} * ${L})`;
+                    if (exp === 4) return `((${L} * ${L}) * (${L} * ${L}))`;
+                    if (Number.isInteger(exp)) {
+                        const absExpStr = Math.abs(exp).toFixed(1);
+                        const isEven = (exp % 2 === 0);
+                        if (exp > 0) {
+                            return isEven ? `pow(abs(${L}) + 1e-9, ${absExpStr})` : `(pow(abs(${L}) + 1e-9, ${absExpStr}) * (${L} < 0.0 ? -1.0 : 1.0))`;
+                        } else {
+                            const denom = isEven ? `pow(abs(${L}) + 1e-9, ${absExpStr})` : `(pow(abs(${L}) + 1e-9, ${absExpStr}) * (${L} < 0.0 ? -1.0 : 1.0))`;
+                            return `(1.0 / max(1e-9, ${denom}))`;
+                        }
+                    } else {
+                        return `(${L} < 0.0 ? -1e9 : pow(max(0.0, ${L}), ${R}))`;
+                    }
                 }
-                return `(pow(abs(${L}) + 1e-9, ${R}) * (${L} < 0.0 ? -1.0 : 1.0))`;
+                return `motor_pow(${L}, ${R})`;
             }
             if (op === 'Sin') return `sin(${L})`;
             if (op === 'Cos') return `cos(${L})`;
@@ -123,7 +144,8 @@ export class GLRenderer {
     private getOrCreateProgram(ast: any, operator: string, scope: Record<string, number>): WebGLProgram | null {
         if (!this.gl) return null;
 
-        const exprGLSL = GLRenderer.astToGLSL(ast, scope);
+        const usedUniforms = new Set<string>();
+        const exprGLSL = GLRenderer.astToGLSL(ast, scope, usedUniforms);
         const cacheKey = `${exprGLSL}::${operator}`;
 
         if (this.programCache[cacheKey]) {
@@ -169,6 +191,11 @@ export class GLRenderer {
             `;
         }
 
+        const uniformDecls = Array.from(usedUniforms).map(v => {
+            const safe = v.replace(/[^a-zA-Z0-9_]/g, '_');
+            return `uniform float u_var_${safe};`;
+        }).join('\n');
+
         const fsSource = `
             #ifdef GL_OES_standard_derivatives
             #extension GL_OES_standard_derivatives : enable
@@ -178,7 +205,19 @@ export class GLRenderer {
             uniform vec4 u_bounds; // xMin, xMax, yMin, yMax
             uniform vec2 u_resolution;
             uniform vec4 u_color;
+            ${uniformDecls}
             varying vec2 v_uv;
+
+            float motor_pow(float b, float e) {
+                if (b == 0.0) return (e == 0.0 ? 1.0 : 0.0);
+                float re = floor(e + 0.5);
+                if (abs(e - re) < 1e-5) {
+                    float p = pow(abs(b) + 1e-9, abs(re));
+                    float res = (mod(abs(re), 2.0) > 0.5) ? (b < 0.0 ? -p : p) : p;
+                    return re < 0.0 ? (1.0 / max(1e-9, res)) : res;
+                }
+                return b < 0.0 ? -1e9 : pow(max(0.0, b), e);
+            }
 
             float evalF(float x, float y) {
                 return ${exprGLSL};
@@ -194,7 +233,9 @@ export class GLRenderer {
 
         const program = this.compileProgram(vsSource, fsSource);
         if (program) {
+            (program as any)._uniformNames = Array.from(usedUniforms);
             this.programCache[cacheKey] = program;
+            this.programUniforms[cacheKey] = Array.from(usedUniforms);
         }
         return program;
     }
@@ -260,6 +301,15 @@ export class GLRenderer {
         const rgba = this.hexToRGBA(hexColor);
         const uColor = gl.getUniformLocation(program, 'u_color');
         gl.uniform4f(uColor, rgba[0], rgba[1], rgba[2], rgba[3]);
+
+        // Define valores dinâmicos dos sliders (uniform float u_var_<name>)
+        const uniforms: string[] = (program as any)._uniformNames || [];
+        for (const vName of uniforms) {
+            const val = scope[vName] !== undefined ? scope[vName] : (scope[vName.toLowerCase()] !== undefined ? scope[vName.toLowerCase()] : 0.0);
+            const safe = vName.replace(/[^a-zA-Z0-9_]/g, '_');
+            const loc = gl.getUniformLocation(program, `u_var_${safe}`);
+            if (loc) gl.uniform1f(loc, val);
+        }
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
     }

@@ -66,27 +66,57 @@ export class Tokenizer {
         processed = processed.replace(/\}\s*(?=[a-zA-Z0-9_\(\\|])/g, '}*');
         // 7. Potências numéricas soltas: x^2(x+1)
         processed = processed.replace(/(\^[0-9]+)\s*\(/g, '$1*(');
-        // 8. Módulos matemáticos (|...|) com multiplicação implícita inteligente
-        let pipeOpen = false;
+        // 8. Módulos matemáticos (|...|) com detecção contextual e suporte a aninhamento arbitrário
+        let pipeDepth = 0;
+        let lastPipeType: 'OPEN' | 'CLOSE' | null = null;
         let pipeAdjusted = '';
+
         for (let i = 0; i < processed.length; i++) {
             const ch = processed[i];
             if (ch === '|') {
-                if (!pipeOpen) {
-                    // Pipe de abertura: se precedido por operando não-espaço, insere '*' antes dele (ex: 2|x| -> 2*|x|, (x)|y| -> (x)*|y|)
-                    let prevNonSpace = '';
-                    for (let j = pipeAdjusted.length - 1; j >= 0; j--) {
-                        if (pipeAdjusted[j] !== ' ') { prevNonSpace = pipeAdjusted[j]; break; }
+                // Procurar último caractere significativo antes deste pipe
+                let prevNonSpace = '';
+                for (let j = pipeAdjusted.length - 1; j >= 0; j--) {
+                    if (pipeAdjusted[j] !== ' ') { prevNonSpace = pipeAdjusted[j]; break; }
+                }
+
+                const isAfterOperand = Boolean(prevNonSpace && /[0-9a-zA-Z_\)\}\]]/.test(prevNonSpace));
+                const isAfterOpOrOpen = !prevNonSpace || /[+\-*\/^=,;(\[{]/.test(prevNonSpace);
+
+                let isOpening = false;
+                if (isAfterOpOrOpen) {
+                    isOpening = true;
+                } else if (isAfterOperand) {
+                    // Precedido por operando: se já temos pipes abertos, este fecha
+                    if (pipeDepth > 0) {
+                        isOpening = false;
+                    } else {
+                        // Se não havia pipe aberto, é abertura com multiplicação implícita (ex: 2|x|)
+                        isOpening = true;
                     }
-                    if (prevNonSpace && /[0-9a-zA-Z_\)\}\]]/.test(prevNonSpace)) {
+                } else if (prevNonSpace === '|') {
+                    if (lastPipeType === 'OPEN') {
+                        isOpening = true;
+                    } else {
+                        // Após fechar um pipe (|x||y|): se depth === 0, abre o próximo
+                        isOpening = (pipeDepth === 0);
+                    }
+                }
+
+                if (isOpening) {
+                    // Se precedido por operando ou pipe fechado, injeta '*' (ex: 2|x| -> 2*|x|, |x||y| -> |x|*|y|)
+                    if (prevNonSpace && (/[0-9a-zA-Z_\)\}\]]/.test(prevNonSpace) || (prevNonSpace === '|' && lastPipeType === 'CLOSE'))) {
                         pipeAdjusted += '*';
                     }
                     pipeAdjusted += '|';
-                    pipeOpen = true;
+                    pipeDepth++;
+                    lastPipeType = 'OPEN';
                 } else {
-                    // Pipe de fechamento: após ele, se seguido por operando, insere '*' (ex: |x|2 -> |x|*2, |x|y -> |x|*y, |x|(y) -> |x|*(y))
                     pipeAdjusted += '|';
-                    pipeOpen = false;
+                    pipeDepth = Math.max(0, pipeDepth - 1);
+                    lastPipeType = 'CLOSE';
+
+                    // Após fechar pipe, se for seguido por operando, injeta '*' (ex: |x|2 -> |x|*2, |x|y -> |x|*y, |x|(y) -> |x|*(y))
                     let nextNonSpace = '';
                     for (let j = i + 1; j < processed.length; j++) {
                         if (processed[j] !== ' ') { nextNonSpace = processed[j]; break; }

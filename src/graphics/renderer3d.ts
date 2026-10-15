@@ -35,7 +35,6 @@ export class Renderer3D {
     private meshGridSize = 64;
     private meshVertexBuffer: WebGLBuffer | null = null;
     private meshIndexBuffer: WebGLBuffer | null = null;
-    private meshIndexCount = 0;
 
     constructor(canvasId: string = 'canvas3d') {
         this.canvas = document.getElementById(canvasId) as HTMLCanvasElement;
@@ -249,7 +248,6 @@ export class Renderer3D {
         this.meshIndexBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.meshIndexBuffer);
         gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
-        this.meshIndexCount = indices.length;
 
         this.meshVertexBuffer = gl.createBuffer();
     }
@@ -269,6 +267,10 @@ export class Renderer3D {
     private getRaymarchProgram(glslExpr: string): WebGLProgram | null {
         if (this.raymarchProgramCache[glslExpr]) return this.raymarchProgramCache[glslExpr];
 
+        const varMatches = Array.from(glslExpr.matchAll(/u_var_([a-zA-Z0-9_]+)/g)).map(m => m[1]);
+        const uniqueVars = Array.from(new Set(varMatches));
+        const uniformDecls = uniqueVars.map(v => `uniform float u_var_${v};`).join('\n');
+
         const vs = `
             attribute vec2 a_pos;
             varying vec2 v_uv;
@@ -285,6 +287,18 @@ export class Renderer3D {
             uniform vec3 u_eyePos;
             uniform vec3 u_lightDir;
             uniform vec3 u_color;
+            ${uniformDecls}
+
+            float motor_pow(float b, float e) {
+                if (b == 0.0) return (e == 0.0 ? 1.0 : 0.0);
+                float re = floor(e + 0.5);
+                if (abs(e - re) < 1e-5) {
+                    float p = pow(abs(b) + 1e-9, abs(re));
+                    float res = (mod(abs(re), 2.0) > 0.5) ? (b < 0.0 ? -p : p) : p;
+                    return re < 0.0 ? (1.0 / max(1e-9, res)) : res;
+                }
+                return b < 0.0 ? -1e9 : pow(max(0.0, b), e);
+            }
 
             // Função analítica F(x, y, z)
             float evaluateF(vec3 p) {
@@ -382,7 +396,10 @@ export class Renderer3D {
         `;
 
         const prog = this.createProgram(vs, fs);
-        if (prog) this.raymarchProgramCache[glslExpr] = prog;
+        if (prog) {
+            (prog as any)._uniformNames = uniqueVars;
+            this.raymarchProgramCache[glslExpr] = prog;
+        }
         return prog;
     }
 
@@ -400,7 +417,7 @@ export class Renderer3D {
         // 1. Desenha Superfícies Implícitas F(x, y, z) = 0 via Raymarching
         for (const surf of surfaces) {
             if (surf.isImplicit && surf.glslExpr) {
-                this.renderImplicitRaymarch(surf, invViewProj, eyePos, lightDir);
+                this.renderImplicitRaymarch(surf, invViewProj, eyePos, lightDir, scope);
             }
         }
 
@@ -463,26 +480,56 @@ export class Renderer3D {
         const N = this.meshGridSize;
         const bounds = 5.0;
         const step = (bounds * 2) / N;
+        const stride = N + 1;
 
-        const vertexData = new Float32Array((N + 1) * (N + 1) * 6); // pos(3) + normal(3)
-        let idx = 0;
+        const zGrid = new Float32Array(stride * stride);
+        const valid = new Uint8Array(stride * stride);
 
-        // Avalia malha de vértices
+        // 1. Avalia Z uma única vez por vértice
         for (let j = 0; j <= N; j++) {
             const y = -bounds + j * step;
             for (let i = 0; i <= N; i++) {
                 const x = -bounds + i * step;
-                let z = surf.funcZ!(x, y, scope);
-                if (isNaN(z)) z = 0;
-                // Clampa na caixa delimitadora
-                z = Math.max(-bounds, Math.min(bounds, z));
+                const p = j * stride + i;
+                const val = surf.funcZ!(x, y, scope);
+                if (typeof val === 'number' && isFinite(val) && !isNaN(val)) {
+                    zGrid[p] = Math.max(-bounds * 2, Math.min(bounds * 2, val));
+                    valid[p] = 1;
+                } else {
+                    zGrid[p] = 0;
+                    valid[p] = 0;
+                }
+            }
+        }
 
-                // Derivadas numéricas locais para normal
-                const eps = 0.05;
-                const zX = surf.funcZ!(x + eps, y, scope) || z;
-                const zY = surf.funcZ!(x, y + eps, scope) || z;
-                const dzdx = (zX - z) / eps;
-                const dzdy = (zY - z) / eps;
+        const vertexData = new Float32Array(stride * stride * 6); // pos(3) + normal(3)
+        let idx = 0;
+
+        // 2. Monta geometria e calcula normais a partir do zGrid existente (sem re-avaliar funcZ)
+        for (let j = 0; j <= N; j++) {
+            const y = -bounds + j * step;
+            for (let i = 0; i <= N; i++) {
+                const x = -bounds + i * step;
+                const p = j * stride + i;
+                const z = zGrid[p];
+
+                let dzdx = 0;
+                if (i > 0 && i < N && valid[p - 1] && valid[p + 1]) {
+                    dzdx = (zGrid[p + 1] - zGrid[p - 1]) / (2 * step);
+                } else if (i < N && valid[p + 1]) {
+                    dzdx = (zGrid[p + 1] - z) / step;
+                } else if (i > 0 && valid[p - 1]) {
+                    dzdx = (z - zGrid[p - 1]) / step;
+                }
+
+                let dzdy = 0;
+                if (j > 0 && j < N && valid[p - stride] && valid[p + stride]) {
+                    dzdy = (zGrid[p + stride] - zGrid[p - stride]) / (2 * step);
+                } else if (j < N && valid[p + stride]) {
+                    dzdy = (zGrid[p + stride] - z) / step;
+                } else if (j > 0 && valid[p - stride]) {
+                    dzdy = (z - zGrid[p - stride]) / step;
+                }
 
                 let nx = -dzdx, ny = -dzdy, nz = 1.0;
                 const len = Math.hypot(nx, ny, nz) || 1.0;
@@ -496,6 +543,26 @@ export class Renderer3D {
                 vertexData[idx++] = nz;
             }
         }
+
+        // 3. Monta índices apenas para triângulos cujos vértices são válidos no domínio
+        const dynamicIndices: number[] = [];
+        for (let j = 0; j < N; j++) {
+            for (let i = 0; i < N; i++) {
+                const p1 = j * stride + i;
+                const p2 = p1 + 1;
+                const p3 = (j + 1) * stride + i;
+                const p4 = p3 + 1;
+
+                if (valid[p1] && valid[p2] && valid[p3]) {
+                    dynamicIndices.push(p1, p2, p3);
+                }
+                if (valid[p2] && valid[p4] && valid[p3]) {
+                    dynamicIndices.push(p2, p4, p3);
+                }
+            }
+        }
+
+        if (dynamicIndices.length === 0) return;
 
         gl.useProgram(this.surfaceProgram!);
         gl.bindBuffer(gl.ARRAY_BUFFER, this.meshVertexBuffer);
@@ -523,10 +590,11 @@ export class Renderer3D {
         gl.uniform3fv(uBaseCol, new Float32Array(rgbSurf));
 
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.meshIndexBuffer);
-        gl.drawElements(gl.TRIANGLES, this.meshIndexCount, gl.UNSIGNED_SHORT, 0);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(dynamicIndices), gl.DYNAMIC_DRAW);
+        gl.drawElements(gl.TRIANGLES, dynamicIndices.length, gl.UNSIGNED_SHORT, 0);
     }
 
-    private renderImplicitRaymarch(surf: Surface3DItem, invViewProj: Float32Array, eyePos: number[], lightDir: number[]) {
+    private renderImplicitRaymarch(surf: Surface3DItem, invViewProj: Float32Array, eyePos: number[], lightDir: number[], scope: Record<string, number> = {}) {
         const gl = this.gl!;
         const prog = this.getRaymarchProgram(surf.glslExpr!);
         if (!prog) return;
@@ -546,6 +614,15 @@ export class Renderer3D {
         gl.uniformMatrix4fv(uInvVP, false, invViewProj);
         gl.uniform3fv(uEye, new Float32Array(eyePos));
         gl.uniform3fv(uLight, new Float32Array(lightDir));
+
+        // Define uniforms de variáveis dinâmicas (sliders)
+        const uniforms: string[] = (prog as any)._uniformNames || [];
+        for (const vName of uniforms) {
+            const val = scope[vName] !== undefined ? scope[vName] : (scope[vName.toLowerCase()] !== undefined ? scope[vName.toLowerCase()] : 0.0);
+            const safe = vName.replace(/[^a-zA-Z0-9_]/g, '_');
+            const loc = gl.getUniformLocation(prog, `u_var_${safe}`);
+            if (loc) gl.uniform1f(loc, val);
+        }
 
         // Cor da superfície (converte hex/nome para rgb)
         const rgb = this.hexToRgb(surf.color || '#3b82f6');
@@ -588,7 +665,10 @@ export class Renderer3D {
         gl.vertexAttribPointer(aCol, 4, gl.FLOAT, false, 28, 12);
         gl.uniformMatrix4fv(uVP, false, viewProj);
         gl.lineWidth(3.5);
-        gl.drawArrays(gl.LINE_STRIP, 0, steps + 1);
+        const vertexCount = Math.floor(curveData.length / 7);
+        if (vertexCount > 0) {
+            gl.drawArrays(gl.LINE_STRIP, 0, vertexCount);
+        }
         gl.deleteBuffer(curveBuf);
     }
 

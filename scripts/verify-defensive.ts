@@ -1338,9 +1338,91 @@ const polyAst = new PrattParser('x^3 - 3*x + 1').parseExpression();
 const compiledPoly = MathEngine.compile(polyAst, 'x');
 assert(compiledPoly(2, 0, {}) === 3, 'compiledPoly(2) = 2^3 - 6 + 1 = 3', compiledPoly(2, 0, {}));
 
-const multiAst = new PrattParser('x^2 + y^2').parseExpression();
-const compiledMulti = MathEngine.compileMultivariable(multiAst, ['x', 'y']);
-assert(compiledMulti(3, 4) === 25, 'compiledMulti(3, 4) = 3^2 + 4^2 = 25', compiledMulti(3, 4));
+// =========================================================================
+console.log('\n[TEST GROUP 21: Nested Absolute Values & Pipe Tokenization]');
+// 1. Nested absolute values: ||x| - 2|
+const tokNested = new Tokenizer();
+const nestedTokens = tokNested.tokenize('||x| - 2|');
+const pipeTokens = nestedTokens.filter(t => t.type === TokenTypes.PIPE);
+assert(pipeTokens.length === 4, '||x| - 2| produces exactly 4 PIPE tokens without rogue * injection', nestedTokens);
+
+const parsedNested = new PrattParser('||x| - 2|').parseExpression();
+assert(Array.isArray(parsedNested) && parsedNested[0] === 'Abs' && parsedNested[1][0] === 'Subtract' && parsedNested[1][1][0] === 'Abs', 'PrattParser parses ||x| - 2| as nested Abs AST', parsedNested);
+
+// Test implicit multiplication with pipes
+const tokPipeMul1 = new Tokenizer().tokenize('2|x|');
+assert(tokPipeMul1.some(t => t.type === TokenTypes.MULTIPLICATION), '2|x| has implicit multiplication 2*|x|');
+
+const tokPipeMul2 = new Tokenizer().tokenize('|x|2');
+assert(tokPipeMul2.some(t => t.type === TokenTypes.MULTIPLICATION), '|x|2 has implicit multiplication |x|*2');
+
+const tokPipeMul3 = new Tokenizer().tokenize('|x||y|');
+assert(tokPipeMul3.some(t => t.type === TokenTypes.MULTIPLICATION), '|x||y| has implicit multiplication |x|*|y|');
+
+// =========================================================================
+console.log('\n[TEST GROUP 22: Native MathEngine.evaluateAST]');
+assert(MathEngine.evaluateAST(42) === 42, 'evaluateAST evaluates number literal 42');
+assert(Math.abs(MathEngine.evaluateAST('pi') - Math.PI) < 1e-10, 'evaluateAST evaluates string "pi"');
+assert(Math.abs(MathEngine.evaluateAST('e') - Math.E) < 1e-10, 'evaluateAST evaluates string "e"');
+assert(MathEngine.evaluateAST('a', { a: 7.5 }) === 7.5, 'evaluateAST evaluates scope variable { a: 7.5 }');
+
+// PrattParser nodes
+const nodeNum = { type: 'Number', value: 15 };
+assert(MathEngine.evaluateAST(nodeNum) === 15, 'evaluateAST evaluates PrattParser Number node');
+
+const nodeBin = { type: 'BinaryOp', operator: '+', left: { type: 'Number', value: 10 }, right: { type: 'Number', value: 20 } };
+assert(MathEngine.evaluateAST(nodeBin) === 30, 'evaluateAST evaluates PrattParser BinaryOp node');
+
+const nodeFunc = { type: 'FunctionCall', name: 'sqrt', arguments: [{ type: 'Number', value: 16 }] };
+assert(MathEngine.evaluateAST(nodeFunc) === 4, 'evaluateAST evaluates PrattParser FunctionCall sqrt node');
+
+// MathJSON arrays
+assert(MathEngine.evaluateAST(['Add', 10, ['Multiply', 2, 5]]) === 20, 'evaluateAST evaluates nested MathJSON Add and Multiply');
+assert(MathEngine.evaluateAST(['Power', 2, 3]) === 8, 'evaluateAST evaluates MathJSON Power 2^3 = 8');
+assert(MathEngine.evaluateAST(['Sin', 0]) === 0, 'evaluateAST evaluates MathJSON Sin(0) = 0');
+assert(MathEngine.evaluateAST(['Cos', 0]) === 1, 'evaluateAST evaluates MathJSON Cos(0) = 1');
+
+// =========================================================================
+console.log('\n[TEST GROUP 23: Interval Arithmetic intPow]');
+const intOps = (MathEngine as any).intervalOps;
+// Even power on interval crossing zero: [-2, 1]^4 should be [0, 16]
+const resEven = intOps.intPow({ min: -2, max: 1 }, { min: 4, max: 4 });
+assert(resEven.min === 0 && resEven.max === 16, 'intPow([-2, 1], 4) = [0, 16]', resEven);
+
+// Odd power on interval crossing zero: [-2, 1]^3 should be [-8, 1]
+const resOdd = intOps.intPow({ min: -2, max: 1 }, { min: 3, max: 3 });
+assert(resOdd.min === -8 && resOdd.max === 1, 'intPow([-2, 1], 3) = [-8, 1]', resOdd);
+
+// =========================================================================
+console.log('\n[TEST GROUP 24: ODESolver Bidirectional & Blowup Guard]');
+import { ODESolver } from '../src/core/odeSolver.js';
+
+// y' = y com y(0) = 1 (solução exata: y = e^x)
+const odePoints = ODESolver.solveBidirectional((_x, y) => y, 0, 1, -2, 2);
+assert(odePoints.length > 10, 'solveBidirectional produces points across viewport');
+const firstPt = odePoints[0];
+const lastPt = odePoints[odePoints.length - 1];
+assert(firstPt.x < 0, 'solveBidirectional includes negative x values (backwards integration)', firstPt);
+assert(lastPt.x > 0, 'solveBidirectional includes positive x values (forward integration)', lastPt);
+// Verifica proximidade de e^1 no ponto x ~ 1
+const ptNear1 = odePoints.find(p => Math.abs(p.x - 1) < 0.05);
+if (ptNear1) {
+  assert(Math.abs(ptNear1.y - Math.exp(ptNear1.x)) < 1e-3, `ODE numerical solution matches exact exp(x): ${ptNear1.y.toFixed(5)} vs ${Math.exp(ptNear1.x).toFixed(5)}`);
+}
+
+// Blow-up guard: y' = y^2 com y(0) = 1 (assíntota vertical em x = 1)
+const blowupPts = ODESolver.solveDormandPrince((_x, y) => y * y, 0, 1, 5);
+assert(blowupPts.every(p => isFinite(p.y) && Math.abs(p.y) <= 1e11), 'ODESolver terminates cleanly on blowup without returning Infinity/NaN points');
+
+// =========================================================================
+console.log('\n[TEST GROUP 25: LatexNormalizer Centralization]');
+import { LatexNormalizer } from '../src/core/latexNormalizer.js';
+
+const normDeriv = LatexNormalizer.normalizeDerivative('\\frac{d}{dx}(x^2)');
+assert(normDeriv.includes('diff'), 'LatexNormalizer normalizes \\frac{d}{dx}(x^2) to diff');
+
+const normFrac = LatexNormalizer.normalizeFractions('\\frac{\\frac{1}{2}}{3}');
+assert(!normFrac.includes('\\frac'), 'LatexNormalizer unpacks nested fractions');
 
 console.log(`\n--- RESULTS: ${passed} PASSED, ${failed} FAILED ---`);
 if (failed > 0) {

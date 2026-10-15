@@ -4,6 +4,12 @@ import { PrattParser } from './core/prattParser';
 import { FaultTolerantParser } from './core/faultTolerantParser';
 import { StateManager } from './core/stateManager';
 import { HistoryManager } from './core/historyManager';
+import { createIcons, icons } from 'lucide';
+
+// Expõe createIcons nativo do bundle (eliminando dependência de CDN unpkg)
+(window as any).lucide = {
+    createIcons: (options?: any) => createIcons({ icons, ...options })
+};
 
 let validEquations: {id: string, ast?: any, isImplicit: boolean, operator: string, isEdo: boolean, isDerivative: boolean, derivVar?: string, isIvp?: boolean, isPoint?: boolean, pointX?: number, pointY?: number, pointLabel?: string, isParametric?: boolean, astX?: any, astY?: any, astZ?: any, isExplicitZ?: boolean, tMin?: number, tMax?: number, paramVar?: string, depVar?: string, indepVar?: string, condition?: (x: number, y: number, scope: any, t?: number) => boolean, name?: string, x0?: number, y0?: number, isHidden?: boolean, variable?: string, color?: string, lineStyle?: 'solid' | 'dashed' | 'dotted', lineWidth?: number, isTable?: boolean, tablePoints?: { x: number, y: number, rowIndex: number, tableBlockId: string }[], connectLines?: boolean}[] = [];
 let dragDistance = 0;
@@ -2111,26 +2117,13 @@ function drawFrame() {
             const ivpItem = item as any;
             const compiledEdo = MathEngine.compiledFuncs[ivpItem.name + "_edo"] || MathEngine.compiledFuncs["y_edo"];
             if (compiledEdo) {
-                // FWD
-                const tMax = Camera.xMax;
-                const pointsFwd = ODESolver.solveDormandPrince(
-                    (t: number, y: number) => compiledEdo(t, y, StateManager.values), 
-                    ivpItem.x0, ivpItem.y0, 
-                    tMax, 
-                    (tMax - ivpItem.x0) / 100
+                const allPoints = ODESolver.solveBidirectional(
+                    (t: number, y: number) => compiledEdo(t, y, StateManager.values),
+                    ivpItem.x0,
+                    ivpItem.y0,
+                    Camera.xMin,
+                    Camera.xMax
                 );
-                // BWD (reverse independent variable to integrate backwards)
-                const tauMax = ivpItem.x0 - Camera.xMin;
-                const pointsBwd = ODESolver.solveDormandPrince(
-                    (tau: number, y: number) => -compiledEdo(ivpItem.x0 - tau, y, StateManager.values), 
-                    0, ivpItem.y0, 
-                    tauMax, 
-                    tauMax / 100
-                );
-                
-                const reversed = pointsBwd.map((p: any) => ({ x: ivpItem.x0 - p.x, y: p.y })).reverse();
-                reversed.pop(); // remove point at tau=0 (x0) to prevent duplicate
-                const allPoints = reversed.concat(pointsFwd);
                 
                 renderer.drawCurve(allPoints, color, item.lineStyle, item.lineWidth);
                 renderMemory_curve_points.push({ points: allPoints, color });

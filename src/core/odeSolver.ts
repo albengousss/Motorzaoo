@@ -43,9 +43,12 @@ export class ODESolver {
 
             const error = Math.abs(y5 - y4);
             
+            if (!isFinite(y) || Math.abs(y) > 1e10 || isNaN(y)) break;
+
             if (error <= tol || h < 1e-10) {
                 t += h;
                 y = y5;
+                if (!isFinite(y) || Math.abs(y) > 1e10 || isNaN(y)) break;
                 points.push({x: t, y});
             }
             
@@ -57,5 +60,29 @@ export class ODESolver {
             }
         }
         return points;
+    }
+
+    /**
+     * Resolve a EDO de primeira ordem y' = f(x, y) em ambas as direções a partir de (x0, y0)
+     */
+    static solveBidirectional(f: (t: number, y: number) => number, x0: number, y0: number, xMin: number, xMax: number, tol: number = 1e-6): {x: number, y: number}[] {
+        // Integração para a frente (x0 -> xMax)
+        const forward = (xMax > x0)
+            ? this.solveDormandPrince(f, x0, y0, xMax, Math.max(1e-4, (xMax - x0) / 100), tol)
+            : [{ x: x0, y: y0 }];
+
+        // Integração para trás (x0 -> xMin)
+        const tauMax = x0 - xMin;
+        const backward = (tauMax > 0)
+            ? this.solveDormandPrince((tau, y) => -f(x0 - tau, y), 0, y0, tauMax, Math.max(1e-4, tauMax / 100), tol)
+            : [];
+
+        // Converte coordenadas de volta para o plano Cartesiano (x = x0 - tau)
+        const revPoints: {x: number, y: number}[] = [];
+        for (let i = backward.length - 1; i > 0; i--) {
+            revPoints.push({ x: x0 - backward[i].x, y: backward[i].y });
+        }
+
+        return [...revPoints, ...forward];
     }
 }

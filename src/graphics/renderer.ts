@@ -372,6 +372,8 @@ export class Renderer {
 
         this.ctx.beginPath();
         let levantarPincel = true;
+        let prevY = 0;
+        let prevPy = 0;
 
         for (let i = 0; i < points.length; i++) {
             // Se o ponto contiver NaN ou Infinity, levantamos o pincel.
@@ -383,12 +385,24 @@ export class Renderer {
             const px = Camera.toPixelX(points[i].x);
             const py = Camera.toPixelY(points[i].y);
 
+            // Detecção de assíntota vertical: se houver salto enorme na tela com mudança brusca de sinal
+            if (!levantarPincel) {
+                const deltaPy = Math.abs(py - prevPy);
+                const screenH = Camera.height;
+                const signChanged = (points[i].y * prevY < 0);
+                if (deltaPy > screenH * 0.75 && (signChanged || deltaPy > screenH * 1.5)) {
+                    levantarPincel = true;
+                }
+            }
+
             if (levantarPincel) {
                 this.ctx.moveTo(px, py);
                 levantarPincel = false;
             } else {
                 this.ctx.lineTo(px, py);
             }
+            prevY = points[i].y;
+            prevPy = py;
         }
         
         this.ctx.stroke(); 
@@ -422,17 +436,18 @@ export class Renderer {
         const yMin = Camera.yMin;
         const yMax = Camera.yMax;
 
-        // "A área de visualização é dividida de forma matricial - por norma, numa grelha quadrada 40x40"
         const cols = 40;
         const rows = 40;
         const dx = (xMax - xMin) / cols;
         const dy = (yMax - yMin) / rows;
 
-        // LengthMultiplier - Fator visual do comprimento
         const lengthMultiplier = Math.min(
             Math.abs(Camera.toPixelX(xMin + dx) - Camera.toPixelX(xMin)),
             Math.abs(Camera.toPixelY(yMin + dy) - Camera.toPixelY(yMin))
         ) * 0.35; // 35% of grid cell size
+
+        const scaleX = Camera.width / Math.max(1e-9, xMax - xMin);
+        const scaleY = Camera.height / Math.max(1e-9, yMax - yMin);
 
         for (let i = 0; i <= cols; i++) {
             for (let j = 0; j <= rows; j++) {
@@ -442,17 +457,16 @@ export class Renderer {
                 const m = f(x, y, scope);
                 if (isNaN(m) || !isFinite(m)) continue;
 
-                // Extrair o vetor unitário: u = (1/sqrt(1+m^2), m/sqrt(1+m^2))
-                const mag = Math.sqrt(1 + m * m);
-                const ux = 1 / mag;
-                const uy = m / mag;
+                // Converte inclinação matemática (mundo) para ângulo visual exato na tela (pixels)
+                const angle = Math.atan2(m * scaleY, scaleX);
+                const ux = Math.cos(angle);
+                const uy = Math.sin(angle);
 
                 const px = Camera.toPixelX(x);
                 const py = Camera.toPixelY(y);
 
-                // Como pixelY inverte a direção, uy deve ser subtraído visualmente (mas já tratamos isso usando toPixel em offsets relativos ou invertendo aqui)
                 const lineHalfX = ux * lengthMultiplier;
-                const lineHalfY = uy * lengthMultiplier; // Cuidado com a direção Y do canvas
+                const lineHalfY = uy * lengthMultiplier;
 
                 this.ctx.moveTo(px - lineHalfX, py + lineHalfY); 
                 this.ctx.lineTo(px + lineHalfX, py - lineHalfY); 

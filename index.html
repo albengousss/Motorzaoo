@@ -68,15 +68,8 @@
       /* Evita que o scroll da lista arraste a página no mobile */
       #expressions-list { overscroll-behavior: contain; }
     </style>
-    <!-- KaTeX -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
-    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
-    <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
     <!-- Tailwind via Vite plugin (processado em build) -->
     <link rel="stylesheet" href="/src/style.css">
-    <!-- Tailwind CDN como fallback para dev sem build step (remove em produção se quiser) -->
-    <script src="https://cdn.tailwindcss.com"></script>
   </head>
   <body class="flex flex-col-reverse md:flex-row h-screen overflow-hidden bg-white text-gray-800 font-sans antialiased">
     
