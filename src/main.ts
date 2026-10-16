@@ -255,7 +255,9 @@ function parseDomainCondition(condRaw: string): { condition: (x: number, y: numb
         try {
             if (!isLowerInf) lowerAst = new PrattParser(lowerStr).parseExpression();
             if (!isUpperInf) upperAst = new PrattParser(upperStr).parseExpression();
-        } catch(e) {}
+        } catch(e) {
+            console.warn('[Main] PrattParser failed parsing bounds in domain condition:', e);
+        }
 
         if ((lowerAst !== null || isLowerInf) && (upperAst !== null || isUpperInf)) {
             const lowerF = lowerAst !== null ? MathEngine.compile(lowerAst) : () => minInfVal!;
@@ -293,7 +295,9 @@ function parseDomainCondition(condRaw: string): { condition: (x: number, y: numb
         let boundAst: any = null;
         try {
             if (!isBoundInf) boundAst = new PrattParser(boundStr).parseExpression();
-        } catch(e) {}
+        } catch(e) {
+            console.warn('[Main] PrattParser failed parsing single bound in domain condition:', e);
+        }
 
         if (boundAst !== null || isBoundInf) {
             const boundF = boundAst !== null ? MathEngine.compile(boundAst) : () => infBoundVal!;
@@ -334,7 +338,9 @@ function parseDomainCondition(condRaw: string): { condition: (x: number, y: numb
         let boundAst: any = null;
         try {
             if (!isBoundInf) boundAst = new PrattParser(boundStr).parseExpression();
-        } catch(e) {}
+        } catch(e) {
+            console.warn('[Main] PrattParser failed parsing inverted bound in domain condition:', e);
+        }
 
         if (boundAst !== null || isBoundInf) {
             const boundF = boundAst !== null ? MathEngine.compile(boundAst) : () => infBoundVal!;
@@ -527,7 +533,9 @@ function compileAllExpressions() {
         let assignVarName: string | null = null;
         try {
             ast = new PrattParser(cleanStr).parseExpression();
-        } catch(e) {}
+        } catch(e) {
+            console.warn('[Main] PrattParser failed initial expression parse:', e);
+        }
 
         const funcDeclEarly = cleanStr.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\(([^)]+)\)\s*=/);
         if (!ast && !funcDeclEarly) {
@@ -539,7 +547,9 @@ function compileAllExpressions() {
                         ast = rhsAst;
                         assignVarName = assignMatch[1];
                     }
-                } catch(e) {}
+                } catch(e) {
+                    console.warn('[Main] PrattParser failed parsing assignment RHS for Giac:', e);
+                }
             }
         }
 
@@ -578,7 +588,9 @@ function compileAllExpressions() {
                     if (!isNaN(numRes) && isFinite(numRes)) {
                         numIntegralVal = numRes;
                     }
-                } catch(_) {}
+                } catch(err) {
+                    console.warn('[Main] Error evaluating numerical definite integral fallback:', err);
+                }
             }
 
             const formatCasDisplay = (rawRes: string): string => {
@@ -662,7 +674,9 @@ function compileAllExpressions() {
                             variable: isIntegralCmd && typeof ast[2] === 'string' ? ast[2] : 'x'
                         });
                     }
-                } catch(e) {}
+                } catch(e) {
+                    console.warn('[Main] Error building curve for integral/diff:', e);
+                }
             } else {
                 if (numIntegralVal !== null) {
                     ExpressionManager.setResult(item.id, `= ${parseFloat(numIntegralVal.toFixed(10))}`);
@@ -905,7 +919,9 @@ function compileAllExpressions() {
                         if (Array.isArray(dummyAst) && dummyAst[0] === 'List') {
                             expandedArgs = dummyAst.slice(1).map((a: any) => MathEngine.formatForGiac(a)).join(', ');
                         }
-                    } catch (_) {}
+                    } catch(err) {
+                        console.warn('[Main] Error expanding user functions in Giac args:', err);
+                    }
 
                     // Mapeia comandos para Giac nativo!
                     let giacArgs = prefixGiac(expandedArgs.replace(/\{/g, '[').replace(/\}/g, ']'));
@@ -1052,7 +1068,9 @@ function compileAllExpressions() {
                 if (!isNaN(v1) && v1 === v2) {
                     isJustNumber = true;
                 }
-            } catch(e) {}
+            } catch(e) {
+                console.warn('[Main] Error evaluating constant result probe:', e);
+            }
                                   const isListOrMatrix = cleanResult.trim().startsWith('[');
                                   
                                   if (!nonPlottingCmds.includes(cmdName) && !isJustNumber && !isListOrMatrix) {
@@ -1066,7 +1084,9 @@ function compileAllExpressions() {
                                           fname = `f_{${idx}}`;
                                       }
                                   }
-                              } catch(e) {}
+                              } catch(e) {
+                                  console.warn('[Main] Error resolving CAS result curve name:', e);
+                              }
                               
                               let resAst = null;
                               if (!cleanResult.includes('Erro')) {
@@ -1349,7 +1369,9 @@ function compileAllExpressions() {
                 });
                 ExpressionManager.setResult(item.id, 'Curva Polar (r = f(θ))');
                 return;
-            } catch(e) {}
+            } catch(e) {
+                console.warn('[Main] Error processing polar curve:', e);
+            }
         }
 
         // 4. SLIDERS GLOBAIS E DEFINIÇÃO DE MATRIZES
@@ -1416,7 +1438,9 @@ function compileAllExpressions() {
                 let pointAst: any = null;
                 try {
                     pointAst = new PrattParser(rightSideClean).parseExpression();
-                } catch (e) {}
+                } catch (e) {
+                    console.warn('[Main] Error parsing point assignment:', e);
+                }
 
                 if (pointAst && pointAst[0] === 'Point') {
                     const evalX = MathEngine.compile(pointAst[1])(0, 0, StateManager.values);
@@ -1455,7 +1479,9 @@ function compileAllExpressions() {
                             StateManager.giacDefinitions[varName] = giacDef;
                             MathEngine.askGiac(giacDef);
                         }
-                    } catch (e) {}
+                    } catch (e) {
+                        console.warn('[Main] Error defining variable or sending to Giac:', e);
+                    }
                     return; 
                 }
             }
@@ -1854,7 +1880,9 @@ function drawFrame() {
                     } else {
                         glsl = GLRenderer.astToGLSL(item.ast, StateManager.values, usedUniforms);
                     }
-                } catch (_) {}
+                } catch(err) {
+                    console.warn('[Main] Error compiling 3D GLSL surface:', err);
+                }
 
                 if (glsl) {
                     surfaces3D.push({
@@ -2512,7 +2540,11 @@ if (sidebarResizer) {
         const maxAllowedWidth = Math.floor(window.innerWidth * 0.75);
 
         if (newWidth < minCollapseThreshold) {
-            try { sidebarResizer.releasePointerCapture(e.pointerId); } catch(err) {}
+            try {
+                sidebarResizer.releasePointerCapture(e.pointerId);
+            } catch(err) {
+                console.warn('[Main] Error releasing sidebar resizer pointer capture on collapse:', err);
+            }
             collapseDesktopSidebar(true);
             return;
         }
@@ -2534,7 +2566,11 @@ if (sidebarResizer) {
     const stopDraggingResizer = (e: PointerEvent) => {
         if (!isDraggingSidebarResizer) return;
         isDraggingSidebarResizer = false;
-        try { sidebarResizer.releasePointerCapture(e.pointerId); } catch(err) {}
+        try {
+            sidebarResizer.releasePointerCapture(e.pointerId);
+        } catch(err) {
+            console.warn('[Main] Error releasing sidebar resizer pointer capture:', err);
+        }
         document.body.classList.remove('select-none');
         document.body.style.cursor = '';
         sidebarResizer.classList.remove('bg-purple-600', 'w-2', 'is-dragging');

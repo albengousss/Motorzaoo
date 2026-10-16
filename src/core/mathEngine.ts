@@ -315,7 +315,7 @@ export class MathEngine {
                 if (cleanNode === paramName) return 'x'; 
                 if (cleanNode === dependentVar) return 'y';
                 
-                return `(scope['${cleanNode}'] || 0)`;
+                return `(scope[${JSON.stringify(cleanNode)}] || 0)`;
             }
             if (Array.isArray(node)) {
                 const op = node[0];
@@ -354,13 +354,13 @@ export class MathEngine {
                 if (op === 'Integrate' && node.length > 3) {
                     const integrandJson = JSON.stringify(node[1]);
                     const intVar = typeof node[2] === 'string' ? node[2] : 'x';
-                    return `funcs.evaluateDefiniteIntegral(${integrandJson}, ${toJS(node[3])}, ${toJS(node[4])}, '${intVar}', Object.assign({}, scope, { '${paramName}': x, '${dependentVar}': y }))`;
+                    return `funcs.evaluateDefiniteIntegral(${integrandJson}, ${toJS(node[3])}, ${toJS(node[4])}, ${JSON.stringify(intVar)}, Object.assign({}, scope, { [${JSON.stringify(paramName)}]: x, [${JSON.stringify(dependentVar)}]: y }))`;
                 }
 
                 if (op === 'diff') {
                     const exprJson = JSON.stringify(node[1]);
                     const diffVar = typeof node[2] === 'string' ? node[2] : 'x';
-                    return `funcs.evaluateDerivative(${exprJson}, '${diffVar}', Object.assign({}, scope, { '${paramName}': x, '${dependentVar}': y }))`;
+                    return `funcs.evaluateDerivative(${exprJson}, ${JSON.stringify(diffVar)}, Object.assign({}, scope, { [${JSON.stringify(paramName)}]: x, [${JSON.stringify(dependentVar)}]: y }))`;
                 }
 
                 // Trata chamadas customizadas ou não reconhecidas (ex: f(x) ou f(x, y) ou f(2, 3, 1, 0, 2))
@@ -368,14 +368,14 @@ export class MathEngine {
                     const fnName = node[1];
                     const args = node.slice(2).map(toJS);
                     args.push('scope');
-                    return `(funcs['${fnName}'] ? funcs['${fnName}'](${args.join(', ')}) : 0)`;
+                    return `(funcs[${JSON.stringify(fnName)}] ? funcs[${JSON.stringify(fnName)}](${args.join(', ')}) : 0)`;
                 }
                 
                 // Funções que são parseadas como ["nome", arg1, ...] 
                 // e que podem ser do utilizador (ex: f(2, 3, 1, 0, 2))
                 const argsJS = node.slice(1).map(toJS);
                 argsJS.push('scope');
-                return `(funcs['${op}'] ? funcs['${op}'](${argsJS.join(', ')}) : 0)`;
+                return `(funcs[${JSON.stringify(op)}] ? funcs[${JSON.stringify(op)}](${argsJS.join(', ')}) : 0)`;
             }
             return '0';
         };
@@ -408,7 +408,7 @@ export class MathEngine {
                 if (clean === 'pi' || clean === '\\pi' || clean === 'π') return 'Math.PI';
                 const pIdx = paramNames.indexOf(clean);
                 if (pIdx !== -1) return `(args[${pIdx}] !== undefined ? args[${pIdx}] : 0)`;
-                return `(scope['${clean}'] !== undefined ? scope['${clean}'] : 0)`;
+                return `(scope[${JSON.stringify(clean)}] !== undefined ? scope[${JSON.stringify(clean)}] : 0)`;
             }
             if (Array.isArray(node)) {
                 const op = node[0];
@@ -447,19 +447,19 @@ export class MathEngine {
                     const integrandJson = JSON.stringify(node[1]);
                     const intVar = typeof node[2] === 'string' ? node[2] : 'x';
                     const paramsJson = JSON.stringify(paramNames);
-                    return `funcs.evaluateDefiniteIntegral(${integrandJson}, ${toJS(node[3])}, ${toJS(node[4])}, '${intVar}', Object.assign({}, scope, Object.fromEntries(${paramsJson}.map((p, i) => [p, args[i] !== undefined ? args[i] : 0]))))`;
+                    return `funcs.evaluateDefiniteIntegral(${integrandJson}, ${toJS(node[3])}, ${toJS(node[4])}, ${JSON.stringify(intVar)}, Object.assign({}, scope, Object.fromEntries(${paramsJson}.map((p, i) => [p, args[i] !== undefined ? args[i] : 0]))))`;
                 }
 
                 if (op === 'diff') {
                     const exprJson = JSON.stringify(node[1]);
                     const diffVar = typeof node[2] === 'string' ? node[2] : 'x';
                     const paramsJson = JSON.stringify(paramNames);
-                    return `funcs.evaluateDerivative(${exprJson}, '${diffVar}', Object.assign({}, scope, Object.fromEntries(${paramsJson}.map((p, i) => [p, args[i] !== undefined ? args[i] : 0]))))`;
+                    return `funcs.evaluateDerivative(${exprJson}, ${JSON.stringify(diffVar)}, Object.assign({}, scope, Object.fromEntries(${paramsJson}.map((p, i) => [p, args[i] !== undefined ? args[i] : 0]))))`;
                 }
 
                 const args = node.slice(1).map(toJS);
                 args.push('scope');
-                return `(funcs['${op}'] ? funcs['${op}'](${args.join(', ')}) : 0)`;
+                return `(funcs[${JSON.stringify(op)}] ? funcs[${JSON.stringify(op)}](${args.join(', ')}) : 0)`;
             }
             return '0';
         };
@@ -550,7 +550,7 @@ export class MathEngine {
                 if (cleanNode === 'pi' || cleanNode === '\\pi' || cleanNode === 'π') return `{min: Math.PI, max: Math.PI}`;
                 if (cleanNode === paramName) return 'x'; 
                 if (cleanNode === dependentVar) return 'y';
-                return `{min: (scope['${cleanNode}'] || 0), max: (scope['${cleanNode}'] || 0)}`;
+                return `{min: (scope[${JSON.stringify(cleanNode)}] || 0), max: (scope[${JSON.stringify(cleanNode)}] || 0)}`;
             }
             if (Array.isArray(node)) {
                 const op = node[0];

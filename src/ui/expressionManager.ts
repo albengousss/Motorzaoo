@@ -601,7 +601,9 @@ export class ExpressionManager {
                     StateManager.updateSlider(varNameMatch[1], parseFloat(sliderInput.value));
                     this.onUpdateCallback();
                 }
-            } catch(e) {}
+            } catch(e) {
+                console.warn('[ExpressionManager] Failed to update slider limits:', e);
+            }
         };
         // Se o usuário mexer na caixa de texto do min ou do max, o sistema recalcula!
         minInput.addEventListener('change', updateLimits);
@@ -865,7 +867,9 @@ export class ExpressionManager {
                             HistoryManager.recordState(true);
                             return;
                         }
-                    } catch(e) {}
+                    } catch(e) {
+                        console.warn('[ExpressionManager] Failed to parse matrix input:', e);
+                    }
                 }
             }
 
@@ -1301,7 +1305,9 @@ export class ExpressionManager {
             if (activeDragEl) {
                 try {
                     activeDragEl.releasePointerCapture(e.pointerId);
-                } catch(err) {}
+                } catch(err) {
+                    console.warn('[ExpressionManager] Failed to release pointer capture:', err);
+                }
                 activeDragEl = null;
             }
             bracketRight.classList.remove('matrix-dragging');
@@ -1347,7 +1353,9 @@ export class ExpressionManager {
             activeDragEl = (e.currentTarget as HTMLElement) || dragHandle;
             try {
                 activeDragEl.setPointerCapture(e.pointerId);
-            } catch(err) {}
+            } catch(err) {
+                console.warn('[ExpressionManager] Failed to set pointer capture:', err);
+            }
             if (mode === 'both' || mode === 'cols') bracketRight.classList.add('matrix-dragging');
             if (mode === 'both' || mode === 'rows') bottomBorder.classList.add('matrix-dragging');
             dragHandle.classList.add('matrix-dragging');
@@ -1590,7 +1598,9 @@ export class ExpressionManager {
                                 });
                             }
                             return;
-                        } catch(e) {}
+                        } catch(e) {
+                            console.warn('[ExpressionManager] Failed to create matrix block from result:', e);
+                        }
                     }
 
                     if (win.katex) {
@@ -2502,7 +2512,9 @@ export class ExpressionManager {
                             });
                         }
                         return;
-                    } catch(e) {}
+                    } catch(e) {
+                        console.warn('[ExpressionManager] Failed to auto-create matrix block:', e);
+                    }
                 }
 
                 // Botão de Fração Interativo Desmos [a/b] para cálculos com resultado racional
@@ -2514,7 +2526,9 @@ export class ExpressionManager {
                     if (win.katex && isFracActive) {
                         try {
                             valueHtml = win.katex.renderToString(fractionInfo.fractionLatex, { throwOnError: false });
-                        } catch (_) {}
+                        } catch (err) {
+                            console.warn('[ExpressionManager] KaTeX fraction render failed:', err);
+                        }
                     }
                     
                     resDisplay.innerHTML = `

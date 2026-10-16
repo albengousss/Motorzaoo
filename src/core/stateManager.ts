@@ -72,12 +72,25 @@ export class StateManager {
      */
     static gc(activeVars: string[]) {
         const activeSet = new Set(activeVars);
-        for (const key in this.values) {
+        const allKeys = new Set([
+            ...Object.keys(this.values),
+            ...Object.keys(this.asts),
+            ...Object.keys(this.varVersions),
+            ...Object.keys(this.dependents)
+        ]);
+
+        for (const key of allKeys) {
             if (!activeSet.has(key)) {
                 delete this.values[key];
                 delete this.asts[key];
                 delete this.varVersions[key];
-                for (const depKey in this.dependents) {
+                delete this.dependents[key];
+            }
+        }
+
+        for (const depKey in this.dependents) {
+            for (const key of Array.from(this.dependents[depKey])) {
+                if (!activeSet.has(key)) {
                     this.dependents[depKey].delete(key);
                 }
             }
@@ -89,6 +102,12 @@ export class StateManager {
      */
     static defineVariable(name: string, ast: any) {
         this.asts[name] = ast;
+
+        // Remove name de todos os dependents antes de registrar as novas dependências
+        for (const depKey in this.dependents) {
+            this.dependents[depKey].delete(name);
+        }
+
         const deps = this.extractVariables(ast);
 
         // Registra a dependência no Grafo DAG
@@ -101,6 +120,7 @@ export class StateManager {
 
         // Tenta calcular o valor imediato se as dependências já existirem
         this.recalculate(name);
+        this.cascadeUpdate(name);
     }
 
     /**
@@ -121,7 +141,13 @@ export class StateManager {
     private static recalculate(name: string) {
         if (this.asts[name] !== undefined) {
             const val = MathEngine.evaluateAST(this.asts[name], this.values);
-            if (!isNaN(val) && this.values[name] !== val) {
+            if (isNaN(val)) {
+                if (name in this.values) {
+                    delete this.values[name];
+                    this.varVersions[name] = (this.varVersions[name] || 0) + 1;
+                    this.globalCacheVersion++;
+                }
+            } else if (this.values[name] !== val) {
                 this.values[name] = val;
                 this.varVersions[name] = (this.varVersions[name] || 0) + 1;
                 this.globalCacheVersion++;
@@ -130,25 +156,91 @@ export class StateManager {
     }
 
     /**
-     * Propagação do Estado (O Coração da Fase 2)
-     * Usa uma fila (Busca em Largura) para atualizar todas as dependências em cascata sem travar a thread.
+     * Propagação do Estado (Ordem Topológica via Algoritmo de Kahn)
+     * Recalcula cada nó dependente exatamente uma vez, estritamente depois de todos os pais.
      */
     private static cascadeUpdate(changedVar: string) {
-        const queue = [changedVar];
-        const visited = new Set<string>();
+        // 1. Encontra todos os descendentes alcançáveis a partir de changedVar
+        const reachable = new Set<string>();
+        const queue: string[] = [changedVar];
 
         while (queue.length > 0) {
-            const current = queue.shift()!;
-            
-            if (visited.has(current)) continue; // Proteção contra loop infinito (A = B e B = A)
-            visited.add(current);
-
-            const deps = this.dependents[current];
+            const curr = queue.shift()!;
+            const deps = this.dependents[curr];
             if (deps) {
-                deps.forEach(dep => {
-                    this.recalculate(dep); // Atualiza o filho
-                    queue.push(dep);       // Adiciona o filho na fila para ver se ele tem netos
-                });
+                for (const dep of deps) {
+                    if (!reachable.has(dep)) {
+                        reachable.add(dep);
+                        queue.push(dep);
+                    }
+                }
+            }
+        }
+
+        // Não recalcula changedVar no cascadeUpdate (ele é o disparador)
+        reachable.delete(changedVar);
+
+        if (reachable.size === 0) return;
+
+        // 2. Calcula graus de entrada (in-degree) no subgrafo de nós alcançáveis
+        const inDegree: Record<string, number> = {};
+        for (const node of reachable) {
+            inDegree[node] = 0;
+        }
+
+        const subgraphNodes = [changedVar, ...Array.from(reachable)];
+        for (const u of subgraphNodes) {
+            const deps = this.dependents[u];
+            if (deps) {
+                for (const v of deps) {
+                    if (reachable.has(v)) {
+                        inDegree[v] = (inDegree[v] || 0) + 1;
+                    }
+                }
+            }
+        }
+
+        // 3. Fila de prontos: nós cujos pais no subgrafo já estão satisfeitos
+        const readyQueue: string[] = [];
+        const depsOfChanged = this.dependents[changedVar];
+        if (depsOfChanged) {
+            for (const v of depsOfChanged) {
+                if (reachable.has(v)) {
+                    inDegree[v]--;
+                    if (inDegree[v] === 0) {
+                        readyQueue.push(v);
+                    }
+                }
+            }
+        }
+
+        // 4. Executa recálculo em ordem topológica
+        let processedCount = 0;
+        while (readyQueue.length > 0) {
+            const current = readyQueue.shift()!;
+            processedCount++;
+            this.recalculate(current);
+
+            const nextDeps = this.dependents[current];
+            if (nextDeps) {
+                for (const next of nextDeps) {
+                    if (reachable.has(next)) {
+                        inDegree[next]--;
+                        if (inDegree[next] === 0) {
+                            readyQueue.push(next);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 5. Se houver ciclos entre descendentes (processedCount < reachable.size),
+        // recalcula os nós restantes uma vez para evitar valores desatualizados
+        if (processedCount < reachable.size) {
+            for (const node of reachable) {
+                if (inDegree[node] > 0) {
+                    this.recalculate(node);
+                }
             }
         }
     }

@@ -15,10 +15,17 @@ export class MathAnalyzer {
         let fb = f(b);
 
         if (!isFinite(fa) || !isFinite(fb) || isNaN(fa) || isNaN(fb)) return null;
+
+        if (Math.abs(fa) < 1e-12) return a;
+        if (Math.abs(fb) < 1e-12) return b;
         if (fa * fb > 0) return null; // Sem mudança de sinal
 
         // Teste de descontinuidade / salto de assíntota vertical
         if (Math.abs(fa - fb) > 1e4 && Math.abs(b - a) < 1e-2) return null;
+
+        // Limiar de resíduo relativo à escala da função
+        const scale = Math.max(1, Math.abs(fa), Math.abs(fb));
+        const resTol = Math.max(1e-3, 1e-4 * scale);
 
         let mid = a;
         for (let i = 0; i < 50; i++) {
@@ -28,9 +35,8 @@ export class MathAnalyzer {
             if (!isFinite(fmid) || isNaN(fmid)) return null;
 
             if (Math.abs(fmid) < tol || (b - a) / 2 < tol) {
-                // Checagem crucial de resíduo: para ser uma raiz legítima, |f(mid)| DEVE estar perto de 0!
-                // Em assíntotas verticais (ex: 1/x), (b-a)/2 < tol converge para 0, mas f(mid) é gigantesco!
-                if (Math.abs(fmid) < 1e-3) {
+                // Checagem crucial de resíduo relativo: para ser uma raiz legítima, |f(mid)| deve ser proporcionalmente próximo de 0
+                if (Math.abs(fmid) < resTol) {
                     return mid;
                 }
                 return null;
@@ -46,7 +52,7 @@ export class MathAnalyzer {
         }
 
         const finalVal = f(mid);
-        return isFinite(finalVal) && Math.abs(finalVal) < 1e-3 ? mid : null;
+        return isFinite(finalVal) && Math.abs(finalVal) < resTol ? mid : null;
     }
 
     /**
@@ -54,7 +60,8 @@ export class MathAnalyzer {
      */
     static getNotablePoints(f: (x: number) => number, xMin: number, xMax: number): NotablePoint[] {
         const points: NotablePoint[] = [];
-        const steps = 150;
+        const span = Math.abs(xMax - xMin);
+        const steps = Math.min(1000, Math.max(150, Math.floor(span * 20)));
         const dx = (xMax - xMin) / steps;
         const h = 1e-5;
 
@@ -92,22 +99,39 @@ export class MathAnalyzer {
                 continue;
             }
 
-            // 2. Caçador de Raízes (Mudança estrita de sinal no Y contínuo)
-            if (isFinite(prevY) && isFinite(currY) && (prevY * currY < 0 || (prevY === 0 && currY !== 0) || (currY === 0 && prevY !== 0))) {
-                const rootX = this.bisection(f, prevX, currX);
-                if (rootX !== null) {
-                    points.push({ x: rootX, y: 0, type: 'root' });
+            // 2. Caçador de Raízes (Mudança estrita de sinal no Y contínuo ou zero numérico)
+            if (isFinite(prevY) && isFinite(currY)) {
+                if (Math.abs(prevY) < 1e-9) {
+                    points.push({ x: prevX, y: 0, type: 'root' });
+                } else if (Math.abs(currY) < 1e-9) {
+                    points.push({ x: currX, y: 0, type: 'root' });
+                } else if (prevY * currY < 0) {
+                    const rootX = this.bisection(f, prevX, currX);
+                    if (rootX !== null) {
+                        points.push({ x: rootX, y: 0, type: 'root' });
+                    }
                 }
             }
 
             // 3. Caçador de Extremos (Mudança de sinal na Derivada, ignorando retas)
-            if (Math.abs(prevDy) > 1e-7 && Math.abs(currDy) > 1e-7 && isFinite(prevDy) && isFinite(currDy) && prevDy * currDy < 0) {
-                // Evita assíntotas verticais onde a derivada explode
-                if (Math.abs(currY) < 1e5 && Math.abs(prevY) < 1e5) {
-                    const extX = this.bisection(df, prevX, currX, 1e-5);
-                    if (extX !== null) {
-                        const extY = f(extX);
-                        if (isFinite(extY) && !isNaN(extY) && Math.abs(extY) < 1e6) {
+            const derivTol = 1e-7 * Math.max(1, Math.abs(prevY), Math.abs(currY));
+            if (isFinite(prevDy) && isFinite(currDy) && Math.abs(currY) < 1e5 && Math.abs(prevY) < 1e5) {
+                let extX: number | null = null;
+                if (Math.abs(prevDy) < 1e-12) {
+                    extX = prevX;
+                } else if (Math.abs(currDy) < 1e-12) {
+                    extX = currX;
+                } else if (Math.abs(prevDy) > derivTol && Math.abs(currDy) > derivTol && prevDy * currDy < 0) {
+                    extX = this.bisection(df, prevX, currX, 1e-5);
+                }
+
+                if (extX !== null) {
+                    const extY = f(extX);
+                    if (isFinite(extY) && !isNaN(extY) && Math.abs(extY) < 1e6) {
+                        if (Math.abs(extY) < 1e-4) {
+                            // Raiz dupla: extremum tangente ao eixo x promovido para 'root'
+                            points.push({ x: extX, y: 0, type: 'root' });
+                        } else {
                             points.push({ x: extX, y: extY, type: 'extremum' });
                         }
                     }
@@ -133,49 +157,104 @@ export class MathAnalyzer {
             return fx - gx;
         };
 
+        const h_step = 1e-5;
+        const dh = (x: number) => {
+            const y1 = h_func(x + h_step);
+            const y0 = h_func(x - h_step);
+            if (!isFinite(y1) || !isFinite(y0)) return NaN;
+            return (y1 - y0) / (2 * h_step);
+        };
+
         const points: NotablePoint[] = [];
-        const steps = 150;
+        const span = Math.abs(xMax - xMin);
+        const steps = Math.min(1000, Math.max(150, Math.floor(span * 20)));
         const dx = (xMax - xMin) / steps;
 
         let prevX = xMin;
         let prevY = h_func(prevX);
+        let prevDh = dh(prevX);
+        let coincidentSamples = (isFinite(prevY) && Math.abs(prevY) < 1e-6) ? 1 : 0;
 
         for (let i = 1; i <= steps; i++) {
             const currX = xMin + i * dx;
             const currY = h_func(currX);
+            const currDh = dh(currX);
+
+            if (isFinite(currY) && Math.abs(currY) < 1e-6) {
+                coincidentSamples++;
+            }
 
             // Se as duas curvas forem idênticas ou colineares neste intervalo, pula
             if (Math.abs(prevY) < 1e-7 && Math.abs(currY) < 1e-7) {
                 prevX = currX;
                 prevY = currY;
+                prevDh = currDh;
                 continue;
             }
 
-            if (isFinite(prevY) && isFinite(currY) && prevY * currY < 0) {
-                const rootX = this.bisection(h_func, prevX, currX);
-                if (rootX !== null) {
-                    const yVal = f(rootX);
+            if (isFinite(prevY) && isFinite(currY)) {
+                // 1. Zeros nas amostras numéricas
+                if (Math.abs(currY) < 1e-9) {
+                    const yVal = f(currX);
                     if (isFinite(yVal) && !isNaN(yVal)) {
-                        points.push({ x: rootX, y: yVal, type: 'intersect' });
+                        points.push({ x: currX, y: yVal, type: 'intersect' });
+                    }
+                } else if (Math.abs(prevY) < 1e-9) {
+                    const yVal = f(prevX);
+                    if (isFinite(yVal) && !isNaN(yVal)) {
+                        points.push({ x: prevX, y: yVal, type: 'intersect' });
+                    }
+                } else if (prevY * currY < 0) {
+                    // 2. Mudança estrita de sinal
+                    const rootX = this.bisection(h_func, prevX, currX);
+                    if (rootX !== null) {
+                        const yVal = f(rootX);
+                        if (isFinite(yVal) && !isNaN(yVal)) {
+                            points.push({ x: rootX, y: yVal, type: 'intersect' });
+                        }
+                    }
+                }
+            }
+
+            // 3. Interseções tangenciais (extremos de h(x) com valor nulo)
+            if (isFinite(prevDh) && isFinite(currDh) && Math.abs(prevDh) > 1e-7 && Math.abs(currDh) > 1e-7 && prevDh * currDh < 0) {
+                const extX = this.bisection(dh, prevX, currX, 1e-5);
+                if (extX !== null) {
+                    const extH = h_func(extX);
+                    if (isFinite(extH) && Math.abs(extH) < 1e-4) {
+                        const yVal = f(extX);
+                        if (isFinite(yVal) && !isNaN(yVal)) {
+                            points.push({ x: extX, y: yVal, type: 'intersect' });
+                        }
                     }
                 }
             }
 
             prevX = currX;
             prevY = currY;
+            prevDh = currDh;
         }
 
-        const filtered = this.filterDuplicates(points);
-        // Se houver mais de 20 interseções, as curvas coincidem no domínio (não são pontos discretos)
-        if (filtered.length > 20) return [];
-        return filtered;
+        // Se quase todos os pontos coincidem (|h(x)| < eps), as curvas coincidem no domínio
+        if (coincidentSamples >= Math.floor(steps * 0.85)) {
+            return [];
+        }
+
+        return this.filterDuplicates(points);
     }
 
     private static filterDuplicates(points: NotablePoint[]): NotablePoint[] {
         const unique: NotablePoint[] = [];
         for (const p of points) {
-            const isDup = unique.some(u => Math.abs(u.x - p.x) < 1e-4 && Math.abs(u.y - p.y) < 1e-4);
-            if (!isDup) unique.push(p);
+            const idx = unique.findIndex(u => Math.abs(u.x - p.x) < 1e-4 && Math.abs(u.y - p.y) < 1e-4);
+            if (idx === -1) {
+                unique.push(p);
+            } else {
+                // Em caso de conflito de mesmo ponto (x,y), prioriza 'root' sobre 'intercept' e 'extremum'
+                if (p.type === 'root' && unique[idx].type !== 'root') {
+                    unique[idx] = p;
+                }
+            }
         }
         return unique;
     }
