@@ -1515,11 +1515,72 @@ let insertedExpr = '';
 CommandsGuideModal.init((expr) => { insertedExpr = expr; });
 assert(typeof (CommandsGuideModal as any).onInsertCallback === 'function', 'CommandsGuideModal preserves onInsertCallback statically');
 
+// =========================================================================
+console.log('\n[TEST GROUP 28: End-to-End Pipeline Verification (Anti-Illusion Suite)]');
+const matrixSet = new Set(['A', 'B']);
+
+// 1. Inverse trig through FULL LatexNormalizer.normalize -> PrattParser -> MathEngine.compile
+const e2eInvSinNorm = LatexNormalizer.normalize('\\sin^{-1}(0.5)', '\\sin^{-1}(0.5)', matrixSet);
+const e2eInvSinAst = new PrattParser(e2eInvSinNorm).parseExpression();
+const e2eInvSinVal = MathEngine.compile(e2eInvSinAst)(0, 0, {});
+assert(Math.abs(e2eInvSinVal - Math.asin(0.5)) < 1e-9, `Full E2E \\sin^{-1}(0.5) evaluates to asin(0.5) = ${Math.asin(0.5)}, got ${e2eInvSinVal} (norm: ${e2eInvSinNorm})`);
+
+const e2eInvCosUnparen = LatexNormalizer.normalize('\\cos^{-1} 0.5', '\\cos^{-1} 0.5', matrixSet);
+const e2eInvCosVal = MathEngine.compile(new PrattParser(e2eInvCosUnparen).parseExpression())(0, 0, {});
+assert(Math.abs(e2eInvCosVal - Math.acos(0.5)) < 1e-9, `Full E2E \\cos^{-1} 0.5 evaluates to acos(0.5), got ${e2eInvCosVal} (norm: ${e2eInvCosUnparen})`);
+
+// 2. Scalar negative powers x^{-1} and (x+1)^{-1} vs Matrix inverse A^{-1}
+const e2eScalarNegPow = LatexNormalizer.normalize('x^{-1}', 'x^{-1}', matrixSet);
+assert(!e2eScalarNegPow.includes('inv('), `Scalar x^{-1} must NOT become matrix inv(x): got ${e2eScalarNegPow}`);
+const e2eScalarNegVal = MathEngine.compile(new PrattParser(e2eScalarNegPow).parseExpression())(2, 0, {});
+assert(Math.abs(e2eScalarNegVal - 0.5) < 1e-9, `Full E2E x^{-1} at x=2 evaluates to 0.5, got ${e2eScalarNegVal}`);
+
+const e2eParenNegPow = LatexNormalizer.normalize('(x+1)^{-1}', '(x+1)^{-1}', matrixSet);
+assert(!e2eParenNegPow.includes('inv('), `Scalar (x+1)^{-1} must NOT become matrix inv: got ${e2eParenNegPow}`);
+const e2eParenNegVal = MathEngine.compile(new PrattParser(e2eParenNegPow).parseExpression())(3, 0, {});
+assert(Math.abs(e2eParenNegVal - 0.25) < 1e-9, `Full E2E (x+1)^{-1} at x=3 evaluates to 0.25, got ${e2eParenNegVal}`);
+
+const e2eMatrixInv = LatexNormalizer.normalize('A^{-1}', 'A^{-1}', matrixSet);
+assert(e2eMatrixInv === 'inv(A)', `Defined matrix A^{-1} normalizes to inv(A): got ${e2eMatrixInv}`);
+
+// 3. Lowercase exponent ^t (e^t, x^t) vs Uppercase Matrix Transpose ^T (A^T)
+const e2eExpT = LatexNormalizer.normalize('e^t', 'e^t', matrixSet);
+assert(!e2eExpT.includes('tran('), `Scalar e^t must NOT become matrix tran(e): got ${e2eExpT}`);
+const e2eExpTVal = MathEngine.compile(new PrattParser(e2eExpT).parseExpression())(0, 0, { t: 2 });
+assert(Math.abs(e2eExpTVal - Math.exp(2)) < 1e-9, `Full E2E e^t at t=2 evaluates to exp(2), got ${e2eExpTVal}`);
+
+const e2eMatrixTran = LatexNormalizer.normalize('A^T', 'A^T', matrixSet);
+assert(e2eMatrixTran === 'tran(A)', `Defined matrix A^T normalizes to tran(A): got ${e2eMatrixTran}`);
+
+// 4. Operator precedence in unparenthesized functions with exponents: cos x^2 = cos(x^2), sin 2x^2 = sin(2*x^2)
+const e2eCosX2Norm = LatexNormalizer.normalize('\\cos x^2', '\\cos x^2', matrixSet);
+const e2eCosX2Val = MathEngine.compile(new PrattParser(e2eCosX2Norm).parseExpression())(1.2, 0, {});
+assert(Math.abs(e2eCosX2Val - Math.cos(1.2 * 1.2)) < 1e-9, `Full E2E \\cos x^2 at x=1.2 evaluates to cos(1.44) = ${Math.cos(1.44)}, got ${e2eCosX2Val} (norm: ${e2eCosX2Norm})`);
+
+const e2eSin2X2Norm = LatexNormalizer.normalize('\\sin 2x^2', '\\sin 2x^2', matrixSet);
+const e2eSin2X2Val = MathEngine.compile(new PrattParser(e2eSin2X2Norm).parseExpression())(1.1, 0, {});
+assert(Math.abs(e2eSin2X2Val - Math.sin(2 * 1.1 * 1.1)) < 1e-9, `Full E2E \\sin 2x^2 at x=1.1 evaluates to sin(2*1.21), got ${e2eSin2X2Val} (norm: ${e2eSin2X2Norm})`);
+
+// 5. Top-level parseExpression() rejects unconsumed tokens just like parse()
+let threwOnParseExpr = false;
+try {
+  new PrattParser('1 2').parseExpression();
+} catch (_) {
+  threwOnParseExpr = true;
+}
+assert(threwOnParseExpr, 'Top-level PrattParser.parseExpression() throws SyntaxError on unconsumed tokens ("1 2")');
+
+// 6. Extended inverse trig & hyperbolic functions in MathEngine & GLRenderer
+const e2eAsecNorm = LatexNormalizer.normalize('\\sec^{-1}(2)', '\\sec^{-1}(2)', matrixSet);
+const e2eAsecAst = new PrattParser(e2eAsecNorm).parseExpression();
+assert(Math.abs(MathEngine.evaluateAST(e2eAsecAst) - Math.acos(0.5)) < 1e-9, 'evaluateAST evaluates \\sec^{-1}(2) = acos(0.5)');
+assert(Math.abs(MathEngine.compile(e2eAsecAst)(0, 0, {}) - Math.acos(0.5)) < 1e-9, 'compile evaluates \\sec^{-1}(2) = acos(0.5)');
+
+import { GLRenderer } from '../src/graphics/glRenderer.js';
+const glslSinh = GLRenderer.astToGLSL(['Sinh', 'x']);
+assert(!glslSinh.includes('sinh(') && glslSinh.includes('exp('), `WebGL1 GLSL Sinh uses exp() expansion instead of WebGL2 sinh(): ${glslSinh}`);
+
 console.log(`\n--- RESULTS: ${passed} PASSED, ${failed} FAILED ---`);
 if (failed > 0) {
   process.exit(1);
 }
-
-
-
-

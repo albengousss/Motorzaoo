@@ -711,28 +711,44 @@ export class ExpressionManager {
             return false;
         };
 
+        const focusAdjacentBlock = (dir: 'up' | 'down') => {
+            const adjBlock = (dir === 'up' ? block.previousElementSibling : block.nextElementSibling) as HTMLElement;
+            if (adjBlock) {
+                const adjMf = adjBlock.querySelector('math-field, textarea, input') as HTMLElement;
+                if (adjMf) adjMf.focus();
+            }
+        };
+
+        mf.addEventListener('move-out', (e: any) => {
+            const dir = e.detail?.direction;
+            if (dir === 'upward') {
+                e.preventDefault();
+                focusAdjacentBlock('up');
+            } else if (dir === 'downward') {
+                e.preventDefault();
+                focusAdjacentBlock('down');
+            }
+        });
+
         mf.addEventListener('keydown', (e: KeyboardEvent) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
                 this.addBlock();
                 this.updateBlockNumbers();
-            } else if (e.key === 'ArrowUp' && !e.shiftKey) {
-                const prevBlock = block.previousElementSibling as HTMLElement;
-                if (prevBlock) {
-                    const prevMf = prevBlock.querySelector('math-field, textarea, input') as HTMLElement;
-                    if (prevMf) {
-                        e.preventDefault();
-                        prevMf.focus();
-                    }
-                }
-            } else if (e.key === 'ArrowDown' && !e.shiftKey) {
-                const nextBlock = block.nextElementSibling as HTMLElement;
-                if (nextBlock) {
-                    const nextMf = nextBlock.querySelector('math-field, textarea, input') as HTMLElement;
-                    if (nextMf) {
-                        e.preventDefault();
-                        nextMf.focus();
-                    }
+            } else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.shiftKey) {
+                const dir = e.key === 'ArrowUp' ? 'up' : 'down';
+                const rawLatex = (mf as any).getValue?.('latex') || '';
+                const hasVerticalStructure = /\\frac|\\int|\\sum|\\prod|\\lim|\^|_/.test(rawLatex);
+                if (!hasVerticalStructure) {
+                    e.preventDefault();
+                    focusAdjacentBlock(dir);
+                } else {
+                    const posBefore = (mf as any).position;
+                    queueMicrotask(() => {
+                        if (document.activeElement === mf && (mf as any).position === posBefore) {
+                            focusAdjacentBlock(dir);
+                        }
+                    });
                 }
             } else if (e.key === 'Backspace') {
                 const val = (mf as any).getValue('ascii-math') || '';

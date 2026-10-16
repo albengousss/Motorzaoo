@@ -94,10 +94,11 @@ export class MathEngine {
             if (op === 'Power') {
                 const base = this.formatForGiac(ast[1]);
                 const exp = ast[2];
-                if (exp === -1 || (Array.isArray(exp) && exp[0] === 'Negate' && exp[1] === 1)) {
+                const isMatBase = base.startsWith('usr_') || /^[A-Z][A-Za-z0-9_]*$/.test(base);
+                if (isMatBase && (exp === -1 || (Array.isArray(exp) && exp[0] === 'Negate' && exp[1] === 1))) {
                     return `inv(${base})`;
                 }
-                if (exp === 'T' || exp === 'top' || exp === 'intercal') {
+                if (isMatBase && (exp === 'T' || exp === 'top' || exp === 'intercal')) {
                     return `tran(${base})`;
                 }
                 return `(${base})^(${this.formatForGiac(exp)})`;
@@ -213,6 +214,9 @@ export class MathEngine {
                 if (fn === 'sin') return Math.sin(args[0]);
                 if (fn === 'cos') return Math.cos(args[0]);
                 if (fn === 'tan') return Math.tan(args[0]);
+                if (fn === 'sec') return 1 / Math.cos(args[0]);
+                if (fn === 'csc') return 1 / Math.sin(args[0]);
+                if (fn === 'cot') return 1 / Math.tan(args[0]);
                 if (fn === 'sqrt') return Math.sqrt(args[0]);
                 if (fn === 'cbrt') return Math.cbrt(args[0]);
                 if (fn === 'abs') return Math.abs(args[0]);
@@ -221,9 +225,15 @@ export class MathEngine {
                 if (fn === 'asin') return Math.asin(args[0]);
                 if (fn === 'acos') return Math.acos(args[0]);
                 if (fn === 'atan') return args.length > 1 ? Math.atan2(args[0], args[1]) : Math.atan(args[0]);
+                if (fn === 'asec') return Math.acos(1 / args[0]);
+                if (fn === 'acsc') return Math.asin(1 / args[0]);
+                if (fn === 'acot') return Math.atan(1 / args[0]);
                 if (fn === 'sinh') return Math.sinh(args[0]);
                 if (fn === 'cosh') return Math.cosh(args[0]);
                 if (fn === 'tanh') return Math.tanh(args[0]);
+                if (fn === 'asinh') return Math.asinh(args[0]);
+                if (fn === 'acosh') return Math.acosh(args[0]);
+                if (fn === 'atanh') return Math.atanh(args[0]);
             }
         }
 
@@ -245,14 +255,24 @@ export class MathEngine {
             if (op === 'Sin') return Math.sin(this.evaluateAST(ast[1], scope));
             if (op === 'Cos') return Math.cos(this.evaluateAST(ast[1], scope));
             if (op === 'Tan') return Math.tan(this.evaluateAST(ast[1], scope));
+            if (op === 'Sec') return 1 / Math.cos(this.evaluateAST(ast[1], scope));
+            if (op === 'Csc') return 1 / Math.sin(this.evaluateAST(ast[1], scope));
+            if (op === 'Cot') return 1 / Math.tan(this.evaluateAST(ast[1], scope));
             if (op === 'Log' || op === 'Ln') return Math.log(this.evaluateAST(ast[1], scope));
             if (op === 'Exp') return Math.exp(this.evaluateAST(ast[1], scope));
             if (op === 'Asin') return Math.asin(this.evaluateAST(ast[1], scope));
             if (op === 'Acos') return Math.acos(this.evaluateAST(ast[1], scope));
             if (op === 'Atan') return Math.atan(this.evaluateAST(ast[1], scope));
+            if (op === 'Asec') return Math.acos(1 / this.evaluateAST(ast[1], scope));
+            if (op === 'Acsc') return Math.asin(1 / this.evaluateAST(ast[1], scope));
+            if (op === 'Acot') return Math.atan(1 / this.evaluateAST(ast[1], scope));
             if (op === 'Sinh') return Math.sinh(this.evaluateAST(ast[1], scope));
             if (op === 'Cosh') return Math.cosh(this.evaluateAST(ast[1], scope));
             if (op === 'Tanh') return Math.tanh(this.evaluateAST(ast[1], scope));
+            if (op === 'Asinh') return Math.asinh(this.evaluateAST(ast[1], scope));
+            if (op === 'Acosh') return Math.acosh(this.evaluateAST(ast[1], scope));
+            if (op === 'Atanh') return Math.atanh(this.evaluateAST(ast[1], scope));
+            if (op === 'Nthroot') return this.realPow(this.evaluateAST(ast[1], scope), 1 / this.evaluateAST(ast[2], scope));
         }
 
         // Fallback rápido via compilador JIT nativo
@@ -314,6 +334,9 @@ export class MathEngine {
                 if (op === 'Asin') return `Math.asin(${toJS(node[1])})`;
                 if (op === 'Acos') return `Math.acos(${toJS(node[1])})`;
                 if (op === 'Atan') return `Math.atan(${toJS(node[1])})`;
+                if (op === 'Asec') return `Math.acos(1 / (${toJS(node[1])}))`;
+                if (op === 'Acsc') return `Math.asin(1 / (${toJS(node[1])}))`;
+                if (op === 'Acot') return `Math.atan(1 / (${toJS(node[1])}))`;
                 if (op === 'Sinh') return `Math.sinh(${toJS(node[1])})`;
                 if (op === 'Cosh') return `Math.cosh(${toJS(node[1])})`;
                 if (op === 'Tanh') return `Math.tanh(${toJS(node[1])})`;
@@ -398,6 +421,15 @@ export class MathEngine {
                 if (op === 'Sin') return `Math.sin(${toJS(node[1])})`;
                 if (op === 'Cos') return `Math.cos(${toJS(node[1])})`;
                 if (op === 'Tan') return `Math.tan(${toJS(node[1])})`;
+                if (op === 'Sec') return `(1 / Math.cos(${toJS(node[1])}))`;
+                if (op === 'Csc') return `(1 / Math.sin(${toJS(node[1])}))`;
+                if (op === 'Cot') return `(1 / Math.tan(${toJS(node[1])}))`;
+                if (op === 'Asin') return `Math.asin(${toJS(node[1])})`;
+                if (op === 'Acos') return `Math.acos(${toJS(node[1])})`;
+                if (op === 'Atan') return `Math.atan(${toJS(node[1])})`;
+                if (op === 'Asec') return `Math.acos(1 / (${toJS(node[1])}))`;
+                if (op === 'Acsc') return `Math.asin(1 / (${toJS(node[1])}))`;
+                if (op === 'Acot') return `Math.atan(1 / (${toJS(node[1])}))`;
                 if (op === 'Sinh') return `Math.sinh(${toJS(node[1])})`;
                 if (op === 'Cosh') return `Math.cosh(${toJS(node[1])})`;
                 if (op === 'Tanh') return `Math.tanh(${toJS(node[1])})`;

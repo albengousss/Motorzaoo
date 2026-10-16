@@ -46,8 +46,11 @@ export class LatexNormalizer {
             sinh: 'asinh', cosh: 'acosh', tanh: 'atanh'
         };
 
-        // 1. Inversas: \sin^{-1}(x), sin^-1(x), etc.
-        s = s.replace(/\\?(sin|cos|tan|sec|csc|cot|sinh|cosh|tanh)\s*\^\s*(?:\{\s*-1\s*\}|\(\s*-1\s*\)|-1)\s*(\((?:[^()]|\([^()]*\))*\)|[a-zA-Z0-9_]+)/gi,
+        const argChunk = '(?:\\((?:[^()]|\\([^()]*\\))*\\)|[a-zA-Z0-9_.]+(?:\\s*\\*\\s*[a-zA-Z0-9_.]+)*(?:\\s*\\^\\s*(?:\\{[^{}]+\\}|\\([^()]+\\)|[+-]?[a-zA-Z0-9_.]+))?)';
+
+        // 1. Inversas com argumento imediato: \sin^{-1}(x), sin^-1(x), \sin^{-1} x, etc.
+        s = s.replace(
+            new RegExp(`\\\\?(sin|cos|tan|sec|csc|cot|sinh|cosh|tanh)\\s*\\^\\s*(?:\\{\\s*-1\\s*\\}|\\(\\s*-1\\s*\\)|-1)\\s*(${argChunk})`, 'gi'),
             (_m, fn, rawArg) => {
                 const lower = fn.toLowerCase();
                 const target = invTrigMap[lower] || `a${lower}`;
@@ -57,8 +60,17 @@ export class LatexNormalizer {
             }
         );
 
-        // 2. Potências: \sin^2(x), \sin^{2}(x), \cos^3(x), sin^2 x, \sin^2(2x + 1)
-        s = s.replace(/\\?(sin|cos|tan|sec|csc|cot|sinh|cosh|tanh)\s*\^\s*(?:\{([0-9.]+)\}|\(([0-9.]+)\)|([0-9.]+))\s*(\((?:[^()]|\([^()]*\))*\)|[a-zA-Z0-9_]+)/gi,
+        // 1B. Inversas restantes antes de expressões complexas: \sin^{-1}((x+1)/2) -> asin((x+1)/2)
+        s = s.replace(/\\?(sin|cos|tan|sec|csc|cot|sinh|cosh|tanh)\s*\^\s*(?:\{\s*-1\s*\}|\(\s*-1\s*\)|-1)/gi,
+            (_m, fn) => {
+                const lower = fn.toLowerCase();
+                return invTrigMap[lower] || `a${lower}`;
+            }
+        );
+
+        // 2. Potências: \sin^2(x), \sin^{2}(x), \cos^3(x), sin^2 x, \sin^2 2x, \sin^2(2x + 1)
+        s = s.replace(
+            new RegExp(`\\\\?(sin|cos|tan|sec|csc|cot|sinh|cosh|tanh)\\s*\\^\\s*(?:\\{([0-9.]+)\\}|\\(([0-9.]+)\\)|([0-9.]+))\\s*(${argChunk})`, 'gi'),
             (_m, fn, p1, p2, p3, rawArg) => {
                 const power = p1 || p2 || p3;
                 const lower = fn.toLowerCase();
@@ -75,17 +87,22 @@ export class LatexNormalizer {
      * Normaliza chamadas de funções matemáticas sem parênteses (Padrão Desmos):
      * \sin x -> sin(x)
      * cos 2x -> cos(2x)
+     * cos x^2 -> cos(x^2)
+     * sin 2x^2 -> sin(2x^2)
      * ln x -> ln(x)
      * sqrt x -> sqrt(x)
      * \sin x + \cos x -> sin(x) + cos(x)
      */
     static normalizeUnparenthesized(input: string): string {
         let s = input;
-        s = s.replace(/\\?(sin|cos|tan|sec|csc|cot|sinh|cosh|tanh|asin|acos|atan|asinh|acosh|atanh|log|ln|exp|sqrt|cbrt)\s+([a-zA-Z0-9_]+(?:\s*\*\s*[a-zA-Z0-9_]+)*)(?!\s*[\(\{])/gi,
-            (_m, fn, arg) => {
-                return `${fn.toLowerCase()}(${arg.trim()})`;
-            }
-        );
+        const funcList = 'sin|cos|tan|sec|csc|cot|sinh|cosh|tanh|asin|acos|atan|asec|acsc|acot|asinh|acosh|atanh|arcsin|arccos|arctan|arcsec|arccsc|arccot|arcsinh|arccosh|arctanh|log|ln|exp|sqrt|cbrt';
+        const atomWithPow = '[a-zA-Z0-9_.]+(?:\\s*\\^\\s*(?:\\{[^{}]+\\}|\\([^()]+\\)|[+-]?[a-zA-Z0-9_.]+))?';
+        const argPattern = `${atomWithPow}(?:\\s*\\*\\s*${atomWithPow})*`;
+        const regex = new RegExp(`\\\\?\\b(${funcList})\\s+(?!\\()(${argPattern})(?!\\s*[\\(\\{\\^])`, 'gi');
+
+        s = s.replace(regex, (_m, fn, arg) => {
+            return `${fn.toLowerCase()}(${arg.trim()})`;
+        });
         return s;
     }
 
@@ -161,22 +178,6 @@ export class LatexNormalizer {
             .replace(/[´`’′]/g, "'")
             .replace(/\^'+/g, m => m.replace(/\^/g, ''));
 
-        // Operadores de Matriz: Transposta (^T, ^\top, ') e Inversa (^-1)
-        s = s
-            .replace(/\(([^)]+)\)\^\{?(?:T|\\top|intercal)\}?/gi, 'tran($1)')
-            .replace(/([A-Za-z_][A-Za-z0-9_]*)\^\{?(?:T|\\top|intercal)\}?/gi, 'tran($1)')
-            .replace(/\(([^)]+)\)\^[\{\(]*\s*(?:-1|\(-1\))\s*[\}\)]*/g, 'inv($1)')
-            .replace(/([A-Za-z_][A-Za-z0-9_]*)\^[\{\(]*\s*(?:-1|\(-1\))\s*[\}\)]*/g, 'inv($1)')
-            .replace(/\btr\s*\(([^)]+)\)/gi, 'trace($1)');
-
-        // Transposta com plica para matrizes definidas (ex: B' -> tran(B), (A+B)' -> tran(A+B))
-        if (definedMatrixNames) {
-            for (const mName of definedMatrixNames) {
-                s = s.replace(new RegExp(`\\b${mName}'+`, 'g'), `tran(${mName})`);
-            }
-        }
-        s = s.replace(/\(([^)]+)\)'+/g, 'tran($1)');
-
         // Separa limites colados ao integrando (ex: _1^2x -> _1^2 x, _1x -> _1 x)
         s = s.replace(/([\^_](?:\{[^}]+\}|\([^)]+\)|[0-9.]+))\s*([a-zA-Z_])/g, '$1 $2');
 
@@ -191,10 +192,37 @@ export class LatexNormalizer {
         // Logaritmo com base personalizada: \log_{b}(x) -> ((log(x))/(log(b)))
         s = s.replace(/\\?log_\{?([a-zA-Z0-9.]+)\}?\s*\(([^)]+)\)/gi, '((log($2))/(log($1)))');
 
-        // Potências trigonométricas e funções inversas (\sin^2(x), \sin^{-1}(x), etc.)
+        // IMPORTANTE: Potências trigonométricas e funções inversas (\sin^2(x), \sin^{-1}(x), etc.)
+        // DEVEM rodar ANTES dos operadores de matriz (^-1) para que \sin^{-1} vire asin e nunca inv(sin)!
         s = this.normalizeTrigPowers(s);
 
-        // Funções matemáticas sem parênteses (\sin x, cos 2x, ln x, sqrt x)
+        // Operadores de Matriz: Transposta (^T maiúsculo estrito, ^\top, ^\intercal, ') e Inversa (^-1)
+        const isMatrixIdentifier = (name: string): boolean => {
+            if (definedMatrixNames && definedMatrixNames.has(name)) return true;
+            // Nomes de matrizes por convenção Desmos são letras maiúsculas (ex: A, B, M), nunca x, y, z, t, e, pi ou funções
+            return /^[A-Z][A-Za-z0-9_]*$/.test(name) && name !== 'C';
+        };
+        const exprHasMatrix = (expr: string): boolean => {
+            const tokens = expr.match(/[A-Za-z_][A-Za-z0-9_]*/g) || [];
+            return tokens.some(tok => isMatrixIdentifier(tok));
+        };
+
+        s = s
+            .replace(/\(([^)]+)\)\^[\{\(]?\s*(?:T|\\top|\\?intercal)\s*[\}\)]?/g, (m, inner) => exprHasMatrix(inner) ? `tran(${inner})` : m)
+            .replace(/([A-Za-z_][A-Za-z0-9_]*)\^[\{\(]?\s*(?:T|\\top|\\?intercal)\s*[\}\)]?/g, (m, id) => isMatrixIdentifier(id) ? `tran(${id})` : m)
+            .replace(/\(([^)]+)\)\^[\{\(]*\s*(?:-1|\(-1\))\s*[\}\)]*/g, (m, inner) => exprHasMatrix(inner) ? `inv(${inner})` : m)
+            .replace(/([A-Za-z_][A-Za-z0-9_]*)\^[\{\(]*\s*(?:-1|\(-1\))\s*[\}\)]*/g, (m, id) => isMatrixIdentifier(id) ? `inv(${id})` : m)
+            .replace(/\btr\s*\(([^)]+)\)/gi, 'trace($1)');
+
+        // Transposta com plica para matrizes definidas (ex: B' -> tran(B), (A+B)' -> tran(A+B))
+        if (definedMatrixNames) {
+            for (const mName of definedMatrixNames) {
+                s = s.replace(new RegExp(`\\b${mName}'+`, 'g'), `tran(${mName})`);
+            }
+        }
+        s = s.replace(/\(([^)]+)\)'+/g, (m, inner) => exprHasMatrix(inner) ? `tran(${inner})` : m);
+
+        // Funções matemáticas sem parênteses (\sin x, cos 2x, cos x^2, ln x, sqrt x)
         s = this.normalizeUnparenthesized(s);
 
         // Derivadas

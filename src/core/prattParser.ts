@@ -18,26 +18,34 @@ export class PrattParser {
         return token;
     }
 
+    private depth: number = 0;
+
     parse(): any {
-        const expr = this.parseExpression(0);
-        if (this.lookahead !== null) {
-            throw new SyntaxError(`Símbolo inesperado ou operador ausente: "${this.lookahead.value}"`);
-        }
-        return expr;
+        return this.parseExpression(0);
     }
 
     parseExpression(precedence: number = 0): any {
-        let token = this.lookahead;
-        if (!token) throw new SyntaxError(`Expressão vazia.`);
-        this.lookahead = this.tokenizer.getNextToken();
-        let left = this.nud(token);
-
-        while (this.lookahead && precedence < this.getPrecedence(this.lookahead.type)) {
-            token = this.lookahead;
+        const isTopLevel = (this.depth === 0);
+        this.depth++;
+        try {
+            let token = this.lookahead;
+            if (!token) throw new SyntaxError(`Expressão vazia.`);
             this.lookahead = this.tokenizer.getNextToken();
-            left = this.led(token, left);
+            let left = this.nud(token);
+
+            while (this.lookahead && precedence < this.getPrecedence(this.lookahead.type)) {
+                token = this.lookahead;
+                this.lookahead = this.tokenizer.getNextToken();
+                left = this.led(token, left);
+            }
+
+            if (isTopLevel && this.lookahead !== null) {
+                throw new SyntaxError(`Símbolo inesperado ou operador ausente: "${this.lookahead.value}"`);
+            }
+            return left;
+        } finally {
+            this.depth--;
         }
-        return left;
     }
 
     nud(token: Token): any {
@@ -250,8 +258,14 @@ export class PrattParser {
             if (name === 'arcsin') name = 'asin';
             if (name === 'arccos') name = 'acos';
             if (name === 'arctan') name = 'atan';
+            if (name === 'arcsec') name = 'asec';
+            if (name === 'arccsc' || name === 'arccossec') name = 'acsc';
+            if (name === 'arccot' || name === 'arccotan') name = 'acot';
+            if (name === 'arcsinh') name = 'asinh';
+            if (name === 'arccosh') name = 'acosh';
+            if (name === 'arctanh') name = 'atanh';
 
-            const unaryMathFuncs = ['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh', 'log', 'ln', 'exp', 'sqrt', 'cbrt', 'abs'];
+            const unaryMathFuncs = ['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'asin', 'acos', 'atan', 'asec', 'acsc', 'acot', 'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh', 'log', 'ln', 'exp', 'sqrt', 'cbrt', 'abs'];
 
             if (this.lookahead && this.lookahead.type === TokenTypes.PARENTHESIS_LEFT) {
                 this.eat(TokenTypes.PARENTHESIS_LEFT);
