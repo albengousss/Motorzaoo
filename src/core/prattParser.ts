@@ -18,6 +18,14 @@ export class PrattParser {
         return token;
     }
 
+    parse(): any {
+        const expr = this.parseExpression(0);
+        if (this.lookahead !== null) {
+            throw new SyntaxError(`Símbolo inesperado ou operador ausente: "${this.lookahead.value}"`);
+        }
+        return expr;
+    }
+
     parseExpression(precedence: number = 0): any {
         let token = this.lookahead;
         if (!token) throw new SyntaxError(`Expressão vazia.`);
@@ -234,6 +242,16 @@ export class PrattParser {
         if (token.type === TokenTypes.IDENTIFIER) {
             // Limpa as chaves e remove espaços em branco (ex: f_{1} vira f_1)
             let rawName = token.value.replace(/[\{\}\\]/g, '').trim(); 
+            let name = rawName.toLowerCase();
+            if (name === 'ln') name = 'log';
+            if (name === 'tg') name = 'tan';
+            if (name === 'cossec') name = 'csc';
+            if (name === 'cotan') name = 'cot';
+            if (name === 'arcsin') name = 'asin';
+            if (name === 'arccos') name = 'acos';
+            if (name === 'arctan') name = 'atan';
+
+            const unaryMathFuncs = ['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh', 'log', 'ln', 'exp', 'sqrt', 'cbrt', 'abs'];
 
             if (this.lookahead && this.lookahead.type === TokenTypes.PARENTHESIS_LEFT) {
                 this.eat(TokenTypes.PARENTHESIS_LEFT);
@@ -246,17 +264,8 @@ export class PrattParser {
                     }
                 }
                 this.eat(TokenTypes.PARENTHESIS_RIGHT);
-                
-                let name = rawName.toLowerCase();
-                if (name === 'ln') name = 'log';
-                if (name === 'tg') name = 'tan';
-                if (name === 'cossec') name = 'csc';
-                if (name === 'cotan') name = 'cot';
-                if (name === 'arcsin') name = 'asin';
-                if (name === 'arccos') name = 'acos';
-                if (name === 'arctan') name = 'atan';
 
-                if (['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh', 'log', 'ln', 'exp', 'sqrt', 'cbrt', 'abs'].includes(name)) {
+                if (unaryMathFuncs.includes(name)) {
                     return [name.charAt(0).toUpperCase() + name.slice(1), args[0]];
                 }
                 if (name === 'nthroot' && args.length === 2) {
@@ -264,6 +273,15 @@ export class PrattParser {
                 }
                 return [rawName, ...args];
             }
+
+            // Suporte defensivo a funções matemáticas unárias sem parênteses (ex: sin x, cos 2x, ln x, sqrt x)
+            if (unaryMathFuncs.includes(name)) {
+                if (this.lookahead && [TokenTypes.NUMBER, TokenTypes.IDENTIFIER, TokenTypes.VAR, TokenTypes.PARENTHESIS_LEFT, TokenTypes.PIPE, TokenTypes.ADDITION, TokenTypes.SUBTRACTION].includes(this.lookahead.type)) {
+                    const arg = this.parseExpression(19);
+                    return [name.charAt(0).toUpperCase() + name.slice(1), arg];
+                }
+            }
+
             return rawName; 
         }
         throw new SyntaxError(`Prefixo desconhecido para: ${token.value}`);

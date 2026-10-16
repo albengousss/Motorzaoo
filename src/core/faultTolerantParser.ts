@@ -406,6 +406,16 @@ export class FaultTolerantParser {
             }
         }
 
+        // Funções unárias reservadas soltas no fim da linha sem argumento (ex: sin, cos, ln, sqrt)
+        const trailingFnMatch = trimmedAscii.match(/(?:^|[^a-zA-Z_])(sin|cos|tan|sec|csc|cot|sinh|cosh|tanh|asin|acos|atan|asinh|acosh|atanh|log|ln|exp|sqrt|cbrt)\s*$/i) ||
+                                trimmedLatex.match(/(?:\\operatorname\{([^}]+)\}|\\([a-zA-Z]+))\s*$/);
+        if (trailingFnMatch) {
+            const rawFn = (trailingFnMatch[1] || trailingFnMatch[2] || '').toLowerCase();
+            if (this.RESERVED_FUNCTIONS.has(rawFn)) {
+                return { isIncomplete: true, warning: `Informe o argumento de ${rawFn} (ex: ${rawFn}(x)).` };
+            }
+        }
+
         // Parênteses desbalanceados
         let openP = 0;
         for (const ch of trimmedAscii) {

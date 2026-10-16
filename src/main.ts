@@ -2,6 +2,7 @@ import 'mathlive';
 import './style.css';
 import { PrattParser } from './core/prattParser';
 import { FaultTolerantParser } from './core/faultTolerantParser';
+import { LatexNormalizer } from './core/latexNormalizer';
 import { StateManager } from './core/stateManager';
 import { HistoryManager } from './core/historyManager';
 import { createIcons, icons } from 'lucide';
@@ -377,13 +378,7 @@ function scheduleFrame() {
     requestAnimationFrame(() => { _rafPending = false; drawFrame(); });
 }
 
-/**
- * Normaliza derivadas em LaTeX e AsciiMath para diff(expr, var) de forma resiliente
- * com suporte completo a delimitadores aninhados (evita corromper x^(2) em x^(2, x)).
- */
-function normalizeDerivative(inputStr: string): string {
-    return FaultTolerantParser.normalizeDerivative(inputStr);
-}
+
 
 function compileAllExpressions() {
     // Limpa apenas as funções compiladas de EDOs/CAS
@@ -504,179 +499,8 @@ function compileAllExpressions() {
             ExpressionManager.processBlockState(item.id, '', {});
             return;
         }
-        // =========================================================
-        // SANITIZAÇÃO: O Triturador de Sujeira do MathLive
-        // =========================================================
-        let cleanStr = ascii
-            .replace(/\\left\./g, '')
-            .replace(/\\right\./g, '')
-            .replace(/\\left/g, '')
-            .replace(/\\right/g, '')
-            .replace(/\s*\\cdot\s*/g, '*')
-            .replace(/\s*\\times\s*/g, '*')
-            .replace(/\s*\\ast\s*/g, '*')
-            .replace(/∗/g, '*')
-            .replace(/⋅/g, '*')
-            .replace(/×/g, '*')
-            .replace(/"/g, '');
-
-        // Consertar letras espaçadas geradas quando o utilizador escreve manualmente no teclado (ordenadas por tamanho decrescente)
-        const spacedFuncs = [
-            'r e d u c e d r o w e c h e l o n f o r m', 'd e t e r m i n a n t', 'm a t r i x r a n k',
-            't r a n s p o s e', 'a r c s i n', 'a r c c o s', 'a r c t a n', 's i n h', 'c o s h', 't a n h',
-            'c o s s e c', 'c o t a n', 't r a n', 't r a c e', 'i n v e r t', 'r r e f', 'r a n k',
-            's i n', 'c o s', 't a n', 's e c', 'c s c', 'c o t', 'l o g', 'l n', 'e x p', 'd e t', 'i n v', 't r'
-        ];
-        spacedFuncs.forEach(func => {
-            const regex = new RegExp(func.split('').join('\\s*'), 'gi');
-            cleanStr = cleanStr.replace(regex, func.replace(/\s+/g, ''));
-        });
-
-        // Limpa wrappers de texto e operadores LaTeX que o MathLive gera
-        cleanStr = cleanStr
-            .replace(/\\operatorname\{([^}]+)\}/gi, '$1')
-            .replace(/\\mathrm\{([^}]+)\}/gi, '$1')
-            .replace(/\\text\{([^}]+)\}/gi, '$1');
-
-        // Normalização de nomes de funções com subscrito (ex: f_{jose}(x), f_(1)(x), f_1(x))
-        cleanStr = cleanStr.replace(/([a-zA-Z_][a-zA-Z0-9_]*)_[\{\(]([a-zA-Z0-9_]+)[\}\)]\s*(?=\()/g, '$1_$2');
-        cleanStr = cleanStr.replace(/([a-zA-Z_][a-zA-Z0-9_]*)_([a-zA-Z0-9_]+)\s*(?=\()/g, '$1_$2');
-
-        // Normalização de subscript do MathLive para sintaxe universal de colchetes A[r, c] e A[i]
-        cleanStr = cleanStr.replace(/(?<!\\)\b([a-zA-Z_][a-zA-Z0-9_]*)_[\(\{]\s*([0-9]+)\s*,\s*([0-9]+)\s*[\)\}]/g, '$1[$2, $3]');
-        cleanStr = cleanStr.replace(/(?<!\\)\b([a-zA-Z_][a-zA-Z0-9_]*)_\{([0-9]+)\}/g, (match, p1, p2) => {
-            if (['f', 'g', 'h', 'c', 'C', 'y', 'x', 'z', 't', 'int', 'defint', 'sum', 'prod', 'lim', 'limit', 'diff', 'log', 'ln', 'min', 'max'].includes(p1.toLowerCase())) return match;
-            return `${p1}[${p2}]`;
-        });
-        cleanStr = cleanStr.replace(/(?<!\\)\b([a-zA-Z_][a-zA-Z0-9_]*)_([0-9]+)\b/g, (match, p1, p2) => {
-            if (['f', 'g', 'h', 'c', 'C', 'y', 'x', 'z', 't', 'int', 'defint', 'sum', 'prod', 'lim', 'limit', 'diff', 'log', 'ln', 'min', 'max'].includes(p1.toLowerCase())) return match;
-            return `${p1}[${p2}]`;
-        }).replace(/²/g, '^2').replace(/³/g, '^3');
-        
-        // Normalização universal de plicas (derivadas): suporta apóstrofo ('), unicode prime (′), acento agudo (´), etc.
-        cleanStr = cleanStr
-            .replace(/\^\s*\{\s*(?:\\prime|['´`’′]|\\doubleprime|″)+\s*\}/g, m => m.includes('double') || m.includes('″') || (m.match(/['´`’′]/g) || []).length > 1 ? "''" : "'")
-            .replace(/\^\s*\(\s*(?:\\prime|['´`’′]|\\doubleprime|″)+\s*\)/g, m => m.includes('double') || m.includes('″') || (m.match(/['´`’′]/g) || []).length > 1 ? "''" : "'")
-            .replace(/\^\s*(?:\\doubleprime|″)/g, "''")
-            .replace(/\^\s*(?:\\prime|['´`’′])/g, "'")
-            .replace(/\\doubleprime/g, "''")
-            .replace(/\\prime/g, "'")
-            .replace(/″/g, "''")
-            .replace(/[´`’′]/g, "'")
-            .replace(/\^'+/g, m => m.replace(/\^/g, ''));
-
-        // Operadores de Matriz: Transposta (^T, ^\top, ') e Inversa (^-1)
-        cleanStr = cleanStr
-            .replace(/\(([^)]+)\)\^\{?(?:T|\\top|intercal)\}?/gi, 'tran($1)')
-            .replace(/([A-Za-z_][A-Za-z0-9_]*)\^\{?(?:T|\\top|intercal)\}?/gi, 'tran($1)')
-            .replace(/\(([^)]+)\)\^[\{\(]*\s*(?:-1|\(-1\))\s*[\}\)]*/g, 'inv($1)')
-            .replace(/([A-Za-z_][A-Za-z0-9_]*)\^[\{\(]*\s*(?:-1|\(-1\))\s*[\}\)]*/g, 'inv($1)')
-            .replace(/\btr\s*\(([^)]+)\)/gi, 'trace($1)');
-
-        // Transposta com plica para matrizes definidas (ex: B' -> tran(B), (A+B)' -> tran(A+B))
-        for (const mName of definedMatrixNames) {
-            cleanStr = cleanStr.replace(new RegExp(`\\b${mName}'+`, 'g'), `tran(${mName})`);
-        }
-        cleanStr = cleanStr.replace(/\(([^)]+)\)'+/g, 'tran($1)');
-
-        // Separa limites colados ao integrando gerados pelo MathLive (ex: _1^2x -> _1^2 x, _1x -> _1 x)
-        cleanStr = cleanStr.replace(/([\^_](?:\{[^}]+\}|\([^)]+\)|[0-9.]+))\s*([a-zA-Z_])/g, '$1 $2');
-
-        // Multiplicação escalar implícita para matrizes e variáveis: 2B -> 2*B, MAS NÃO em limites _2 ou ^2
-        cleanStr = cleanStr.replace(/(?<![\^_]\s*)(\d+(?:\.\d+)?)\s*([A-Za-z_][A-Za-z0-9_]*)/g, '$1*$2');
-
-        // Raiz enésima \sqrt[n]{x} -> nthroot(x, n) e AsciiMath root(n)(x) -> nthroot(x, n)
-        cleanStr = cleanStr
-            .replace(/\\sqrt\[([^\]]+)\]\{([^}]+)\}/g, 'nthroot($2, $1)')
-            .replace(/root\s*\(([^)]+)\)\s*\(([^)]+)\)/g, 'nthroot($2, $1)');
-
-        // Logaritmo com base personalizada: \log_{b}(x) ou log_b(x) -> ((log(x))/(log(b)))
-        cleanStr = cleanStr.replace(/\\?log_\{?([a-zA-Z0-9.]+)\}?\s*\(([^)]+)\)/gi, '((log($2))/(log($1)))');
-
-        // Converter d/dx(expr), \frac{d}{dx}(expr), frac(d)(dx)(expr), d/dx expr, \frac{d}{dx} expr, \frac{d}{dx}x para diff(expr, x) ANTES de normalizar frações
-        cleanStr = normalizeDerivative(cleanStr);
-
-        // Normalização de frações (LaTeX \frac{a}{b} e AsciiMath frac(a)(b)) com loop iterativo para aninhadas
-        let fracPasses = 0;
-        let prevFrac = '';
-        while (prevFrac !== cleanStr && fracPasses < 10) {
-            prevFrac = cleanStr;
-            cleanStr = cleanStr
-                .replace(/\\frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}/g, '(($1)/($2))')
-                .replace(/frac\s*\(([^()]+)\)\s*\(([^()]+)\)/g, '(($1)/($2))');
-            fracPasses++;
-        }
-
-        // Normalização universal de diferenciais e integrais (LaTeX e MathLive)
-        cleanStr = cleanStr
-            .replace(/\\mathrm\{d\}/gi, ' d ')
-            .replace(/\\text\{d\}/gi, ' d ')
-            .replace(/\\differentialD/gi, ' d ')
-            .replace(/\\,/g, ' ')
-            .replace(/\\!/g, ' ');
-
-        cleanStr = cleanStr.replace(/(?<=[a-zA-Z0-9_\)\}\]])\s*d\s*([a-zA-Z_])(?=\s*(?:[+\-*/=,\)\}\]]|$))/gi, ' d $1');
-
-        // 1. Integral definida (defint / \int_a^b): \int_0^2 x dx ou \int_{0}^{2} x dx ou \int^2_0 x dx ou int _1^2 x dx
-        // Processa do integrando mais interno para o mais externo para suportar integrais múltiplas e compostas
-        const boundPattern = '(?:\\{([^}]+)\\}|\\(([^)]+)\\)|(-?[0-9.]+|\\\\[a-zA-Z]+|[a-zA-Z_][a-zA-Z0-9_]*))';
-        const innermostDefIntRegex = new RegExp(
-            `(?:\\bdefint(?![a-zA-Z])|\\\\int(?![a-zA-Z])|\\bint(?![a-zA-Z]))\\s*(?:_\\s*${boundPattern}\\s*\\^\\s*${boundPattern}|\\^\\s*${boundPattern}\\s*_\\s*${boundPattern})\\s*((?:(?!\\\\int|\\bint\\b|\\bdefint\\b).)*?)\\s*(?:\\\\mathrm\\{d\\}|\\\\text\\{d\\}|\\\\differentialD|\\bd|(?<=[^a-zA-Z0-9_])d)\\s*\\\\?([a-zA-Z_][a-zA-Z0-9_]*)`,
-            'i'
-        );
-
-        let intPasses = 0;
-        let prevIntStr = '';
-        while (prevIntStr !== cleanStr && intPasses < 10) {
-            prevIntStr = cleanStr;
-            cleanStr = cleanStr.replace(innermostDefIntRegex,
-                (_m, l1, l2, l3, u1, u2, u3, u4, u5, u6, l4, l5, l6, expr, v) => {
-                    let lower = (l1 ?? l2 ?? l3 ?? l4 ?? l5 ?? l6).trim();
-                    let upper = (u1 ?? u2 ?? u3 ?? u4 ?? u5 ?? u6).trim();
-                    lower = lower.replace(/\\/g, '');
-                    upper = upper.replace(/\\/g, '');
-                    const integrand = expr.trim() || '1';
-                    return `integrate(${integrand}, ${v}, ${lower}, ${upper})`;
-                }
-            );
-            intPasses++;
-        }
-
-        // 2. Integral indefinida (int / \int): \int x dx ou int x dx ou \int dx
-        const innermostIndefIntRegex = new RegExp(
-            `(?:\\bdefint(?![a-zA-Z])|\\\\int(?![a-zA-Z])|\\bint(?![a-zA-Z]))\\s*((?:(?!\\\\int|\\bint\\b|\\bdefint\\b).)*?)\\s*(?:\\\\mathrm\\{d\\}|\\\\text\\{d\\}|\\\\differentialD|\\bd|(?<=[^a-zA-Z0-9_])d)\\s*\\\\?([a-zA-Z_][a-zA-Z0-9_]*)`,
-            'i'
-        );
-        let indefPasses = 0;
-        let prevIndefStr = '';
-        while (prevIndefStr !== cleanStr && indefPasses < 10) {
-            prevIndefStr = cleanStr;
-            cleanStr = cleanStr.replace(innermostIndefIntRegex,
-                (_m, expr, v) => {
-                    const integrand = expr.trim() || '1';
-                    return `integrate(${integrand}, ${v})`;
-                }
-            );
-            indefPasses++;
-        }
-
-        // 3. Somatório (\sum_{n=a}^b expr) e Produtório (\prod_{n=a}^b expr)
-        cleanStr = cleanStr.replace(/(?:\\sum|\bsum\b)\s*_\s*(?:\{([a-zA-Z_][a-zA-Z0-9_]*)=([^}]+)\}|\(([a-zA-Z_][a-zA-Z0-9_]*)=([^)]+)\))\s*\^\s*(?:\{([^}]+)\}|\(([^)]+)\)|([^\s]+))\s*(.*)$/i,
-            (_m, v1, s1, v2, s2, e1, e2, e3, body) => {
-                const v = v1 || v2;
-                const start = s1 || s2;
-                const endVal = e1 || e2 || e3;
-                return `sum(${body.trim() || v}, ${v}, ${start.trim()}, ${endVal.trim()})`;
-            }
-        );
-        cleanStr = cleanStr.replace(/(?:\\prod|\bprod\b)\s*_\s*(?:\{([a-zA-Z_][a-zA-Z0-9_]*)=([^}]+)\}|\(([a-zA-Z_][a-zA-Z0-9_]*)=([^)]+)\))\s*\^\s*(?:\{([^}]+)\}|\(([^)]+)\)|([^\s]+))\s*(.*)$/i,
-            (_m, v1, s1, v2, s2, e1, e2, e3, body) => {
-                const v = v1 || v2;
-                const start = s1 || s2;
-                const endVal = e1 || e2 || e3;
-                return `product(${body.trim() || v}, ${v}, ${start.trim()}, ${endVal.trim()})`;
-            }
-        );
+        // Sanitização e normalização centralizada via LatexNormalizer
+        let cleanStr = LatexNormalizer.normalize(ascii, item.latex, definedMatrixNames);
 
 
         // Extração de restrições de domínio entre chaves: ex: y = x^2 {x >= 0} ou {0 <= t <= 2pi}
@@ -2021,13 +1845,14 @@ function drawFrame() {
             // 2. Superfície Implícita 3D F(x, y, z) = 0 via Raymarching
             else if (item.isImplicit && item.ast) {
                 let glsl = '';
+                const usedUniforms = new Set<string>();
                 try {
                     if (Array.isArray(item.ast) && item.ast[0] === 'Equal') {
-                        const left = GLRenderer.astToGLSL(item.ast[1], StateManager.values);
-                        const right = GLRenderer.astToGLSL(item.ast[2], StateManager.values);
+                        const left = GLRenderer.astToGLSL(item.ast[1], StateManager.values, usedUniforms);
+                        const right = GLRenderer.astToGLSL(item.ast[2], StateManager.values, usedUniforms);
                         glsl = `(${left}) - (${right})`;
                     } else {
-                        glsl = GLRenderer.astToGLSL(item.ast, StateManager.values);
+                        glsl = GLRenderer.astToGLSL(item.ast, StateManager.values, usedUniforms);
                     }
                 } catch (_) {}
 
@@ -2331,6 +2156,24 @@ CommandsGuideModal.init((exampleExpr) => {
     drawFrame();
 };
 
+(window as any)._zoomIn = () => {
+    if (StateManager.viewMode === '3d') {
+        Camera3D.zoom(0.8);
+    } else {
+        Camera.zoom(0.8, 0.8, Camera.width / 2, Camera.height / 2);
+    }
+    drawFrame();
+};
+
+(window as any)._zoomOut = () => {
+    if (StateManager.viewMode === '3d') {
+        Camera3D.zoom(1.25);
+    } else {
+        Camera.zoom(1.25, 1.25, Camera.width / 2, Camera.height / 2);
+    }
+    drawFrame();
+};
+
 /** Limpa todas as expressões e reinicia o estado */
 (window as any)._clearAll = () => {
     if (!confirm('Limpar todas as expressões?')) return;
@@ -2568,6 +2411,8 @@ let startHeight = 0;
 
 sidebarHeader.addEventListener('touchstart', (e) => {
     if (window.innerWidth <= 768) {
+        // Se tocou em um botão dentro do header, não inicia o arraste da gaveta
+        if ((e.target as HTMLElement).closest('button, a')) return;
         isDraggingSidebar = true;
         startY = e.touches[0].clientY;
         startHeight = sidebarEl.getBoundingClientRect().height;
@@ -2790,9 +2635,11 @@ setTimeout(() => {
                         sidebarEl.dataset.savedHeight = sidebarEl.getBoundingClientRect().height.toString();
                     }
                     
-                    // Posiciona a barra exatamente acima do teclado sem distorcer o canvas
+                    // Posiciona a barra compacta acima do teclado preservando o canvas visível no topo
                     sidebarEl.style.marginBottom = `${keyboardHeight}px`;
-                    sidebarEl.style.maxHeight = `calc(100vh - ${keyboardHeight + 50}px)`;
+                    sidebarEl.style.height = '180px';
+                    sidebarEl.style.maxHeight = '180px';
+                    sidebarEl.style.flex = 'none';
                     
                     setTimeout(() => {
                         resizeAll();
@@ -2812,9 +2659,12 @@ setTimeout(() => {
                 if (window.innerWidth <= 768) {
                     sidebarEl.style.marginBottom = '0px';
                     sidebarEl.style.maxHeight = '';
+                    sidebarEl.style.flex = '';
                     if (sidebarEl.dataset.savedHeight) {
                         sidebarEl.style.height = `${sidebarEl.dataset.savedHeight}px`;
                         sidebarEl.dataset.savedHeight = '';
+                    } else {
+                        sidebarEl.style.height = '';
                     }
                 }
                 
@@ -2982,90 +2832,94 @@ canvasEl.addEventListener('mousedown', (e) => {
     }
 });
 
-canvasEl.addEventListener('click', (e) => {
-    if (dragDistance < 5 && !isTracing && !isDraggingPoint) {
-        const rect = canvasEl.getBoundingClientRect();
-        const mx = e.clientX - rect.left;
-        const my = e.clientY - rect.top;
-        
-        // 1. Unpin if clicking near an existing pinned point/badge (within 18px)
-        const pinnedIdx = pinnedPoints.findIndex(pp => {
-            const px = Camera.toPixelX(pp.mathX);
-            const py = Camera.toPixelY(pp.mathY);
-            return Math.hypot(mx - px, my - py) < 18;
-        });
-        if (pinnedIdx !== -1) {
-            pinnedPoints.splice(pinnedIdx, 1);
-            (window as any)._pinnedPoints = pinnedPoints;
-            HistoryManager.recordState(true);
-            scheduleFrame();
-            return;
-        }
+function handleCanvasPointerTap(clientX: number, clientY: number, altKey: boolean = false) {
+    const rect = canvasEl.getBoundingClientRect();
+    const mx = clientX - rect.left;
+    const my = clientY - rect.top;
+    
+    // 1. Desafixar se tocar perto de um ponto fixado existente (raio 24px no mobile, 18px no desktop)
+    const hitRadius = window.innerWidth <= 768 ? 24 : 18;
+    const pinnedIdx = pinnedPoints.findIndex(pp => {
+        const px = Camera.toPixelX(pp.mathX);
+        const py = Camera.toPixelY(pp.mathY);
+        return Math.hypot(mx - px, my - py) < hitRadius;
+    });
+    if (pinnedIdx !== -1) {
+        pinnedPoints.splice(pinnedIdx, 1);
+        (window as any)._pinnedPoints = pinnedPoints;
+        HistoryManager.recordState(true);
+        scheduleFrame();
+        return;
+    }
 
-        // 2. Pin if clicking on a notable point (hoveredNotablePoint or within 16px)
-        let targetNotable = hoveredNotablePoint;
-        if (!targetNotable) {
-            for (const p of renderMemory_points) {
-                const px = Camera.toPixelX(p.mathX);
-                const py = Camera.toPixelY(p.mathY);
-                if (Math.hypot(mx - px, my - py) < 16) {
-                    targetNotable = p;
-                    break;
-                }
+    // 2. Fixar se tocar em um ponto notável (hoveredNotablePoint ou dentro de hitRadius)
+    let targetNotable = hoveredNotablePoint;
+    if (!targetNotable) {
+        for (const p of renderMemory_points) {
+            const px = Camera.toPixelX(p.mathX);
+            const py = Camera.toPixelY(p.mathY);
+            if (Math.hypot(mx - px, my - py) < hitRadius) {
+                targetNotable = p;
+                break;
             }
         }
-        if (targetNotable) {
-            const existing = pinnedPoints.find(pp => Math.abs(pp.mathX - targetNotable!.mathX) < 1e-4 && Math.abs(pp.mathY - targetNotable!.mathY) < 1e-4);
-            if (existing) {
-                // If clicked again, toggle tangent line display
-                existing.showTangent = !existing.showTangent;
-            } else {
-                pinnedPoints.push({
-                    id: 'pin_' + Date.now() + Math.random().toString(36).slice(2, 6),
-                    mathX: targetNotable.mathX,
-                    mathY: targetNotable.mathY,
-                    color: targetNotable.color,
-                    type: targetNotable.type,
-                    curveF: targetNotable.curveF,
-                    slope: targetNotable.slope,
-                    showTangent: e.altKey || false
-                });
-            }
-            (window as any)._pinnedPoints = pinnedPoints;
-            HistoryManager.recordState(true);
-            scheduleFrame();
-            return;
-        }
-
-        // 3. Pin point on curve if clicking on explicit or parametric curve
-        const closest = getClosestCurvePoint(mx, my, 16);
-        if (closest) {
+    }
+    if (targetNotable) {
+        const existing = pinnedPoints.find(pp => Math.abs(pp.mathX - targetNotable!.mathX) < 1e-4 && Math.abs(pp.mathY - targetNotable!.mathY) < 1e-4);
+        if (existing) {
+            existing.showTangent = !existing.showTangent;
+        } else {
             pinnedPoints.push({
                 id: 'pin_' + Date.now() + Math.random().toString(36).slice(2, 6),
-                mathX: closest.mathX,
-                mathY: closest.mathY,
-                color: closest.color,
-                type: 'curve',
-                curveF: closest.curveF,
-                slope: closest.slope,
-                showTangent: e.altKey || false
+                mathX: targetNotable.mathX,
+                mathY: targetNotable.mathY,
+                color: targetNotable.color,
+                type: targetNotable.type,
+                curveF: targetNotable.curveF,
+                slope: targetNotable.slope,
+                showTangent: altKey
             });
-            (window as any)._pinnedPoints = pinnedPoints;
-            HistoryManager.recordState(true);
-            scheduleFrame();
-            return;
         }
+        (window as any)._pinnedPoints = pinnedPoints;
+        HistoryManager.recordState(true);
+        scheduleFrame();
+        return;
+    }
 
-        // 4. Slope Field (EDO) Initial Condition on canvas click
-        const mathX = Camera.toMathX(mx);
-        const mathY = Camera.toMathY(my);
-        const activeSlopeFields = validEquations.filter(eq => eq.isEdo);
-        if (activeSlopeFields.length > 0) {
-            const edoName = activeSlopeFields[0].name;
-            const x0 = parseFloat(mathX.toFixed(2));
-            const y0 = parseFloat(mathY.toFixed(2));
-            ExpressionManager.addExpression(`${edoName}(${x0}) = ${y0}`);
-        }
+    // 3. Fixar ponto na curva se clicar/tocar em curva explícita ou paramétrica
+    const closest = getClosestCurvePoint(mx, my, hitRadius);
+    if (closest) {
+        pinnedPoints.push({
+            id: 'pin_' + Date.now() + Math.random().toString(36).slice(2, 6),
+            mathX: closest.mathX,
+            mathY: closest.mathY,
+            color: closest.color,
+            type: 'curve',
+            curveF: closest.curveF,
+            slope: closest.slope,
+            showTangent: altKey
+        });
+        (window as any)._pinnedPoints = pinnedPoints;
+        HistoryManager.recordState(true);
+        scheduleFrame();
+        return;
+    }
+
+    // 4. Condição inicial de Campo de Direções (EDO) ao clicar/tocar no canvas
+    const mathX = Camera.toMathX(mx);
+    const mathY = Camera.toMathY(my);
+    const activeSlopeFields = validEquations.filter(eq => eq.isEdo);
+    if (activeSlopeFields.length > 0) {
+        const edoName = activeSlopeFields[0].name;
+        const x0 = parseFloat(mathX.toFixed(2));
+        const y0 = parseFloat(mathY.toFixed(2));
+        ExpressionManager.addExpression(`${edoName}(${x0}) = ${y0}`);
+    }
+}
+
+canvasEl.addEventListener('click', (e) => {
+    if (dragDistance < 5 && !isTracing && !isDraggingPoint) {
+        handleCanvasPointerTap(e.clientX, e.clientY, e.altKey || false);
     }
 });
 
@@ -3294,10 +3148,19 @@ canvasEl.addEventListener('wheel', (e) => {
 
 // --- TOUCH EVENTS PARA CELULAR ---
 let initialPinchDistance = -1;
+let touchStartTime = 0;
+let touchStartX = 0;
+let touchStartY = 0;
+let touchMoved = false;
 
 canvasEl.addEventListener('touchstart', (e) => {
     e.preventDefault(); // Impede scroll natural na tela
     if (e.touches.length === 1) {
+        touchStartTime = Date.now();
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+        touchMoved = false;
+
         isDragging = true;
         isTracing = false;
         lastX = e.touches[0].clientX;
@@ -3337,6 +3200,11 @@ canvasEl.addEventListener('touchstart', (e) => {
 
 canvasEl.addEventListener('touchmove', (e) => {
     e.preventDefault();
+    if (e.touches.length === 1) {
+        if (Math.hypot(e.touches[0].clientX - touchStartX, e.touches[0].clientY - touchStartY) > 10) {
+            touchMoved = true;
+        }
+    }
     const rect = canvasEl.getBoundingClientRect();
     if (isTracing && e.touches.length === 1) {
         const mx = e.touches[0].clientX - rect.left;
@@ -3382,6 +3250,10 @@ canvasEl.addEventListener('touchmove', (e) => {
 canvasEl.addEventListener('touchend', (e) => {
     if (e.touches.length < 2) initialPinchDistance = -1;
     if (e.touches.length === 0) {
+        const elapsed = Date.now() - touchStartTime;
+        if (!touchMoved && elapsed < 350) {
+            handleCanvasPointerTap(touchStartX, touchStartY);
+        }
         isDragging = false;
         isTracing = false;
         if (globalTracePoint) {

@@ -242,7 +242,9 @@ math-field::part(selection),
   padding: 6px 10px;
   border-radius: 6px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
-  white-space: nowrap;
+  max-width: 250px;
+  white-space: normal;
+  word-break: break-word;
   pointer-events: none;
   opacity: 0;
   z-index: 60;
@@ -260,8 +262,10 @@ math-field::part(selection),
   border-color: transparent #1e293b transparent transparent;
 }
 
-.block-warning-trigger:hover .warning-popover-tooltip {
+.block-warning-trigger:hover .warning-popover-tooltip,
+.warning-popover-tooltip.force-visible {
   opacity: 1;
+  pointer-events: auto;
 }
 
 /* ═════════════════════════════════════════════════════════════

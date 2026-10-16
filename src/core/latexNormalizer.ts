@@ -31,29 +31,150 @@ export class LatexNormalizer {
     }
 
     /**
+     * Normaliza potências trigonométricas e funções inversas:
+     * \sin^2(x) -> ((sin(x))^2)
+     * \sin^2 x -> ((sin(x))^2)
+     * \sin^{-1}(x) -> asin(x)
+     * \cos^{-1}(x) -> acos(x)
+     * \tan^{-1}(x) -> atan(x)
+     */
+    static normalizeTrigPowers(input: string): string {
+        let s = input;
+        const invTrigMap: Record<string, string> = {
+            sin: 'asin', cos: 'acos', tan: 'atan',
+            sec: 'asec', csc: 'acsc', cot: 'acot',
+            sinh: 'asinh', cosh: 'acosh', tanh: 'atanh'
+        };
+
+        // 1. Inversas: \sin^{-1}(x), sin^-1(x), etc.
+        s = s.replace(/\\?(sin|cos|tan|sec|csc|cot|sinh|cosh|tanh)\s*\^\s*(?:\{\s*-1\s*\}|\(\s*-1\s*\)|-1)\s*(\((?:[^()]|\([^()]*\))*\)|[a-zA-Z0-9_]+)/gi,
+            (_m, fn, rawArg) => {
+                const lower = fn.toLowerCase();
+                const target = invTrigMap[lower] || `a${lower}`;
+                let arg = rawArg.trim();
+                if (arg.startsWith('(') && arg.endsWith(')')) arg = arg.slice(1, -1).trim();
+                return `${target}(${arg})`;
+            }
+        );
+
+        // 2. Potências: \sin^2(x), \sin^{2}(x), \cos^3(x), sin^2 x, \sin^2(2x + 1)
+        s = s.replace(/\\?(sin|cos|tan|sec|csc|cot|sinh|cosh|tanh)\s*\^\s*(?:\{([0-9.]+)\}|\(([0-9.]+)\)|([0-9.]+))\s*(\((?:[^()]|\([^()]*\))*\)|[a-zA-Z0-9_]+)/gi,
+            (_m, fn, p1, p2, p3, rawArg) => {
+                const power = p1 || p2 || p3;
+                const lower = fn.toLowerCase();
+                let arg = rawArg.trim();
+                if (arg.startsWith('(') && arg.endsWith(')')) arg = arg.slice(1, -1).trim();
+                return `((${lower}(${arg}))^${power})`;
+            }
+        );
+
+        return s;
+    }
+
+    /**
+     * Normaliza chamadas de funções matemáticas sem parênteses (Padrão Desmos):
+     * \sin x -> sin(x)
+     * cos 2x -> cos(2x)
+     * ln x -> ln(x)
+     * sqrt x -> sqrt(x)
+     * \sin x + \cos x -> sin(x) + cos(x)
+     */
+    static normalizeUnparenthesized(input: string): string {
+        let s = input;
+        s = s.replace(/\\?(sin|cos|tan|sec|csc|cot|sinh|cosh|tanh|asin|acos|atan|asinh|acosh|atanh|log|ln|exp|sqrt|cbrt)\s+([a-zA-Z0-9_]+(?:\s*\*\s*[a-zA-Z0-9_]+)*)(?!\s*[\(\{])/gi,
+            (_m, fn, arg) => {
+                return `${fn.toLowerCase()}(${arg.trim()})`;
+            }
+        );
+        return s;
+    }
+
+    /**
      * Normaliza expressões completas de LaTeX / MathLive para sintaxe matemática limpa
      */
-    static normalize(input: string): string {
-        let s = input.trim();
+    static normalize(input: string, _rawLatex?: string, definedMatrixNames?: Set<string>): string {
+        let s = (input || '').trim();
+        if (!s) return '';
 
         // Limpeza de marcas e espaçamentos LaTeX
         s = s
+            .replace(/\\left\./g, '')
+            .replace(/\\right\./g, '')
             .replace(/\\left/g, '')
             .replace(/\\right/g, '')
-            .replace(/\\cdot/g, '*')
-            .replace(/\\times/g, '*')
+            .replace(/\s*\\cdot\s*/g, '*')
+            .replace(/\s*\\times\s*/g, '*')
+            .replace(/\s*\\ast\s*/g, '*')
             .replace(/\\div/g, '/')
-            .replace(/\\operatorname\{([^}]+)\}/g, '$1')
-            .replace(/\\mathrm\{([^}]+)\}/g, '$1')
-            .replace(/\\text\{([^}]+)\}/g, '$1')
+            .replace(/∗/g, '*')
+            .replace(/⋅/g, '*')
+            .replace(/×/g, '*')
+            .replace(/"/g, '')
             .replace(/\\,/g, ' ')
             .replace(/\\!/g, ' ')
             .replace(/\\:/g, ' ')
             .replace(/\\;/g, ' ')
             .replace(/\\ /g, ' ');
 
-        // Transposta A^T, A^\top -> tran(A)
-        s = s.replace(/([a-zA-Z0-9_]+)\s*\^\s*\{?\s*(?:T|\\top|top)\s*\}?/g, 'tran($1)');
+        // Consertar letras espaçadas geradas quando o utilizador escreve manualmente no teclado (ordenadas por tamanho decrescente)
+        const spacedFuncs = [
+            'r e d u c e d r o w e c h e l o n f o r m', 'd e t e r m i n a n t', 'm a t r i x r a n k',
+            't r a n s p o s e', 'a r c s i n', 'a r c c o s', 'a r c t a n', 's i n h', 'c o s h', 't a n h',
+            'c o s s e c', 'c o t a n', 't r a n', 't r a c e', 'i n v e r t', 'r r e f', 'r a n k',
+            's i n', 'c o s', 't a n', 's e c', 'c s c', 'c o t', 'l o g', 'l n', 'e x p', 'd e t', 'i n v', 't r'
+        ];
+        spacedFuncs.forEach(func => {
+            const regex = new RegExp(func.split('').join('\\s*'), 'gi');
+            s = s.replace(regex, func.replace(/\s+/g, ''));
+        });
+
+        // Limpa wrappers de texto e operadores LaTeX que o MathLive gera
+        s = s
+            .replace(/\\operatorname\{([^}]+)\}/gi, '$1')
+            .replace(/\\mathrm\{([^}]+)\}/gi, '$1')
+            .replace(/\\text\{([^}]+)\}/gi, '$1');
+
+        // Normalização de nomes de funções com subscrito (ex: f_{jose}(x), f_(1)(x), f_1(x))
+        s = s.replace(/([a-zA-Z_][a-zA-Z0-9_]*)_[\{\(]([a-zA-Z0-9_]+)[\}\)]\s*(?=\()/g, '$1_$2');
+        s = s.replace(/([a-zA-Z_][a-zA-Z0-9_]*)_([a-zA-Z0-9_]+)\s*(?=\()/g, '$1_$2');
+
+        // Normalização de subscript do MathLive para sintaxe universal de colchetes A[r, c] e A[i]
+        s = s.replace(/(?<!\\)\b([a-zA-Z_][a-zA-Z0-9_]*)_[\(\{]\s*([0-9]+)\s*,\s*([0-9]+)\s*[\)\}]/g, '$1[$2, $3]');
+        s = s.replace(/(?<!\\)\b([a-zA-Z_][a-zA-Z0-9_]*)_\{([0-9]+)\}/g, (match, p1, p2) => {
+            if (['f', 'g', 'h', 'c', 'C', 'y', 'x', 'z', 't', 'int', 'defint', 'sum', 'prod', 'lim', 'limit', 'diff', 'log', 'ln', 'min', 'max'].includes(p1.toLowerCase())) return match;
+            return `${p1}[${p2}]`;
+        });
+        s = s.replace(/(?<!\\)\b([a-zA-Z_][a-zA-Z0-9_]*)_([0-9]+)\b/g, (match, p1, p2) => {
+            if (['f', 'g', 'h', 'c', 'C', 'y', 'x', 'z', 't', 'int', 'defint', 'sum', 'prod', 'lim', 'limit', 'diff', 'log', 'ln', 'min', 'max'].includes(p1.toLowerCase())) return match;
+            return `${p1}[${p2}]`;
+        }).replace(/²/g, '^2').replace(/³/g, '^3');
+
+        // Normalização universal de plicas (derivadas): suporta apóstrofo ('), unicode prime (′), acento agudo (´), etc.
+        s = s
+            .replace(/\^\s*\{\s*(?:\\prime|['´`’′]|\\doubleprime|″)+\s*\}/g, m => m.includes('double') || m.includes('″') || (m.match(/['´`’′]/g) || []).length > 1 ? "''" : "'")
+            .replace(/\^\s*\(\s*(?:\\prime|['´`’′]|\\doubleprime|″)+\s*\)/g, m => m.includes('double') || m.includes('″') || (m.match(/['´`’′]/g) || []).length > 1 ? "''" : "'")
+            .replace(/\^\s*(?:\\doubleprime|″)/g, "''")
+            .replace(/\^\s*(?:\\prime|['´`’′])/g, "'")
+            .replace(/\\doubleprime/g, "''")
+            .replace(/\\prime/g, "'")
+            .replace(/″/g, "''")
+            .replace(/[´`’′]/g, "'")
+            .replace(/\^'+/g, m => m.replace(/\^/g, ''));
+
+        // Operadores de Matriz: Transposta (^T, ^\top, ') e Inversa (^-1)
+        s = s
+            .replace(/\(([^)]+)\)\^\{?(?:T|\\top|intercal)\}?/gi, 'tran($1)')
+            .replace(/([A-Za-z_][A-Za-z0-9_]*)\^\{?(?:T|\\top|intercal)\}?/gi, 'tran($1)')
+            .replace(/\(([^)]+)\)\^[\{\(]*\s*(?:-1|\(-1\))\s*[\}\)]*/g, 'inv($1)')
+            .replace(/([A-Za-z_][A-Za-z0-9_]*)\^[\{\(]*\s*(?:-1|\(-1\))\s*[\}\)]*/g, 'inv($1)')
+            .replace(/\btr\s*\(([^)]+)\)/gi, 'trace($1)');
+
+        // Transposta com plica para matrizes definidas (ex: B' -> tran(B), (A+B)' -> tran(A+B))
+        if (definedMatrixNames) {
+            for (const mName of definedMatrixNames) {
+                s = s.replace(new RegExp(`\\b${mName}'+`, 'g'), `tran(${mName})`);
+            }
+        }
         s = s.replace(/\(([^)]+)\)'+/g, 'tran($1)');
 
         // Separa limites colados ao integrando (ex: _1^2x -> _1^2 x, _1x -> _1 x)
@@ -69,6 +190,12 @@ export class LatexNormalizer {
 
         // Logaritmo com base personalizada: \log_{b}(x) -> ((log(x))/(log(b)))
         s = s.replace(/\\?log_\{?([a-zA-Z0-9.]+)\}?\s*\(([^)]+)\)/gi, '((log($2))/(log($1)))');
+
+        // Potências trigonométricas e funções inversas (\sin^2(x), \sin^{-1}(x), etc.)
+        s = this.normalizeTrigPowers(s);
+
+        // Funções matemáticas sem parênteses (\sin x, cos 2x, ln x, sqrt x)
+        s = this.normalizeUnparenthesized(s);
 
         // Derivadas
         s = this.normalizeDerivative(s);
@@ -123,6 +250,24 @@ export class LatexNormalizer {
             });
             indefPasses++;
         }
+
+        // Somatório (\sum_{n=a}^b expr) e Produtório (\prod_{n=a}^b expr)
+        s = s.replace(/(?:\\sum|\bsum\b)\s*_\s*(?:\{([a-zA-Z_][a-zA-Z0-9_]*)=([^}]+)\}|\(([a-zA-Z_][a-zA-Z0-9_]*)=([^)]+)\))\s*\^\s*(?:\{([^}]+)\}|\(([^)]+)\)|([^\s]+))\s*(.*)$/i,
+            (_m, v1, s1, v2, s2, e1, e2, e3, body) => {
+                const v = v1 || v2;
+                const start = s1 || s2;
+                const endVal = e1 || e2 || e3;
+                return `sum(${body.trim() || v}, ${v}, ${start.trim()}, ${endVal.trim()})`;
+            }
+        );
+        s = s.replace(/(?:\\prod|\bprod\b)\s*_\s*(?:\{([a-zA-Z_][a-zA-Z0-9_]*)=([^}]+)\}|\(([a-zA-Z_][a-zA-Z0-9_]*)=([^)]+)\))\s*\^\s*(?:\{([^}]+)\}|\(([^)]+)\)|([^\s]+))\s*(.*)$/i,
+            (_m, v1, s1, v2, s2, e1, e2, e3, body) => {
+                const v = v1 || v2;
+                const start = s1 || s2;
+                const endVal = e1 || e2 || e3;
+                return `product(${body.trim() || v}, ${v}, ${start.trim()}, ${endVal.trim()})`;
+            }
+        );
 
         return s;
     }

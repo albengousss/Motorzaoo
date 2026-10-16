@@ -336,6 +336,14 @@ export class ExpressionManager {
             <div class="warning-popover-tooltip"></div>
         `;
         
+        warningTrigger.onclick = (e) => {
+            e.stopPropagation();
+            const tt = warningTrigger.querySelector('.warning-popover-tooltip') as HTMLElement;
+            if (tt) {
+                tt.classList.toggle('force-visible');
+            }
+        };
+
         visibilityBtn.appendChild(numberSpan);
         visibilityBtn.appendChild(warningTrigger);
 
@@ -708,6 +716,35 @@ export class ExpressionManager {
                 e.preventDefault();
                 this.addBlock();
                 this.updateBlockNumbers();
+            } else if (e.key === 'ArrowUp' && !e.shiftKey) {
+                const prevBlock = block.previousElementSibling as HTMLElement;
+                if (prevBlock) {
+                    const prevMf = prevBlock.querySelector('math-field, textarea, input') as HTMLElement;
+                    if (prevMf) {
+                        e.preventDefault();
+                        prevMf.focus();
+                    }
+                }
+            } else if (e.key === 'ArrowDown' && !e.shiftKey) {
+                const nextBlock = block.nextElementSibling as HTMLElement;
+                if (nextBlock) {
+                    const nextMf = nextBlock.querySelector('math-field, textarea, input') as HTMLElement;
+                    if (nextMf) {
+                        e.preventDefault();
+                        nextMf.focus();
+                    }
+                }
+            } else if (e.key === 'Backspace') {
+                const val = (mf as any).getValue('ascii-math') || '';
+                if (!val && this.container.children.length > 1) {
+                    e.preventDefault();
+                    const prevBlock = (block.previousElementSibling || block.nextElementSibling) as HTMLElement;
+                    delBtn.click();
+                    if (prevBlock) {
+                        const targetMf = prevBlock.querySelector('math-field, textarea, input') as HTMLElement;
+                        if (targetMf) targetMf.focus();
+                    }
+                }
             } else if (e.key === '/' || e.code === 'Slash' || e.code === 'NumpadDivide') {
                 handleFraction(e);
             } else if (isCaretKey(e)) {

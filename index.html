@@ -87,20 +87,20 @@
             </div>
             
             <!-- Ferramental Superior: Undo, Redo, Guia e Mobile/Desktop Collapse -->
-            <div class="flex items-center gap-1 mt-2 md:mt-0">
-                <button id="guide-sidebar-btn" title="Guia de Comandos & Ajuda" class="w-7 h-7 flex items-center justify-center text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-all cursor-pointer" onclick="if(window._toggleCommandsGuide) window._toggleCommandsGuide()">
+            <div class="flex items-center gap-1.5 mt-2 md:mt-0">
+                <button id="guide-sidebar-btn" title="Guia de Comandos & Ajuda" class="w-8 h-8 md:w-7 md:h-7 flex items-center justify-center text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-all cursor-pointer" onclick="if(window._toggleCommandsGuide) window._toggleCommandsGuide()">
                     <i data-lucide="help-circle" class="w-4 h-4"></i>
                 </button>
-                <button id="undo-btn" title="Desfazer (Ctrl+Z)" class="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed" disabled>
+                <button id="undo-btn" title="Desfazer (Ctrl+Z)" class="w-8 h-8 md:w-7 md:h-7 flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed" disabled>
                     <i data-lucide="undo-2" class="w-4 h-4"></i>
                 </button>
-                <button id="redo-btn" title="Refazer (Ctrl+Y)" class="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed" disabled>
+                <button id="redo-btn" title="Refazer (Ctrl+Y)" class="w-8 h-8 md:w-7 md:h-7 flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed" disabled>
                     <i data-lucide="redo-2" class="w-4 h-4"></i>
                 </button>
-                <button id="collapse-sidebar-btn" class="hidden md:flex items-center justify-center w-7 h-7 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-all cursor-pointer" title="Recolher Painel Lateral">
+                <button id="collapse-sidebar-btn" class="hidden md:flex items-center justify-center w-8 h-8 md:w-7 md:h-7 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-all cursor-pointer" title="Recolher Painel Lateral">
                     <i data-lucide="chevrons-left" class="w-4 h-4"></i>
                 </button>
-                <button id="toggle-sidebar-mobile-btn" class="flex md:hidden items-center justify-center w-7 h-7 text-gray-500 hover:text-blue-600 rounded-md transition-colors" title="Recolher / Expandir Painel">
+                <button id="toggle-sidebar-mobile-btn" class="flex md:hidden items-center justify-center w-8 h-8 text-gray-500 hover:text-blue-600 rounded-md transition-colors" title="Recolher / Expandir Painel">
                     <i data-lucide="chevron-down" id="sidebar-chevron-icon" class="w-4 h-4"></i>
                 </button>
             </div>
@@ -164,18 +164,21 @@
         <button id="mode-3d-btn" class="px-3 py-1.5 text-xs font-bold rounded-lg transition-all text-gray-500 hover:text-gray-900 cursor-pointer">3D</button>
       </div>
       
-      <!-- Botoes flutuantes -->
+      <!-- Botoes flutuantes do HUD (Estilo Desmos) -->
       <div class="absolute top-4 right-4 flex flex-col gap-2 z-20">
-        <button id="guide-hud-btn" title="Guia de Comandos & Ajuda" class="w-10 h-10 flex items-center justify-center bg-white/90 backdrop-blur-sm rounded-full shadow-md text-blue-600 hover:text-blue-700 hover:shadow-lg transition-all border border-blue-200 cursor-pointer" onclick="if(window._toggleCommandsGuide) window._toggleCommandsGuide()">
-          <i data-lucide="help-circle" class="w-5 h-5"></i>
+        <button id="zoom-in-btn" title="Aproximar (+)" class="w-10 h-10 flex items-center justify-center bg-white/90 backdrop-blur-sm rounded-full shadow-md text-gray-600 hover:text-blue-600 hover:shadow-lg transition-all border border-gray-200 cursor-pointer" onclick="if(window._zoomIn) window._zoomIn()">
+          <i data-lucide="plus" class="w-5 h-5"></i>
         </button>
-        <button id="reset-view-btn" title="Repor Vista" class="w-10 h-10 flex items-center justify-center bg-white/90 backdrop-blur-sm rounded-full shadow-md text-gray-500 hover:text-blue-500 hover:shadow-lg transition-all border border-gray-200" onclick="if(window._resetView) window._resetView()">
+        <button id="zoom-out-btn" title="Afastar (-)" class="w-10 h-10 flex items-center justify-center bg-white/90 backdrop-blur-sm rounded-full shadow-md text-gray-600 hover:text-blue-600 hover:shadow-lg transition-all border border-gray-200 cursor-pointer" onclick="if(window._zoomOut) window._zoomOut()">
+          <i data-lucide="minus" class="w-5 h-5"></i>
+        </button>
+        <button id="reset-view-btn" title="Repor Vista" class="w-10 h-10 flex items-center justify-center bg-white/90 backdrop-blur-sm rounded-full shadow-md text-gray-500 hover:text-blue-500 hover:shadow-lg transition-all border border-gray-200 cursor-pointer" onclick="if(window._resetView) window._resetView()">
           <i data-lucide="home" class="w-5 h-5"></i>
         </button>
-        <button id="settings-btn" title="Configurações" class="w-10 h-10 flex items-center justify-center bg-white/90 backdrop-blur-sm rounded-full shadow-md text-gray-500 hover:text-blue-500 hover:shadow-lg transition-all border border-gray-200" onclick="if(window._toggleSettings) window._toggleSettings()">
+        <button id="settings-btn" title="Configurações" class="w-10 h-10 flex items-center justify-center bg-white/90 backdrop-blur-sm rounded-full shadow-md text-gray-500 hover:text-blue-500 hover:shadow-lg transition-all border border-gray-200 cursor-pointer" onclick="if(window._toggleSettings) window._toggleSettings()">
           <i data-lucide="settings" class="w-5 h-5"></i>
         </button>
-        <button id="clear-all-btn" title="Limpar Tudo" class="w-10 h-10 flex items-center justify-center bg-white/90 backdrop-blur-sm rounded-full shadow-md text-gray-500 hover:text-red-500 hover:shadow-lg transition-all border border-gray-200" onclick="if(window._clearAll) window._clearAll()">
+        <button id="clear-all-btn" title="Limpar Tudo" class="w-10 h-10 flex items-center justify-center bg-white/90 backdrop-blur-sm rounded-full shadow-md text-gray-500 hover:text-red-500 hover:shadow-lg transition-all border border-gray-200 cursor-pointer" onclick="if(window._clearAll) window._clearAll()">
           <i data-lucide="trash-2" class="w-5 h-5"></i>
         </button>
       </div>
@@ -183,8 +186,8 @@
       <!-- Coordenadas do cursor -->
       <div id="cursor-coords" class="absolute bottom-3 right-4 text-xs text-gray-500 font-mono pointer-events-none hidden md:block bg-white/80 px-2 py-1 rounded backdrop-blur-sm shadow-sm border border-gray-100"></div>
 
-      <!-- Botão Flutuante do Teclado Virtual (Estilo Desmos) -->
-      <button id="toggle-keyboard-btn" title="Alternar Teclado Virtual" class="fixed bottom-3 left-3 z-30 flex items-center justify-center gap-1.5 px-3 py-2 bg-white/95 backdrop-blur-md rounded-xl shadow-lg border border-gray-200 text-gray-700 hover:text-blue-600 hover:border-blue-300 transition-all cursor-pointer select-none active:scale-95 font-medium text-xs">
+      <!-- Botão Flutuante do Teclado Virtual (Estilo Desmos, posicionado dentro da área do gráfico) -->
+      <button id="toggle-keyboard-btn" title="Alternar Teclado Virtual" class="absolute bottom-3 left-3 z-20 flex items-center justify-center gap-1.5 px-3 py-2 bg-white/95 backdrop-blur-md rounded-xl shadow-lg border border-gray-200 text-gray-700 hover:text-blue-600 hover:border-blue-300 transition-all cursor-pointer select-none active:scale-95 font-medium text-xs">
         <i data-lucide="keyboard" id="keyboard-btn-icon" class="w-4 h-4 text-blue-600"></i>
         <span class="hidden sm:inline font-semibold">Teclado</span>
       </button>

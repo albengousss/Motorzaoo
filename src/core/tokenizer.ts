@@ -64,8 +64,8 @@ export class Tokenizer {
         processed = processed.replace(/(^|[^a-zA-Z_])([xyzt])\s*\(/g, '$1$2*(');
         // 6. Exponenciação com chaves seguida de identificador, parênteses ou função: x^{2}y, x^{2}(x+1)
         processed = processed.replace(/\}\s*(?=[a-zA-Z0-9_\(\\|])/g, '}*');
-        // 7. Potências numéricas soltas: x^2(x+1)
-        processed = processed.replace(/(\^[0-9]+)\s*\(/g, '$1*(');
+        // 7. Potências numéricas soltas: x^2(x+1) (MAS NÃO em potências de funções como sin^2(x))
+        processed = processed.replace(/(?<!\b(?:sin|cos|tan|sec|csc|cot|sinh|cosh|tanh|asin|acos|atan|asinh|acosh|atanh|log|ln|exp|sqrt|cbrt))(\^[0-9]+)\s*\(/gi, '$1*(');
         // 8. Módulos matemáticos (|...|) com detecção contextual e suporte a aninhamento arbitrário
         let pipeDepth = 0;
         let lastPipeType: 'OPEN' | 'CLOSE' | null = null;

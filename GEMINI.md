@@ -40,7 +40,13 @@ Para manter a estabilidade de classe mundial em um software com compilador matem
 
 ### Protocolo 4: Verificação Estrita de Duplicidade (*Single Source of Truth*)
 * Antes de implementar qualquer cálculo, regex ou handler de UI, examine rigorosamente o repositório para verificar se a funcionalidade já existe em outro formato.
-* Elimine códigos mortos, caminhos legados do GeoGebra e implementações redundantes. Deve existir **apenas uma única implementação canônica limpa**, padronizada e otimizada.
+* Elimine códigos mortos, caminhos legados do GeoGebra e implementações redundantes. Deve existir **apenas uma única implementação canônica limpa** (`LatexNormalizer`), padronizada e otimizada.
+
+### Protocolo 5: Resiliência de Entrada e Padrão Desmos em Funções e Potências
+* **Funções Unárias sem Parênteses:** O usuário nunca é forçado a colocar parênteses em expressões como `sin x`, `cos 2x`, `ln x`, `e^x`, `sqrt x`. O parser e o normalizador tratam isso com precedência correta.
+* **Potências Trigonométricas:** Suporte nativo a $\sin^2(x)$, $\cos^2(x)$, $\sin^2 x$ sem que multiplicação implícita insira `*` indevido, e conversão automática de inversas $\sin^{-1}(x)$ para `asin(x)`.
+* **Centralização no LatexNormalizer:** Todo tratamento textual de LaTeX e MathLive passa por uma única via (`LatexNormalizer.normalize`), evitando proliferação de regexes espalhadas.
+* **Ergonomia Multiplataforma (PC & Mobile):** Prevenção de sobreposição de elementos na tela do celular (teclado virtual não comprime o canvas além do limite utilizável), toque preciso para fixar raízes/extremos/condições iniciais de EDO e botões táteis e visíveis no HUD (zoom in/out e repor vista).
 
 ---
 

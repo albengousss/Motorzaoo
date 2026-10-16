@@ -213,7 +213,8 @@ export class GLRenderer {
                 float re = floor(e + 0.5);
                 if (abs(e - re) < 1e-5) {
                     float p = pow(abs(b) + 1e-9, abs(re));
-                    float res = (mod(abs(re), 2.0) > 0.5) ? (b < 0.0 ? -p : p) : p;
+                    bool isOdd = (floor(mod(abs(re) + 0.5, 2.0)) == 1.0);
+                    float res = isOdd ? (b < 0.0 ? -p : p) : p;
                     return re < 0.0 ? (1.0 / max(1e-9, res)) : res;
                 }
                 return b < 0.0 ? -1e9 : pow(max(0.0, b), e);

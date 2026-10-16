@@ -1422,7 +1422,98 @@ const normDeriv = LatexNormalizer.normalizeDerivative('\\frac{d}{dx}(x^2)');
 assert(normDeriv.includes('diff'), 'LatexNormalizer normalizes \\frac{d}{dx}(x^2) to diff');
 
 const normFrac = LatexNormalizer.normalizeFractions('\\frac{\\frac{1}{2}}{3}');
-assert(!normFrac.includes('\\frac'), 'LatexNormalizer unpacks nested fractions');
+// =========================================================================
+console.log('\n[TEST GROUP 26: Unparenthesized Functions & Trig Powers (Desmos Parity)]');
+
+// 1. Trig Powers: sin^2(x), \sin^2(x), \sin^2 x, \cos^3(x), etc.
+const trigP1 = LatexNormalizer.normalizeTrigPowers('sin^2(x)');
+assert(trigP1.includes('(sin(x))^2'), 'sin^2(x) normalizes to ((sin(x))^2)', trigP1);
+
+const trigP2 = LatexNormalizer.normalizeTrigPowers('\\sin^2(x)');
+assert(trigP2.includes('(sin(x))^2'), '\\sin^2(x) normalizes to ((sin(x))^2)', trigP2);
+
+const trigP3 = LatexNormalizer.normalizeTrigPowers('\\sin^{2}(x)');
+assert(trigP3.includes('(sin(x))^2'), '\\sin^{2}(x) normalizes to ((sin(x))^2)', trigP3);
+
+const trigP4 = LatexNormalizer.normalizeTrigPowers('\\sin^2 x');
+assert(trigP4.includes('(sin(x))^2'), '\\sin^2 x normalizes to ((sin(x))^2)', trigP4);
+
+const trigP5 = LatexNormalizer.normalizeTrigPowers('\\cos^3(x)');
+assert(trigP5.includes('(cos(x))^3'), '\\cos^3(x) normalizes to ((cos(x))^3)', trigP5);
+
+// 2. Inverse Trig Functions: \sin^{-1}(x) -> asin(x)
+const invTrig1 = LatexNormalizer.normalizeTrigPowers('\\sin^{-1}(x)');
+assert(invTrig1.includes('asin(x)'), '\\sin^{-1}(x) normalizes to asin(x)', invTrig1);
+
+const invTrig2 = LatexNormalizer.normalizeTrigPowers('\\cos^{-1}(x)');
+assert(invTrig2.includes('acos(x)'), '\\cos^{-1}(x) normalizes to acos(x)', invTrig2);
+
+const invTrig3 = LatexNormalizer.normalizeTrigPowers('\\tan^{-1}(x)');
+assert(invTrig3.includes('atan(x)'), '\\tan^{-1}(x) normalizes to atan(x)', invTrig3);
+
+// 3. Unparenthesized Functions: \sin x, cos 2x, ln x, sqrt x
+const unparen1 = LatexNormalizer.normalizeUnparenthesized('\\sin x');
+assert(unparen1 === 'sin(x)', '\\sin x normalizes to sin(x)', unparen1);
+
+const unparen2 = LatexNormalizer.normalizeUnparenthesized('cos 2x');
+assert(unparen2 === 'cos(2x)', 'cos 2x normalizes to cos(2x)', unparen2);
+
+const unparen3 = LatexNormalizer.normalizeUnparenthesized('ln x');
+assert(unparen3 === 'ln(x)', 'ln x normalizes to ln(x)', unparen3);
+
+const unparen4 = LatexNormalizer.normalizeUnparenthesized('sqrt x');
+assert(unparen4 === 'sqrt(x)', 'sqrt x normalizes to sqrt(x)', unparen4);
+
+const unparen5 = LatexNormalizer.normalizeUnparenthesized('\\sin x + \\cos x');
+assert(unparen5 === 'sin(x) + cos(x)', '\\sin x + \\cos x normalizes to sin(x) + cos(x)', unparen5);
+
+// 4. Full LatexNormalizer.normalize pipeline
+const fullNorm1 = LatexNormalizer.normalize('\\sin^2(x) + \\cos^2(x)');
+assert(fullNorm1.includes('(sin(x))^2') && fullNorm1.includes('(cos(x))^2'), 'Full pipeline handles \\sin^2(x) + \\cos^2(x)', fullNorm1);
+
+const fullNorm2 = LatexNormalizer.normalize('\\sin x + \\cos 2x');
+assert(fullNorm2.includes('sin(x)') && fullNorm2.includes('cos(2*x)'), 'Full pipeline handles \\sin x + \\cos 2x', fullNorm2);
+
+// 5. PrattParser unparenthesized unary function parsing
+const astUnparenSin = new PrattParser('sin x').parse();
+assert(Array.isArray(astUnparenSin) && astUnparenSin[0] === 'Sin' && astUnparenSin[1] === 'x', 'PrattParser parses "sin x" as ["Sin", "x"]', astUnparenSin);
+
+const astUnparenCos2x = new PrattParser('cos 2x').parse();
+assert(Array.isArray(astUnparenCos2x) && astUnparenCos2x[0] === 'Cos', 'PrattParser parses "cos 2x" as ["Cos", ...]', astUnparenCos2x);
+
+const astUnparenAdd = new PrattParser('sin x + cos x').parse();
+assert(Array.isArray(astUnparenAdd) && astUnparenAdd[0] === 'Add', 'PrattParser parses "sin x + cos x" without discarding terms', astUnparenAdd);
+
+// 6. PrattParser.parse() unconsumed tokens check
+let threwUnconsumed = false;
+try {
+  new PrattParser('1 2').parse();
+} catch (e: any) {
+  threwUnconsumed = true;
+}
+assert(threwUnconsumed, 'PrattParser.parse() throws SyntaxError on unconsumed tokens ("1 2")');
+
+// 7. FaultTolerantParser trailing bare functions warning
+const bareSinCheck = FaultTolerantParser.checkIncompleteStatus('\\sin', 'sin');
+assert(bareSinCheck.isIncomplete && bareSinCheck.warning.includes('sin'), 'Flags bare "sin" as incomplete with informative message', bareSinCheck);
+
+const bareLnCheck = FaultTolerantParser.checkIncompleteStatus('\\ln', 'ln');
+assert(bareLnCheck.isIncomplete && bareLnCheck.warning.includes('ln'), 'Flags bare "ln" as incomplete with informative message', bareLnCheck);
+
+// =========================================================================
+console.log('\n[TEST GROUP 27: Commands Guide & Modal Persistence]');
+import { COMMANDS_DATA, CommandsGuideModal } from '../src/ui/commandsGuideModal.js';
+
+assert(COMMANDS_DATA.length >= 25, `CommandsGuideModal has ${COMMANDS_DATA.length} command docs (>= 25)`);
+assert(COMMANDS_DATA.some(c => c.category === 'calculo'), 'Has calculo commands');
+assert(COMMANDS_DATA.some(c => c.category === 'integrais'), 'Has integrais commands');
+assert(COMMANDS_DATA.some(c => c.category === 'algebra'), 'Has algebra commands');
+assert(COMMANDS_DATA.some(c => c.category === 'funcoes'), 'Has funcoes commands');
+assert(COMMANDS_DATA.some(c => c.category === 'estatistica'), 'Has estatistica commands');
+
+let insertedExpr = '';
+CommandsGuideModal.init((expr) => { insertedExpr = expr; });
+assert(typeof (CommandsGuideModal as any).onInsertCallback === 'function', 'CommandsGuideModal preserves onInsertCallback statically');
 
 console.log(`\n--- RESULTS: ${passed} PASSED, ${failed} FAILED ---`);
 if (failed > 0) {

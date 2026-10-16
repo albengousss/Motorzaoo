@@ -306,8 +306,11 @@ export class CommandsGuideModal {
     private static modalEl: HTMLElement | null = null;
     private static activeCategory: string = 'all';
     private static searchQuery: string = '';
+    private static onInsertCallback: ((expr: string) => void) | null = null;
 
     static init(onInsertExpression?: (expr: string) => void) {
+        if (onInsertExpression) this.onInsertCallback = onInsertExpression;
+        if (typeof document === 'undefined') return;
         if (this.modalEl) return;
 
         const modal = document.createElement('div');
@@ -392,7 +395,7 @@ export class CommandsGuideModal {
         if (searchInput) {
             searchInput.addEventListener('input', () => {
                 this.searchQuery = searchInput.value.toLowerCase().trim();
-                this.renderList(onInsertExpression);
+                this.renderList(this.onInsertCallback || undefined);
             });
         }
 
@@ -404,11 +407,11 @@ export class CommandsGuideModal {
                 });
                 btn.className = 'guide-cat-btn px-3 py-1.5 rounded-lg transition-all bg-blue-600 text-white shadow-xs cursor-pointer';
                 this.activeCategory = (btn as HTMLElement).dataset.cat || 'all';
-                this.renderList(onInsertExpression);
+                this.renderList(this.onInsertCallback || undefined);
             });
         });
 
-        this.renderList(onInsertExpression);
+        this.renderList(this.onInsertCallback || undefined);
     }
 
     static show() {
@@ -422,7 +425,7 @@ export class CommandsGuideModal {
                 this.searchQuery = '';
                 setTimeout(() => searchInput.focus(), 50);
             }
-            this.renderList();
+            this.renderList(this.onInsertCallback || undefined);
         }
     }
 
