@@ -390,8 +390,8 @@ function scheduleFrame() {
 
 
 function compileAllExpressions() {
-    // Limpa apenas as funções compiladas de EDOs/CAS
-    MathEngine.compiledFuncs = { realPow: MathEngine.realPow };
+    // Inicializa funções pré-compiladas do motor matemático (add, sub, mul, div, listEngine, matrixEngine, pointEngine, etc.)
+    MathEngine.initCompiledFuncs();
 
     const rawData = ExpressionManager.getAllExpressions();
     validEquations = [];
@@ -424,6 +424,11 @@ function compileAllExpressions() {
                     const ast = new PrattParser(expr).parseExpression();
                     MathEngine.userFunctions[funcName] = { params: paramNames, expr, ast, blockId: item.id };
                     StateManager.userFunctions[funcName] = { params: paramNames, expr, ast, blockId: item.id };
+                    if (paramNames.length === 1) {
+                        MathEngine.compiledFuncs[funcName] = MathEngine.compile(ast, paramNames[0]);
+                    } else if (paramNames.length > 1) {
+                        MathEngine.compiledFuncs[funcName] = MathEngine.compileMultivariable(ast, paramNames);
+                    }
                 } catch (_) {}
             }
         }
@@ -1797,6 +1802,40 @@ function compileAllExpressions() {
             // MODO CALCULADORA (Sem gráficos)
             const isPlot = expressaoPlot.includes('x') || expressaoPlot.includes('y') || expressaoPlot.includes('z');
             if (!isPlot && !isImplicit && !isDerivativePlot && !isExplicitY && !isExplicitZ) {
+                // 1. AVALIAÇÃO DIRETA LOCAL (0ms, Instantâneo, Padrão Desmos: números, pontos, matrizes, listas, funções de usuário)
+                let localVal: any = undefined;
+                if (ast) {
+                    try {
+                        localVal = MathEngine.evaluateAST(ast, StateManager.values);
+                    } catch (_) {}
+
+                    if (localVal === undefined || (typeof localVal === 'number' && isNaN(localVal))) {
+                        try {
+                            const evalFunc = MathEngine.compile(ast);
+                            const compiledVal = evalFunc(0, 0, StateManager.values);
+                            if (!isNaN(compiledVal) && isFinite(compiledVal)) {
+                                localVal = compiledVal;
+                            }
+                        } catch (_) {}
+                    }
+                }
+
+                if (localVal !== undefined && (typeof localVal !== 'number' || (!isNaN(localVal) && isFinite(localVal)))) {
+                    if (typeof localVal === 'number') {
+                        ExpressionManager.setResult(item.id, '= ' + parseFloat(localVal.toFixed(10)).toString());
+                    } else if (PointEngine.isPoint(localVal)) {
+                        ExpressionManager.setResult(item.id, '= ' + PointEngine.formatPointDisplay(localVal));
+                    } else if (MatrixEngine.isMatrix(localVal)) {
+                        ExpressionManager.setResult(item.id, MatrixEngine.formatMatrixDisplay(localVal));
+                    } else if (Array.isArray(localVal)) {
+                        ExpressionManager.setResult(item.id, ListEngine.formatListDisplay(localVal));
+                    }
+                    ExpressionManager.setError(item.id, null);
+                    ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                    return;
+                }
+
+                // 2. Comandos CAS avançados ou avaliação via Giac (somente se não pôde ser avaliado localmente)
                 const giacVars = Object.keys(StateManager.giacDefinitions);
                 const hasGiacVar = giacVars.some(v => new RegExp(`(?:^|(?<=[^a-zA-Z_]))${v}(?=[^a-zA-Z_]|$)`).test(expressaoPlot)) && !StateManager.values.hasOwnProperty(expressaoPlot);
                 const isMatrixArithmetic = expressaoPlot.includes('{') || expressaoPlot.includes('[') ||
@@ -1804,7 +1843,7 @@ function compileAllExpressions() {
                     /\b(rref|det|inv|tran|transpose|rank|matrixrank|trace|tr|eigenvalues|eigenvectors)\s*\(/i.test(expressaoPlot) ||
                     Array.from(definedMatrixNames).some(m => new RegExp(`(?:^|(?<=[^a-zA-Z_]))${m}(?=[^a-zA-Z_]|$)`).test(expressaoPlot));
 
-                if (hasGiacVar || isMatrixArithmetic) {
+                if (MathEngine.isGiacCommand(ast) || hasGiacVar || isMatrixArithmetic) {
                     ExpressionManager.setSliderSuggestions(item.id, [], () => {});
                     const currentQuery = expressaoPlot;
                     let cached: any = StateManager.casSolutions[item.id];
@@ -1852,22 +1891,36 @@ function compileAllExpressions() {
                     return;
                 }
 
-                // Tenta avaliação numérica direta local APENAS se todas as variáveis forem conhecidas em StateManager.values
-                if (ast) {
-                    const freeInAst = getFreeVariables(ast, ['x', 'y', 'z', 't', 'pi', 'e']);
-                    const hasUndefinedVar = freeInAst.some(v => StateManager.values[v] === undefined && !MathEngine.compiledFuncs[v]);
-                    if (!hasUndefinedVar) {
-                        const evalFunc = MathEngine.compile(ast);
-                        const val = evalFunc(0, 0, StateManager.values);
-                        if (!isNaN(val) && isFinite(val)) {
-                            ExpressionManager.setResult(item.id, '= ' + parseFloat(val.toFixed(10)).toString());
-                            ExpressionManager.setError(item.id, null);
-                            ExpressionManager.setSliderSuggestions(item.id, [], () => {});
-                            return;
-                        }
-                    }
+                // 3. Detecção de Sliders Livres para Variáveis Não Definidas (ex: 'm + 1')
+                const boundForSliders = [
+                    'x', 'y', 'z', 't', 'pi', 'e',
+                    ...Object.keys(StateManager.values),
+                    ...Object.keys(StateManager.giacDefinitions),
+                    ...definedMatrixNames,
+                    ...definedUserFunctionNames,
+                    ...Object.keys(MathEngine.userFunctions),
+                    ...Object.keys(MathEngine.compiledFuncs)
+                ];
+                const free = FaultTolerantParser.detectFreeVariables(cleanStr, boundForSliders);
+                const missingSliders = free.filter(v => 
+                    StateManager.values[v] === undefined && 
+                    !MathEngine.compiledFuncs[v] &&
+                    !StateManager.giacDefinitions[v] &&
+                    !definedMatrixNames.has(v) &&
+                    !definedUserFunctionNames.has(v) &&
+                    !MathEngine.userFunctions[v]
+                );
+                if (missingSliders.length > 0) {
+                    ExpressionManager.setSliderSuggestions(item.id, missingSliders, (varName) => {
+                        ExpressionManager.addExpression(`${varName} = 1`, false, varName, item.id);
+                        scheduleFrame();
+                    });
+                    ExpressionManager.setError(item.id, null);
+                    ExpressionManager.setResult(item.id, '');
+                    return;
                 }
-                
+
+                ExpressionManager.setError(item.id, null);
                 ExpressionManager.setResult(item.id, '');
                 return; 
             } else {
@@ -1894,7 +1947,15 @@ function compileAllExpressions() {
             // Detecção de parâmetros livres para sugestão de sliders (Estilo Desmos)
             try {
                 if (ast && !isEdo) {
-                    let boundForSliders = ['x', 'y', 'z', 't', 'pi', 'e', ...Object.keys(StateManager.values), ...Object.keys(StateManager.giacDefinitions), ...definedMatrixNames];
+                    let boundForSliders = [
+                        'x', 'y', 'z', 't', 'pi', 'e',
+                        ...Object.keys(StateManager.values),
+                        ...Object.keys(StateManager.giacDefinitions),
+                        ...definedMatrixNames,
+                        ...definedUserFunctionNames,
+                        ...Object.keys(MathEngine.userFunctions),
+                        ...Object.keys(MathEngine.compiledFuncs)
+                    ];
                     const funcDeclMatch = ascii.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\(([^)]+)\)\s*=/);
                     if (funcDeclMatch) {
                         const params = funcDeclMatch[2].split(',').map(s => s.trim());
@@ -1905,7 +1966,9 @@ function compileAllExpressions() {
                         StateManager.values[v] === undefined && 
                         !MathEngine.compiledFuncs[v] &&
                         !StateManager.giacDefinitions[v] &&
-                        !definedMatrixNames.has(v)
+                        !definedMatrixNames.has(v) &&
+                        !definedUserFunctionNames.has(v) &&
+                        !MathEngine.userFunctions[v]
                     );
                     if (missingSliders.length > 0) {
                         ExpressionManager.setSliderSuggestions(item.id, missingSliders, (varName) => {
@@ -2398,7 +2461,7 @@ CommandsGuideModal.init((exampleExpr) => {
     StateManager.pendingCas = {};
     StateManager.giacDefinitions = {};
     StateManager.dependents = {};
-    MathEngine.compiledFuncs = {};
+    MathEngine.initCompiledFuncs();
     pinnedPoints = [];
     (window as any)._pinnedPoints = pinnedPoints;
     hoveredNotablePoint = null;

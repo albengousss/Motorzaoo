@@ -10,7 +10,7 @@ describe('Phase 1 & Desmos Parity: Function Storage and Input UX', () => {
 
     beforeEach(() => {
         MathEngine.userFunctions = {};
-        MathEngine.compiledFuncs = { realPow: MathEngine.realPow };
+        MathEngine.initCompiledFuncs();
         MathEngine.compileCache = {};
         StateManager.values = {};
         StateManager.asts = {};
@@ -187,5 +187,49 @@ describe('Phase 1 & Desmos Parity: Function Storage and Input UX', () => {
         const tableEl = document.getElementById(tableId!);
         expect(tableEl?.dataset.type).toBe('table');
         expect(document.getElementById(blockId3)).toBeNull();
+    });
+
+    it('9. Avaliação direta de f(3) e expressões compostas com funções de usuário (Padrão Desmos)', () => {
+        // Registra f(x) = x^2
+        const astF = new PrattParser('x^2').parseExpression();
+        MathEngine.userFunctions['f'] = { params: ['x'], expr: 'x^2', ast: astF, blockId: 'block-1' };
+        StateManager.userFunctions['f'] = { params: ['x'], expr: 'x^2', ast: astF, blockId: 'block-1' };
+        MathEngine.compiledFuncs['f'] = MathEngine.compile(astF, 'x');
+
+        // Avaliação direta de f(3)
+        const ast3 = new PrattParser('f(3)').parseExpression();
+        const res3 = MathEngine.evaluateAST(ast3, StateManager.values);
+        expect(res3).toBe(9);
+
+        // Avaliação via expandUserFunctions
+        const expanded3 = MathEngine.expandUserFunctions(ast3);
+        const evalExpanded = MathEngine.evaluateAST(expanded3, StateManager.values);
+        expect(evalExpanded).toBe(9);
+
+        // Expressão composta f(3) + 1
+        const astComp = new PrattParser('f(3) + 1').parseExpression();
+        expect(MathEngine.evaluateAST(astComp, StateManager.values)).toBe(10);
+
+        // Expressão com variável a = 5 -> f(a)
+        StateManager.values['a'] = 5;
+        const astVar = new PrattParser('f(a)').parseExpression();
+        expect(MathEngine.evaluateAST(astVar, StateManager.values)).toBe(25);
+
+        // Supressão de sliders para f(3): f não deve ser detectada como variável livre
+        const boundForSliders = [
+            'x', 'y', 'z', 't', 'pi', 'e',
+            ...Object.keys(StateManager.values),
+            ...Object.keys(StateManager.giacDefinitions),
+            ...Object.keys(MathEngine.userFunctions),
+            ...Object.keys(MathEngine.compiledFuncs)
+        ];
+        const free = FaultTolerantParser.detectFreeVariables('f(3)', boundForSliders);
+        expect(free).not.toContain('f');
+        expect(free.length).toBe(0);
+
+        // Avaliação de broadcasting em lista: f([1, 2, 3]) -> [1, 4, 9]
+        const astList = new PrattParser('f([1, 2, 3])').parseExpression();
+        const resList = MathEngine.evaluateAST(astList, StateManager.values);
+        expect(resList).toEqual([1, 4, 9]);
     });
 });
