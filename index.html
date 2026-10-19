@@ -159,35 +159,38 @@
       <canvas id="canvas3d" class="block w-full h-full absolute inset-0 hidden bg-transparent"></canvas>
       
       <!-- Alternador de Modo 2D / 3D (Estilo Desmos/GeoGebra) -->
-      <div id="mode-switcher" class="absolute top-4 left-4 z-20 flex items-center bg-white/90 backdrop-blur-sm rounded-xl shadow-md border border-gray-200 p-1 select-none">
-        <button id="mode-2d-btn" class="px-3 py-1.5 text-xs font-bold rounded-lg transition-all bg-blue-600 text-white shadow-sm cursor-pointer">2D</button>
-        <button id="mode-3d-btn" class="px-3 py-1.5 text-xs font-bold rounded-lg transition-all text-gray-500 hover:text-gray-900 cursor-pointer">3D</button>
+      <!-- Alternador de Modo 2D / 3D (Estilo Desmos/GeoGebra) -->
+      <div id="mode-switcher" class="absolute top-4 left-4 z-20 flex items-center bg-white/95 backdrop-blur-sm rounded-lg shadow-sm border border-gray-200 p-1 select-none">
+        <button id="mode-2d-btn" class="px-3 py-1 text-xs font-bold rounded-md transition-all bg-blue-600 text-white shadow-xs cursor-pointer">2D</button>
+        <button id="mode-3d-btn" class="px-3 py-1 text-xs font-bold rounded-md transition-all text-gray-500 hover:text-gray-900 cursor-pointer">3D</button>
       </div>
       
-      <!-- Botoes flutuantes do HUD (Estilo Desmos) -->
-      <div class="absolute top-4 right-4 flex flex-col gap-2 z-20">
-        <button id="zoom-in-btn" title="Aproximar (+)" class="w-10 h-10 flex items-center justify-center bg-white/90 backdrop-blur-sm rounded-full shadow-md text-gray-600 hover:text-blue-600 hover:shadow-lg transition-all border border-gray-200 cursor-pointer" onclick="if(window._zoomIn) window._zoomIn()">
-          <i data-lucide="plus" class="w-5 h-5"></i>
+      <!-- Controles Flutuantes do HUD (Estilo Desmos: Chave Inglesa e Cápsula de Zoom Vertical) -->
+      <div class="absolute top-4 right-4 flex flex-col items-center gap-2 z-20 select-none">
+        <!-- Botão Configurações do Gráfico (Ícone Wrench / Chave Inglesa) -->
+        <button id="settings-btn" title="Configurações do Gráfico" class="w-9 h-9 flex items-center justify-center bg-white/95 backdrop-blur-sm rounded-lg shadow-sm border border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50 active:bg-gray-100 transition-all cursor-pointer" onclick="if(window._toggleSettings) window._toggleSettings()">
+          <i data-lucide="wrench" class="w-4 h-4"></i>
         </button>
-        <button id="zoom-out-btn" title="Afastar (-)" class="w-10 h-10 flex items-center justify-center bg-white/90 backdrop-blur-sm rounded-full shadow-md text-gray-600 hover:text-blue-600 hover:shadow-lg transition-all border border-gray-200 cursor-pointer" onclick="if(window._zoomOut) window._zoomOut()">
-          <i data-lucide="minus" class="w-5 h-5"></i>
-        </button>
-        <button id="reset-view-btn" title="Repor Vista" class="w-10 h-10 flex items-center justify-center bg-white/90 backdrop-blur-sm rounded-full shadow-md text-gray-500 hover:text-blue-500 hover:shadow-lg transition-all border border-gray-200 cursor-pointer" onclick="if(window._resetView) window._resetView()">
-          <i data-lucide="home" class="w-5 h-5"></i>
-        </button>
-        <button id="settings-btn" title="Configurações" class="w-10 h-10 flex items-center justify-center bg-white/90 backdrop-blur-sm rounded-full shadow-md text-gray-500 hover:text-blue-500 hover:shadow-lg transition-all border border-gray-200 cursor-pointer" onclick="if(window._toggleSettings) window._toggleSettings()">
-          <i data-lucide="settings" class="w-5 h-5"></i>
-        </button>
-        <button id="clear-all-btn" title="Limpar Tudo" class="w-10 h-10 flex items-center justify-center bg-white/90 backdrop-blur-sm rounded-full shadow-md text-gray-500 hover:text-red-500 hover:shadow-lg transition-all border border-gray-200 cursor-pointer" onclick="if(window._clearAll) window._clearAll()">
-          <i data-lucide="trash-2" class="w-5 h-5"></i>
-        </button>
+
+        <!-- Cápsula Vertical de Zoom Integrada (Zoom In, Zoom Out, Vista Padrão) -->
+        <div class="flex flex-col bg-white/95 backdrop-blur-sm rounded-lg shadow-sm border border-gray-200 overflow-hidden divide-y divide-gray-200">
+          <button id="zoom-in-btn" title="Aproximar (+)" class="w-9 h-9 flex items-center justify-center text-gray-600 hover:text-blue-600 hover:bg-gray-50 active:bg-gray-100 transition-colors cursor-pointer" onclick="if(window._zoomIn) window._zoomIn()">
+            <i data-lucide="plus" class="w-4 h-4"></i>
+          </button>
+          <button id="zoom-out-btn" title="Afastar (-)" class="w-9 h-9 flex items-center justify-center text-gray-600 hover:text-blue-600 hover:bg-gray-50 active:bg-gray-100 transition-colors cursor-pointer" onclick="if(window._zoomOut) window._zoomOut()">
+            <i data-lucide="minus" class="w-4 h-4"></i>
+          </button>
+          <button id="reset-view-btn" title="Padrão (Vista Padrão)" class="w-9 h-9 flex items-center justify-center text-gray-600 hover:text-blue-600 hover:bg-gray-50 active:bg-gray-100 transition-colors cursor-pointer" onclick="if(window._resetView) window._resetView()">
+            <i data-lucide="home" class="w-4 h-4"></i>
+          </button>
+        </div>
       </div>
       
       <!-- Coordenadas do cursor -->
       <div id="cursor-coords" class="absolute bottom-3 right-4 text-xs text-gray-500 font-mono pointer-events-none hidden md:block bg-white/80 px-2 py-1 rounded backdrop-blur-sm shadow-sm border border-gray-100"></div>
 
       <!-- Botão Flutuante do Teclado Virtual (Estilo Desmos, posicionado dentro da área do gráfico) -->
-      <button id="toggle-keyboard-btn" title="Alternar Teclado Virtual" class="absolute bottom-3 left-3 z-20 flex items-center justify-center gap-1.5 px-3 py-2 bg-white/95 backdrop-blur-md rounded-xl shadow-lg border border-gray-200 text-gray-700 hover:text-blue-600 hover:border-blue-300 transition-all cursor-pointer select-none active:scale-95 font-medium text-xs">
+      <button id="toggle-keyboard-btn" title="Alternar Teclado Virtual" class="absolute bottom-3 left-3 z-20 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white/95 backdrop-blur-md rounded-lg shadow-sm border border-gray-200 text-gray-700 hover:text-blue-600 hover:border-blue-300 transition-all cursor-pointer select-none active:scale-95 font-medium text-xs">
         <i data-lucide="keyboard" id="keyboard-btn-icon" class="w-4 h-4 text-blue-600"></i>
         <span class="hidden sm:inline font-semibold">Teclado</span>
       </button>
@@ -196,10 +199,10 @@
     <div id="settings-modal" class="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 hidden flex-col items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col border border-gray-100">
         <div class="px-5 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-          <h3 class="font-bold text-gray-800 flex items-center gap-2"><i data-lucide="settings" class="w-5 h-5 text-gray-500"></i> Configurações do Gráfico</h3>
+          <h3 class="font-bold text-gray-800 flex items-center gap-2"><i data-lucide="wrench" class="w-4 h-4 text-gray-500"></i> Configurações do Gráfico</h3>
           <button id="close-settings-btn" class="text-gray-400 hover:text-gray-700 transition-colors p-1" onclick="if(window._toggleSettings) window._toggleSettings()"><i data-lucide="x" class="w-5 h-5"></i></button>
         </div>
-        <div class="p-5 flex flex-col gap-5">
+        <div class="p-5 flex flex-col gap-4">
           <div class="flex justify-between items-center">
             <span class="text-sm font-medium text-gray-700">Mostrar Eixos</span>
             <label class="relative inline-flex items-center cursor-pointer">
@@ -213,6 +216,12 @@
               <input type="checkbox" id="setting-grid" class="sr-only peer" checked onchange="if(window._updateSettings) window._updateSettings()">
               <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
             </label>
+          </div>
+          <div class="pt-3 border-t border-gray-100 flex flex-col gap-2">
+            <button id="clear-all-btn" class="w-full py-2 px-3 flex items-center justify-center gap-2 text-xs font-semibold text-red-600 hover:text-white bg-red-50 hover:bg-red-600 border border-red-200 hover:border-red-600 rounded-lg transition-all cursor-pointer shadow-2xs" onclick="if(window._clearAll) window._clearAll()">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+              <span>Limpar Todas as Expressões</span>
+            </button>
           </div>
         </div>
       </div>

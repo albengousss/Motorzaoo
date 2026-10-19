@@ -825,30 +825,33 @@ export class ExpressionManager {
                 return;
             }
 
-            // 1. Atalho Desmos #ab (ex: #24 cria 2x4, #33 cria 3x3, #13 cria 1x3, B = #24)
-            const hashMatch = noSpaceAscii.match(/^(?:([a-zA-Z])=)?#([1-8])(?:x|X|\*|\\times)?([1-8])$/i) ||
-                              cleanLatex.match(/^(?:([a-zA-Z])=)?#([1-8])(?:x|X|\*|\\times)?([1-8])$/i);
+            // 1. Atalho Desmos #ab (ex: #24 cria 2x4, #33 cria 3x3, #13 cria 1x3, B = #24, f(x) = #22, a(x,y,z) = #33)
+            const hashMatch = noSpaceAscii.match(/^(?:([a-zA-Z_][a-zA-Z0-9_]*(?:\s*\([^)]*\))?)\s*=\s*)?#([1-8])(?:x|X|\*|\\times)?([1-8])$/i) ||
+                              cleanLatex.match(/^(?:([a-zA-Z_][a-zA-Z0-9_]*(?:\s*\([^)]*\))?)\s*=\s*)?#([1-8])(?:x|X|\*|\\times)?([1-8])$/i);
             if (hashMatch) {
-                const targetName = hashMatch[1] ? hashMatch[1].toUpperCase() : undefined;
+                const rawName = hashMatch[1] ? hashMatch[1].trim() : undefined;
+                const targetName = rawName ? (rawName.includes('(') ? rawName : (rawName.length === 1 ? rawName.toUpperCase() : rawName)) : undefined;
                 const rCount = parseInt(hashMatch[2]);
                 const cCount = parseInt(hashMatch[3]);
                 this.convertBlockToMatrix(block.id, targetName, rCount, cCount);
                 return;
             }
 
-            // 2. Atalho Desmos 'matrix' / 'matriz' (cria matriz 2x2 padrão, ex: matrix, A = matrix)
-            const matrixMatch = noSpaceAscii.match(/^(?:([a-zA-Z])=)?matri[xz]$/i) ||
-                                cleanLatex.match(/^(?:([a-zA-Z])=)?\\?matri[xz]$/i);
+            // 2. Atalho Desmos 'matrix' / 'matriz' (cria matriz 2x2 padrão, ex: matrix, A = matrix, f(x) = matrix, a(x,y,z) = matrix)
+            const matrixMatch = noSpaceAscii.match(/^(?:([a-zA-Z_][a-zA-Z0-9_]*(?:\s*\([^)]*\))?)\s*=\s*)?matri[xz]$/i) ||
+                                cleanLatex.match(/^(?:([a-zA-Z_][a-zA-Z0-9_]*(?:\s*\([^)]*\))?)\s*=\s*)?\\?matri[xz]$/i);
             if (matrixMatch) {
-                const targetName = matrixMatch[1] ? matrixMatch[1].toUpperCase() : undefined;
+                const rawName = matrixMatch[1] ? matrixMatch[1].trim() : undefined;
+                const targetName = rawName ? (rawName.includes('(') ? rawName : (rawName.length === 1 ? rawName.toUpperCase() : rawName)) : undefined;
                 this.convertBlockToMatrix(block.id, targetName, 2, 2);
                 return;
             }
 
             // Se o usuário inseriu ou colou uma matriz LaTeX (\begin{bmatrix}, \begin{pmatrix}, etc.) ou bracket notation [[1, 2], [3, 4]]
             if (rawLatex.includes('\\begin{bmatrix}') || rawLatex.includes('\\begin{pmatrix}') || rawLatex.includes('\\begin{matrix}') || cleanLatex.startsWith('[[') || cleanLatex.includes('=[[')) {
-                const nameMatch = rawLatex.match(/^\s*([a-zA-Z])\s*=/);
-                const targetName = nameMatch ? nameMatch[1].toUpperCase() : undefined;
+                const nameMatch = rawLatex.match(/^\s*([a-zA-Z_][a-zA-Z0-9_]*(?:\s*\([^)]*\))?)\s*=/);
+                const rawN = nameMatch ? nameMatch[1].trim() : undefined;
+                const targetName = rawN ? (rawN.includes('(') ? rawN : (rawN.length === 1 ? rawN.toUpperCase() : rawN)) : undefined;
                 const matContentMatch = rawLatex.match(/\\begin\{(?:b|p|v|V)?matrix\}([\s\S]*?)\\end\{(?:b|p|v|V)?matrix\}/);
                 if (matContentMatch) {
                     const rowStrs = matContentMatch[1].split(/\\\\/);
@@ -876,10 +879,11 @@ export class ExpressionManager {
                     }
                 }
 
-                // Sintaxe de colchetes: [[1, 2], [3, 4]] ou A = [[1, 2], [3, 4]]
-                const bracketMatch = cleanLatex.match(/^(?:([a-zA-Z])=)?(\[\[.*\]\])$/);
+                // Sintaxe de colchetes: [[1, 2], [3, 4]] ou A = [[1, 2], [3, 4]] ou f(x) = [[x, 0], [0, x]]
+                const bracketMatch = cleanLatex.match(/^(?:([a-zA-Z_][a-zA-Z0-9_]*(?:\s*\([^)]*\))?)\s*=\s*)?(\[\[.*\]\])$/);
                 if (bracketMatch) {
-                    const bTargetName = bracketMatch[1] ? bracketMatch[1].toUpperCase() : undefined;
+                    const rawBn = bracketMatch[1] ? bracketMatch[1].trim() : undefined;
+                    const bTargetName = rawBn ? (rawBn.includes('(') ? rawBn : (rawBn.length === 1 ? rawBn.toUpperCase() : rawBn)) : undefined;
                     try {
                         const rawInner = bracketMatch[2];
                         const rowMatches = rawInner.slice(1, -1).split(/\],\s*\[/);
@@ -1209,13 +1213,19 @@ export class ExpressionManager {
 
         const nameInput = document.createElement('input');
         nameInput.type = 'text';
-        nameInput.className = 'matrix-name-input uppercase font-bold text-base text-purple-900 w-7 text-center bg-purple-50/80 border border-purple-200 rounded focus:bg-white focus:border-purple-500 outline-none transition-colors';
+        nameInput.className = 'matrix-name-input font-bold text-base text-purple-900 px-1.5 py-0.5 bg-purple-50/80 border border-purple-200 rounded focus:bg-white focus:border-purple-500 outline-none transition-all';
         nameInput.value = defaultName;
-        nameInput.maxLength = 2;
-        nameInput.title = 'Nome da Matriz';
+        nameInput.title = 'Nome da Matriz (ex: A, M, f(x), a(x, y, z))';
+        const updateNameInputWidth = () => {
+            const charCount = (nameInput.value || '').length || 1;
+            nameInput.style.width = Math.min(160, Math.max(32, charCount * 9 + 14)) + 'px';
+        };
+        updateNameInputWidth();
         nameInput.oninput = () => {
-            const val = nameInput.value.trim().toUpperCase() || 'A';
-            nameBadge.innerText = val;
+            const val = nameInput.value.trim() || 'A';
+            const badgeVal = val.includes('(') ? (val.split('(')[0].trim() || val) : val;
+            nameBadge.innerText = badgeVal;
+            updateNameInputWidth();
             updateGiacDefinition();
             this.onUpdateCallback();
             HistoryManager.recordState(false);
@@ -1331,12 +1341,34 @@ export class ExpressionManager {
         (block as any)._updateCellVisuals = updateCellVisuals;
 
         const updateGiacDefinition = () => {
-            const curName = nameInput.value.trim().toUpperCase() || 'A';
+            const curName = nameInput.value.trim() || 'A';
             const giacMatrix = `[[${cellValues.map((r: string[]) => r.map((c: string) => (c && c.trim()) || '0').join(', ')).join('], [')}]]`;
-            const giacDef = `usr_${curName}:=${giacMatrix}`;
-            StateManager.giacDefinitions[curName] = giacDef;
-            StateManager.casSolutions = {};
-            MathEngine.askGiac(giacDef);
+            const funcMatch = curName.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]+)\)$/);
+            if (funcMatch) {
+                const funcName = funcMatch[1];
+                const paramNames = funcMatch[2].split(',').map(s => s.trim());
+                const giacDef = `usr_${funcName}(${paramNames.join(',')}):=${giacMatrix}`;
+                StateManager.giacDefinitions[funcName] = giacDef;
+                StateManager.casSolutions = {};
+                MathEngine.askGiac(giacDef);
+                try {
+                    const matrixAst = new PrattParser(giacMatrix).parseExpression();
+                    MathEngine.userFunctions[funcName] = { params: paramNames, expr: giacMatrix, ast: matrixAst, blockId: block.id };
+                    StateManager.userFunctions[funcName] = { params: paramNames, expr: giacMatrix, ast: matrixAst, blockId: block.id };
+                    if (paramNames.length === 1) {
+                        MathEngine.compiledFuncs[funcName] = MathEngine.compile(matrixAst, paramNames[0]);
+                    } else if (paramNames.length > 1) {
+                        MathEngine.compiledFuncs[funcName] = MathEngine.compileMultivariable(matrixAst, paramNames);
+                    }
+                } catch(e) {
+                    console.warn('[ExpressionManager] Failed to compile matrix user function:', e);
+                }
+            } else {
+                const giacDef = `usr_${curName}:=${giacMatrix}`;
+                StateManager.giacDefinitions[curName] = giacDef;
+                StateManager.casSolutions = {};
+                MathEngine.askGiac(giacDef);
+            }
         };
 
         const onPointerMove = (e: PointerEvent) => {
@@ -1419,9 +1451,13 @@ export class ExpressionManager {
 
             if ((resizeMode === 'both' || resizeMode === 'cols') && finalCols <= 0) {
                 // Arrastou além da barra: a matriz some!
-                const currentName = nameInput.value.trim().toUpperCase() || defaultName;
-                delete StateManager.giacDefinitions[currentName];
-                delete StateManager.casSolutions[currentName];
+                const currentName = nameInput.value.trim() || defaultName;
+                const cleanName = currentName.includes('(') ? currentName.split('(')[0].trim() : currentName;
+                delete StateManager.giacDefinitions[cleanName];
+                delete StateManager.casSolutions[cleanName];
+                delete MathEngine.userFunctions[cleanName];
+                delete StateManager.userFunctions[cleanName];
+                delete MathEngine.compiledFuncs[cleanName];
                 block.remove();
                 this.updateBlockNumbers();
                 HistoryManager.recordState(true);
@@ -1625,8 +1661,13 @@ export class ExpressionManager {
         delBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
         delBtn.className = 'bg-transparent border-none text-gray-400 cursor-pointer p-1 shrink-0 ml-auto transition-all opacity-40 hover:opacity-100 hover:text-red-500 outline-none';
         delBtn.onclick = () => {
-            const currentName = nameInput.value.trim().toUpperCase() || defaultName;
-            delete StateManager.giacDefinitions[currentName];
+            const currentName = nameInput.value.trim() || defaultName;
+            const cleanName = currentName.includes('(') ? currentName.split('(')[0].trim() : currentName;
+            delete StateManager.giacDefinitions[cleanName];
+            delete StateManager.casSolutions[cleanName];
+            delete MathEngine.userFunctions[cleanName];
+            delete StateManager.userFunctions[cleanName];
+            delete MathEngine.compiledFuncs[cleanName];
             block.remove();
             this.updateBlockNumbers();
             HistoryManager.recordState(true);
@@ -2421,7 +2462,7 @@ export class ExpressionManager {
 
             if (block.dataset.type === 'matrix') {
                 const nameInput = block.querySelector('.matrix-name-input') as HTMLInputElement;
-                const name = nameInput ? nameInput.value.trim().toUpperCase() : 'A';
+                const name = nameInput ? (nameInput.value.trim() || 'A') : 'A';
                 const rows = parseInt(block.dataset.rows || '2');
                 const cols = parseInt(block.dataset.cols || '2');
                 const data: string[][] = [];

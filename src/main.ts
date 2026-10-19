@@ -402,14 +402,37 @@ function compileAllExpressions() {
     // 0. Pré-registro de Matrizes e Funções de Usuário (Suporte a Definição Fora de Ordem e Supressão de Sliders)
     rawData.forEach(item => {
         if (item.isMatrix && item.matrixName) {
-            const varName = item.matrixName;
-            definedMatrixNames.add(varName);
+            const rawName = item.matrixName.trim();
             const rightSide = item.rawAscii.substring(item.rawAscii.indexOf('=') + 1).trim();
-            const giacDef = `usr_${varName}:=${rightSide}`;
-            if (StateManager.giacDefinitions[varName] !== giacDef) {
-                StateManager.giacDefinitions[varName] = giacDef;
-                StateManager.casSolutions = {};
-                MathEngine.askGiac(giacDef);
+            const funcMatch = rawName.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]+)\)$/);
+            if (funcMatch) {
+                const funcName = funcMatch[1];
+                const paramNames = funcMatch[2].split(',').map(s => s.trim());
+                definedUserFunctionNames.add(funcName);
+                try {
+                    const ast = new PrattParser(rightSide).parseExpression();
+                    MathEngine.userFunctions[funcName] = { params: paramNames, expr: rightSide, ast, blockId: item.id };
+                    StateManager.userFunctions[funcName] = { params: paramNames, expr: rightSide, ast, blockId: item.id };
+                    if (paramNames.length === 1) {
+                        MathEngine.compiledFuncs[funcName] = MathEngine.compile(ast, paramNames[0]);
+                    } else if (paramNames.length > 1) {
+                        MathEngine.compiledFuncs[funcName] = MathEngine.compileMultivariable(ast, paramNames);
+                    }
+                } catch (_) {}
+                const giacDef = `usr_${funcName}(${paramNames.join(',')}):=${rightSide}`;
+                if (StateManager.giacDefinitions[funcName] !== giacDef) {
+                    StateManager.giacDefinitions[funcName] = giacDef;
+                    StateManager.casSolutions = {};
+                    MathEngine.askGiac(giacDef);
+                }
+            } else {
+                definedMatrixNames.add(rawName);
+                const giacDef = `usr_${rawName}:=${rightSide}`;
+                if (StateManager.giacDefinitions[rawName] !== giacDef) {
+                    StateManager.giacDefinitions[rawName] = giacDef;
+                    StateManager.casSolutions = {};
+                    MathEngine.askGiac(giacDef);
+                }
             }
         } else if (!item.isMatrix && !item.isTable) {
             const ascii = item.rawAscii || '';
@@ -501,14 +524,31 @@ function compileAllExpressions() {
         }
 
         if (item.isMatrix && item.matrixName) {
-            const varName = item.matrixName;
+            const rawName = item.matrixName.trim();
             const rightSide = item.rawAscii.substring(item.rawAscii.indexOf('=') + 1).trim();
-            const giacDef = `usr_${varName}:=${rightSide}`;
-            if (StateManager.giacDefinitions[varName] !== giacDef) {
-                StateManager.giacDefinitions[varName] = giacDef;
-                StateManager.casSolutions = {};
-                MathEngine.askGiac(giacDef);
+            const funcMatch = rawName.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]+)\)$/);
+            if (funcMatch) {
+                const funcName = funcMatch[1];
+                const paramNames = funcMatch[2].split(',').map(s => s.trim());
+                try {
+                    const ast = new PrattParser(rightSide).parseExpression();
+                    MathEngine.userFunctions[funcName] = { params: paramNames, expr: rightSide, ast, blockId: item.id };
+                    StateManager.userFunctions[funcName] = { params: paramNames, expr: rightSide, ast, blockId: item.id };
+                    if (paramNames.length === 1) {
+                        MathEngine.compiledFuncs[funcName] = MathEngine.compile(ast, paramNames[0]);
+                    } else if (paramNames.length > 1) {
+                        MathEngine.compiledFuncs[funcName] = MathEngine.compileMultivariable(ast, paramNames);
+                    }
+                    ExpressionManager.setError(item.id, null);
+                    ExpressionManager.setResult(item.id, `Matriz ${funcName}(${paramNames.join(', ')}) salva`);
+                } catch(e) {
+                    ExpressionManager.setError(item.id, `Erro: ${(e as Error).message}`);
+                }
+            } else {
+                ExpressionManager.setError(item.id, null);
+                ExpressionManager.setResult(item.id, `Matriz ${rawName} salva`);
             }
+            ExpressionManager.setSliderSuggestions(item.id, [], () => {});
             return;
         }
 
@@ -1274,8 +1314,10 @@ function compileAllExpressions() {
                         StateManager.userFunctions[funcName] = { params: paramNames, expr, ast, blockId: item.id };
                         definedUserFunctionNames.add(funcName);
                         
+                        const isMatrixValued = expr.trim().startsWith('[[') || (Array.isArray(ast) && ast[0] === 'List' && Array.isArray(ast[1]) && ast[1][0] === 'List');
+
                         if (isMultiVar) {
-                            // Função multivariável (ex: f(x, y) = x^2*y + y^2/x ou f(x, y, z, a, b))
+                            // Função multivariável (ex: f(x, y) = x^2*y + y^2/x ou a(x, y, z) = [[x, 0, 0], [0, y, 0], [0, 0, z]])
                             MathEngine.compiledFuncs[funcName] = MathEngine.compileMultivariable(ast, paramNames);
                             
                             // Envia definição multivariável ao Giac para permitir int(f(x, y, z), y) e diff(f(x, y), x)
@@ -1286,12 +1328,26 @@ function compileAllExpressions() {
                                 MathEngine.askGiac(giacDef);
                             }
 
-                            ExpressionManager.setResult(item.id, `Função ${funcName}(${paramNames.join(', ')}) guardada`);
+                            if (isMatrixValued) {
+                                ExpressionManager.setResult(item.id, `Matriz ${funcName}(${paramNames.join(', ')}) salva`);
+                            } else {
+                                ExpressionManager.setResult(item.id, `Função ${funcName}(${paramNames.join(', ')}) guardada`);
+                            }
                         } else {
-                            // Função monovariável (ex: f(x) = x^2)
+                            // Função monovariável (ex: f(x) = x^2 ou f(x) = [[x, 0], [0, x]])
                             const paramName = paramNames[0];
-                            // Se o lado direito for comando simbólico Giac (ex: integral, derivada simbólica, limit, factor):
-                            if (MathEngine.isGiacCommand(ast)) {
+                            if (isMatrixValued) {
+                                MathEngine.compiledFuncs[funcName] = MathEngine.compile(ast, paramName);
+                                ExpressionManager.setResult(item.id, `Matriz ${funcName}(${paramName}) salva`);
+                                ExpressionManager.setError(item.id, null);
+                                ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                                const giacDef = `usr_${funcName}(${paramName}):=${expr}`;
+                                if (StateManager.giacDefinitions[funcName] !== giacDef) {
+                                    StateManager.giacDefinitions[funcName] = giacDef;
+                                    StateManager.casSolutions = {};
+                                    MathEngine.askGiac(giacDef);
+                                }
+                            } else if (MathEngine.isGiacCommand(ast)) {
                                 const giacQuery = MathEngine.formatForGiac(ast);
                                 const cached = StateManager.casSolutions[item.id];
                                 if (cached && (cached.result.includes('pnt') || cached.result.includes('point[') || cached.result.includes('536870912') || cached.result.includes('Erro'))) {
@@ -1826,7 +1882,7 @@ function compileAllExpressions() {
                     } else if (PointEngine.isPoint(localVal)) {
                         ExpressionManager.setResult(item.id, '= ' + PointEngine.formatPointDisplay(localVal));
                     } else if (MatrixEngine.isMatrix(localVal)) {
-                        ExpressionManager.setResult(item.id, MatrixEngine.formatMatrixDisplay(localVal));
+                        ExpressionManager.setResult(item.id, '= ' + MatrixEngine.formatMatrixDisplay(localVal));
                     } else if (Array.isArray(localVal)) {
                         ExpressionManager.setResult(item.id, ListEngine.formatListDisplay(localVal));
                     }
