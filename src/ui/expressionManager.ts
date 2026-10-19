@@ -4,14 +4,14 @@ import { PrattParser } from '../core/prattParser';
 import { HistoryManager, type BlockSnapshot } from '../core/historyManager';
 
 export class ExpressionManager {
-    static container = document.getElementById('expressions-list')!;
-    static addBtn = document.getElementById('add-expr-btn')!;
+    static container: HTMLElement = typeof document !== 'undefined' ? document.getElementById('expressions-list')! : (null as any);
+    static addBtn: HTMLElement = typeof document !== 'undefined' ? document.getElementById('add-expr-btn')! : (null as any);
     static onUpdateCallback: () => void;
     static blockCounter = 0;
     static activeMathfield: any = null;
 
     // ─── POPOVER DE ESTILO (DESMOS STYLE) ──────────────────────────
-    static stylePopover: HTMLDivElement = document.createElement('div');
+    static stylePopover: HTMLDivElement = typeof document !== 'undefined' ? document.createElement('div') : (null as any);
     static currentStyledBlock: HTMLElement | null = null;
 
     static initStylePopover() {
@@ -192,6 +192,10 @@ export class ExpressionManager {
     }
 
     static init(onUpdate: () => void) {
+        if (typeof document !== 'undefined') {
+            this.container = document.getElementById('expressions-list')!;
+            this.addBtn = document.getElementById('add-expr-btn')!;
+        }
         this.initStylePopover();
 
         this.onUpdateCallback = onUpdate;
@@ -496,7 +500,9 @@ export class ExpressionManager {
             'tr': '\\operatorname{tr}',
             'rank': '\\operatorname{rank}',
             'transpose': '\\operatorname{transpose}',
-            'inv': '\\operatorname{inv}'
+            'inv': '\\operatorname{inv}',
+            'tau': '\\tau',
+            '->': '\\to'
         };
         const currentBindings = mathField.keybindings || [];
         mathField.keybindings = [
@@ -789,8 +795,35 @@ export class ExpressionManager {
                 .replace(/\\mathrm\{([^}]+)\}/g, '$1')
                 .replace(/\\operatorname\{([^}]+)\}/g, '$1')
                 .replace(/\\#/g, '#')
-                .replace(/[{}]/g, '')
-                .replace(/\s+/g, '');
+            // 0. Atalhos Desmos Instantâneos de Bloco (note / aspas, folder, table, ticker)
+            const isNoteTrigger = noSpaceAscii === 'note' || noSpaceAscii === 'nota' ||
+                                  cleanLatex === 'note' || cleanLatex === 'nota' ||
+                                  rawAscii.trim() === '"' || rawLatex.trim() === '"' ||
+                                  cleanLatex === '"' || rawLatex.includes('\\text{"}');
+            if (isNoteTrigger) {
+                this.convertBlockToNote(block.id);
+                return;
+            }
+
+            const isFolderTrigger = noSpaceAscii === 'folder' || noSpaceAscii === 'pasta' ||
+                                    cleanLatex === 'folder' || cleanLatex === 'pasta';
+            if (isFolderTrigger) {
+                this.convertBlockToFolder(block.id);
+                return;
+            }
+
+            const isTableTrigger = noSpaceAscii === 'table' || noSpaceAscii === 'tabela' ||
+                                   cleanLatex === 'table' || cleanLatex === 'tabela';
+            if (isTableTrigger) {
+                this.convertBlockToTable(block.id);
+                return;
+            }
+
+            const isTickerTrigger = noSpaceAscii === 'ticker' || cleanLatex === 'ticker';
+            if (isTickerTrigger) {
+                this.convertBlockToNote(block.id, 'Ticker: Animação Contínua');
+                return;
+            }
 
             // 1. Atalho Desmos #ab (ex: #24 cria 2x4, #33 cria 3x3, #13 cria 1x3, B = #24)
             const hashMatch = noSpaceAscii.match(/^(?:([a-zA-Z])=)?#([1-8])(?:x|X|\*|\\times)?([1-8])$/i) ||
@@ -876,6 +909,38 @@ export class ExpressionManager {
             this.onUpdateCallback();
             HistoryManager.recordState(false);
         });
+
+        mf.addEventListener('paste', (e: ClipboardEvent) => {
+            const text = e.clipboardData?.getData('text') || '';
+            if (!text.trim()) return;
+
+            // 1. Detecta colagem de link do Desmos (ex: https://www.desmos.com/calculator/5ls5ggt5gd)
+            const desmosMatch = text.match(/desmos\.com\/calculator\/([a-zA-Z0-9]+)/);
+            if (desmosMatch) {
+                const currentVal = (mf as any).getValue('ascii-math') || '';
+                if (!currentVal.trim()) {
+                    e.preventDefault();
+                    ExpressionManager.importFromDesmosUrl(desmosMatch[1], block);
+                    return;
+                }
+            }
+
+            // 2. Detecta colagem de JSON de estado do Desmos ou Motorzaoo
+            const trimmed = text.trim();
+            if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                try {
+                    const parsed = JSON.parse(trimmed);
+                    if (parsed.expressions?.list || Array.isArray(parsed) || parsed.version) {
+                        const currentVal = (mf as any).getValue('ascii-math') || '';
+                        if (!currentVal.trim()) {
+                            e.preventDefault();
+                            ExpressionManager.importFromStateJson(parsed, block);
+                            return;
+                        }
+                    }
+                } catch (_) {}
+            }
+        });
         
         mf.addEventListener('focus', () => {
             if (window.innerWidth <= 768) {
@@ -907,7 +972,11 @@ export class ExpressionManager {
         this.setupBlockDrag(block, grabZone);
 
         if (initialValue) {
-            (mf as any).setValue(initialValue, { suppressChangeNotifications: true });
+            if (typeof (mf as any).setValue === 'function') {
+                (mf as any).setValue(initialValue, { suppressChangeNotifications: true });
+            } else {
+                (mf as any).value = initialValue;
+            }
         }
         if (autoFocus) setTimeout(() => mf.focus(), 10);
         return blockId;
@@ -965,7 +1034,7 @@ export class ExpressionManager {
         });
     }
 
-    static addNote(text: string = '', autoFocus: boolean = true, folderId?: string): string {
+    static addNote(text: string = '', autoFocus: boolean = true, folderId?: string, replaceBlock?: HTMLElement): string {
         this.blockCounter++;
         const blockId = 'note-block-' + this.blockCounter;
 
@@ -1004,6 +1073,11 @@ export class ExpressionManager {
             autoResize();
             HistoryManager.recordState(false);
         });
+        textarea.addEventListener('keydown', (e: KeyboardEvent) => {
+            if (e.key === 'Enter' && e.shiftKey) {
+                setTimeout(autoResize, 5);
+            }
+        });
         setTimeout(autoResize, 10);
 
         const delBtn = document.createElement('button');
@@ -1024,11 +1098,29 @@ export class ExpressionManager {
 
         this.setupBlockDrag(block, grabZone);
 
-        this.container.appendChild(block);
+        if (replaceBlock && replaceBlock.parentNode) {
+            replaceBlock.parentNode.replaceChild(block, replaceBlock);
+        } else {
+            this.container.appendChild(block);
+        }
         this.updateBlockNumbers();
 
         if (autoFocus) setTimeout(() => textarea.focus(), 15);
         return blockId;
+    }
+
+    /**
+     * Converte instantaneamente um bloco de expressão em uma Nota Explicativa (Desmos style: "note" ou aspas)
+     */
+    static convertBlockToNote(blockId: string, text: string = ''): string | null {
+        const targetBlock = document.getElementById(blockId);
+        if (!targetBlock) return null;
+        const folderId = targetBlock.dataset.folderId;
+        const nid = this.addNote(text, true, folderId, targetBlock);
+        this.updateBlockNumbers();
+        this.onUpdateCallback();
+        HistoryManager.recordState(true);
+        return nid;
     }
 
     static getNextMatrixName(): string {
@@ -1681,7 +1773,8 @@ export class ExpressionManager {
     static addTable(
         tableData?: { xCol?: string; yCol?: string; rows?: { x: string; y: string }[]; connectLines?: boolean },
         autoFocus: boolean = true,
-        folderId?: string
+        folderId?: string,
+        replaceBlock?: HTMLElement
     ): string {
         this.blockCounter++;
         const blockId = 'table-block-' + this.blockCounter;
@@ -1904,7 +1997,11 @@ export class ExpressionManager {
         block.appendChild(contentZone);
 
         this.setupBlockDrag(block, grabZone);
-        this.container.appendChild(block);
+        if (replaceBlock && replaceBlock.parentNode) {
+            replaceBlock.parentNode.replaceChild(block, replaceBlock);
+        } else {
+            this.container.appendChild(block);
+        }
         if ((window as any).lucide) (window as any).lucide.createIcons({ root: block });
 
         this.updateBlockNumbers();
@@ -1917,7 +2014,21 @@ export class ExpressionManager {
         return blockId;
     }
 
-    static addFolder(title: string = 'Nova Pasta', autoFocus: boolean = true): string {
+    /**
+     * Converte instantaneamente um bloco de expressão em uma Tabela de Dados (Desmos style: "table" ou "tabela")
+     */
+    static convertBlockToTable(blockId: string): string | null {
+        const targetBlock = document.getElementById(blockId);
+        if (!targetBlock) return null;
+        const folderId = targetBlock.dataset.folderId;
+        const tid = this.addTable(undefined, true, folderId, targetBlock);
+        this.updateBlockNumbers();
+        this.onUpdateCallback();
+        HistoryManager.recordState(true);
+        return tid;
+    }
+
+    static addFolder(title: string = 'Nova Pasta', autoFocus: boolean = true, replaceBlock?: HTMLElement): string {
         this.blockCounter++;
         const folderId = 'folder-' + this.blockCounter;
 
@@ -2010,12 +2121,29 @@ export class ExpressionManager {
         header.appendChild(delFolderBtn);
 
         block.appendChild(header);
-        this.container.appendChild(block);
+        if (replaceBlock && replaceBlock.parentNode) {
+            replaceBlock.parentNode.replaceChild(block, replaceBlock);
+        } else {
+            this.container.appendChild(block);
+        }
 
         this.updateBlockNumbers();
 
         if (autoFocus) setTimeout(() => titleInput.focus(), 15);
         return folderId;
+    }
+
+    /**
+     * Converte instantaneamente um bloco de expressão em uma Pasta Organizadora (Desmos style: "folder" ou "pasta")
+     */
+    static convertBlockToFolder(blockId: string, title: string = 'Nova Pasta'): string | null {
+        const targetBlock = document.getElementById(blockId);
+        if (!targetBlock) return null;
+        const fid = this.addFolder(title, true, targetBlock);
+        this.updateBlockNumbers();
+        this.onUpdateCallback();
+        HistoryManager.recordState(true);
+        return fid;
     }
 
     static toggleFolderCollapse(folderId: string) {
@@ -2116,6 +2244,99 @@ export class ExpressionManager {
             }
         });
         this.updateBlockNumbers();
+    }
+
+    /**
+     * Importa um grafo público do Desmos pelo ID da URL (ex: 5ls5ggt5gd)
+     */
+    static async importFromDesmosUrl(calcId: string, replaceBlock?: HTMLElement): Promise<boolean> {
+        try {
+            const resp = await fetch(`https://www.desmos.com/calculator/${calcId}`);
+            if (!resp.ok) return false;
+            const html = await resp.text();
+            const match = html.match(/data-load-data="([^"]+)"/);
+            if (match) {
+                const rawJson = match[1].replace(/&quot;/g, '"');
+                const data = JSON.parse(rawJson);
+                if (data.graph?.stateUrl) {
+                    const stateResp = await fetch(data.graph.stateUrl);
+                    if (stateResp.ok) {
+                        const stateJson = await stateResp.json();
+                        this.importFromStateJson(stateJson, replaceBlock);
+                        return true;
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('[ExpressionManager] Erro ao importar do Desmos:', e);
+        }
+        return false;
+    }
+
+    /**
+     * Importa um estado em formato JSON (Desmos calc-state ou Motorzaoo snapshot)
+     */
+    static importFromStateJson(state: any, replaceBlock?: HTMLElement) {
+        if (!state) return;
+        const exprList = state.expressions?.list || (Array.isArray(state) ? state : null);
+        if (!exprList || !Array.isArray(exprList)) return;
+
+        if (replaceBlock && replaceBlock.parentNode) {
+            replaceBlock.remove();
+        }
+
+        const folderMap: Record<string, string> = {};
+
+        exprList.forEach((item: any) => {
+            if (!item) return;
+            const targetFolderId = item.folderId ? folderMap[item.folderId] : undefined;
+
+            if (item.type === 'folder') {
+                const fid = this.addFolder(item.title || 'Pasta', false);
+                if (item.id) folderMap[item.id] = fid;
+                if (item.collapsed) this.toggleFolderCollapse(fid);
+            } else if (item.type === 'text') {
+                this.addNote(item.text || '', false, targetFolderId);
+            } else if (item.type === 'table') {
+                const cols = item.columns || [];
+                let xCol = 'x_1';
+                let yCol = 'y_1';
+                let xVals: string[] = [];
+                let yVals: string[] = [];
+                if (cols.length >= 1) {
+                    xCol = cols[0].latex || 'x_1';
+                    xVals = cols[0].values || [];
+                }
+                if (cols.length >= 2) {
+                    yCol = cols[1].latex || 'y_1';
+                    yVals = cols[1].values || [];
+                }
+                const rowCount = Math.max(xVals.length, yVals.length, 3);
+                const rows: { x: string; y: string }[] = [];
+                for (let i = 0; i < rowCount; i++) {
+                    rows.push({ x: xVals[i] !== undefined ? xVals[i] : '', y: yVals[i] !== undefined ? yVals[i] : '' });
+                }
+                this.addTable({ xCol, yCol, rows, connectLines: !!item.lines }, false, targetFolderId);
+            } else {
+                const latex = item.latex || '';
+                if (latex.trim()) {
+                    const bid = this.addBlock(false, latex, targetFolderId);
+                    const blockEl = document.getElementById(bid);
+                    if (blockEl) {
+                        if (item.color) this.applyBlockColor(blockEl, item.color);
+                        if (item.hidden) {
+                            const vis = blockEl.querySelector('.visibility-toggle') as HTMLElement;
+                            if (vis) vis.click();
+                        }
+                        if (item.lineStyle) blockEl.dataset.lineStyle = item.lineStyle;
+                    }
+                }
+            }
+        });
+
+        this.updateBlockNumbers();
+        this.onUpdateCallback();
+        HistoryManager.recordState(true);
     }
 
     static addExpression(asciiValue: string, autoFocus: boolean = false, autoSliderVar?: string, parentBlockId?: string): string {
@@ -2258,8 +2479,8 @@ export class ExpressionManager {
 
             const mf = block.querySelector('math-field');
             if (mf) {
-                const ascii = mf.getValue('ascii-math');
-                const latex = mf.getValue('latex');
+                const ascii = typeof mf.getValue === 'function' ? mf.getValue('ascii-math') : (mf.value || mf.getAttribute('value') || '');
+                const latex = typeof mf.getValue === 'function' ? mf.getValue('latex') : (mf.value || mf.getAttribute('value') || '');
                 if (ascii || latex) exprs.push({ id: block.id, rawAscii: ascii || '', latex: latex || '', visible, color, lineStyle, lineWidth });
             }
         });

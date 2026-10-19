@@ -66,6 +66,24 @@ export class Renderer {
         this.drawCurve(points, color);
     }
 
+    drawPolygon(points: { x: number, y: number }[], color: string = '#2d70b3') {
+        if (!points || points.length < 3) return;
+        this.ctx.fillStyle = color + '40'; // 25% opacity
+        this.ctx.beginPath();
+        const startX = Camera.toPixelX(points[0].x);
+        const startY = Camera.toPixelY(points[0].y);
+        this.ctx.moveTo(startX, startY);
+        for (let i = 1; i < points.length; i++) {
+            this.ctx.lineTo(Camera.toPixelX(points[i].x), Camera.toPixelY(points[i].y));
+        }
+        this.ctx.closePath();
+        this.ctx.fill();
+
+        this.ctx.strokeStyle = color;
+        this.ctx.lineWidth = 2;
+        this.ctx.stroke();
+    }
+
     drawSegments(segments: {x1:number, y1:number, x2:number, y2:number}[], color: string = '#2d70b3') {
         if (segments.length === 0) return;
         

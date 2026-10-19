@@ -133,7 +133,7 @@ export class HistoryManager {
 
                 if (blockType === 'expression') {
                     const mf = el.querySelector('math-field');
-                    content = mf ? (mf.getValue('latex') || mf.value || '') : '';
+                    content = mf ? (typeof mf.getValue === 'function' ? (mf.getValue('latex') || mf.value || '') : (mf.value || mf.getAttribute('value') || '')) : '';
                 } else if (blockType === 'note') {
                     const textarea = el.querySelector('textarea');
                     content = textarea ? textarea.value : '';

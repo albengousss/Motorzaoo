@@ -1,8 +1,11 @@
 import { MathEngine } from './mathEngine';
 
+// Conecta o armazenamento de valores do StateManager ao escopo global do MathEngine
+MathEngine.globalScopeProvider = () => StateManager.values;
+
 export class StateManager {
-    // Memória rápida: Valores numéricos prontos para o motor gráfico ler
-    static values: Record<string, number> = {};
+    // Memória rápida: Valores numéricos ou listas prontos para o motor gráfico ler
+    static values: Record<string, any> = {};
     
     // Memória profunda: Árvores AST originais das variáveis compostas (ex: b = a * 2)
     static asts: Record<string, any> = {};
@@ -70,7 +73,7 @@ export class StateManager {
     /**
      * Limpeza (Garbage Collection): Remove variáveis que já não existem nos blocos
      */
-    static gc(activeVars: string[]) {
+    static gc(activeVars: string[], activeBlockIds?: Set<string>) {
         const activeSet = new Set(activeVars);
         const allKeys = new Set([
             ...Object.keys(this.values),
@@ -95,6 +98,39 @@ export class StateManager {
                 }
             }
         }
+
+        // Limpeza de funções de usuário quando seus blocos de origem deixarem de existir
+        if (activeBlockIds) {
+            for (const fnName in this.userFunctions) {
+                const fnData = this.userFunctions[fnName];
+                if (fnData && fnData.blockId && !activeBlockIds.has(fnData.blockId)) {
+                    delete this.userFunctions[fnName];
+                    delete MathEngine.userFunctions[fnName];
+                    delete MathEngine.compiledFuncs[fnName];
+                    delete StateManager.giacDefinitions[fnName];
+                }
+            }
+        }
+    }
+
+    /**
+     * Limpa completamente todos os estados e caches gerenciados
+     */
+    static clearAll() {
+        this.values = {};
+        this.asts = {};
+        this.dependents = {};
+        this.varVersions = {};
+        this.globalCacheVersion = 0;
+        this.odeSolutions = {};
+        this.pendingOdes = {};
+        this.casSolutions = {};
+        this.pendingCas = {};
+        this.casSpawnedBlocks = {};
+        this.casIndices = {};
+        this.activeGiacQuery = {};
+        this.giacDefinitions = {};
+        this.userFunctions = {};
     }
 
     /**
@@ -141,7 +177,8 @@ export class StateManager {
     private static recalculate(name: string) {
         if (this.asts[name] !== undefined) {
             const val = MathEngine.evaluateAST(this.asts[name], this.values);
-            if (isNaN(val)) {
+            const isInvalid = (typeof val === 'number' && isNaN(val)) || val === undefined;
+            if (isInvalid) {
                 if (name in this.values) {
                     delete this.values[name];
                     this.varVersions[name] = (this.varVersions[name] || 0) + 1;

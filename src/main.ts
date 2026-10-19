@@ -12,9 +12,12 @@ import { createIcons, icons } from 'lucide';
     createIcons: (options?: any) => createIcons({ icons, ...options })
 };
 
-let validEquations: {id: string, ast?: any, isImplicit: boolean, operator: string, isEdo: boolean, isDerivative: boolean, derivVar?: string, isIvp?: boolean, isPoint?: boolean, pointX?: number, pointY?: number, pointLabel?: string, isParametric?: boolean, astX?: any, astY?: any, astZ?: any, isExplicitZ?: boolean, tMin?: number, tMax?: number, paramVar?: string, depVar?: string, indepVar?: string, condition?: (x: number, y: number, scope: any, t?: number) => boolean, name?: string, x0?: number, y0?: number, isHidden?: boolean, variable?: string, color?: string, lineStyle?: 'solid' | 'dashed' | 'dotted', lineWidth?: number, isTable?: boolean, tablePoints?: { x: number, y: number, rowIndex: number, tableBlockId: string }[], connectLines?: boolean}[] = [];
+let validEquations: {id: string, ast?: any, isImplicit: boolean, operator: string, isEdo: boolean, isDerivative: boolean, derivVar?: string, isIvp?: boolean, isPoint?: boolean, pointX?: number, pointY?: number, pointLabel?: string, isParametric?: boolean, astX?: any, astY?: any, astZ?: any, isExplicitZ?: boolean, tMin?: number, tMax?: number, paramVar?: string, depVar?: string, indepVar?: string, condition?: (x: number, y: number, scope: any, t?: number) => boolean, name?: string, x0?: number, y0?: number, isHidden?: boolean, variable?: string, color?: string, lineStyle?: 'solid' | 'dashed' | 'dotted', lineWidth?: number, isTable?: boolean, tablePoints?: { x: number, y: number, rowIndex: number, tableBlockId: string }[], connectLines?: boolean, isPolygon?: boolean, isPointsList?: boolean, points?: { x: number, y: number }[]}[] = [];
 let dragDistance = 0;
 import { MathEngine } from './core/mathEngine';
+import { ListEngine } from './core/listEngine';
+import { MatrixEngine } from './core/matrixEngine';
+import { PointEngine } from './core/pointEngine';
 import { ImplicitEngine } from './core/implicitEngine';
 import { Renderer } from './graphics/renderer';
 import { GLRenderer } from './graphics/glRenderer';
@@ -394,9 +397,9 @@ function compileAllExpressions() {
     validEquations = [];
     const activeVars: string[] = [];
     const definedUserFunctionNames = new Set<string>();
-
-    // 0. Registra todas as matrizes definidas antecipadamente para que nenhuma operação sugira sliders
     const definedMatrixNames = new Set<string>();
+
+    // 0. Pré-registro de Matrizes e Funções de Usuário (Suporte a Definição Fora de Ordem e Supressão de Sliders)
     rawData.forEach(item => {
         if (item.isMatrix && item.matrixName) {
             const varName = item.matrixName;
@@ -407,6 +410,21 @@ function compileAllExpressions() {
                 StateManager.giacDefinitions[varName] = giacDef;
                 StateManager.casSolutions = {};
                 MathEngine.askGiac(giacDef);
+            }
+        } else if (!item.isMatrix && !item.isTable) {
+            const ascii = item.rawAscii || '';
+            const cleanStr = LatexNormalizer.normalize(ascii, item.latex, definedMatrixNames);
+            const funcMatch = cleanStr.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\(([^)]+)\)\s*=\s*(.+)$/);
+            if (funcMatch) {
+                const funcName = funcMatch[1].replace(/[\{\}\\]/g, '');
+                const paramNames = funcMatch[2].split(',').map(s => s.trim().replace(/[\{\}\\]/g, ''));
+                const expr = funcMatch[3].trim();
+                definedUserFunctionNames.add(funcName);
+                try {
+                    const ast = new PrattParser(expr).parseExpression();
+                    MathEngine.userFunctions[funcName] = { params: paramNames, expr, ast, blockId: item.id };
+                    StateManager.userFunctions[funcName] = { params: paramNames, expr, ast, blockId: item.id };
+                } catch (_) {}
             }
         }
     });
@@ -425,10 +443,12 @@ function compileAllExpressions() {
             const free = FaultTolerantParser.detectFreeVariables(raw, [
                 ...Object.keys(StateManager.values),
                 ...Object.keys(StateManager.giacDefinitions),
-                ...definedMatrixNames
+                ...definedMatrixNames,
+                ...definedUserFunctionNames,
+                ...Object.keys(MathEngine.userFunctions)
             ]);
             free.forEach(v => {
-                if (!definedMatrixNames.has(v)) {
+                if (!definedMatrixNames.has(v) && !definedUserFunctionNames.has(v) && !MathEngine.userFunctions[v]) {
                     activelyNeededFreeVars.add(v);
                 }
             });
@@ -1385,14 +1405,15 @@ function compileAllExpressions() {
             const mfEl = blockEl ? blockEl.querySelector('math-field') : null;
             const rawLatex = mfEl ? (mfEl as any).getValue('latex') : '';
             
-            // É matriz ou vetor? Verifica LaTeX, chaves e colchetes
+            // É matriz ou vetor 2D? Verifica se tem estrutura multidimensional ou comando de matriz
             const cleanMatStr = rightSideClean.replace(/\\/g, '');
-            const isMatrix = cleanMatStr.startsWith('{') || cleanMatStr.startsWith('[') || 
-                             cleanMatStr.startsWith('lbrace') || cleanMatStr.startsWith('matrix') ||
-                             cleanMatStr.startsWith('begin{') ||
-                             rawLatex.includes('\\{') || rawLatex.includes('matrix}') || rawLatex.includes('\\bmatrix') || rawLatex.includes('\\pmatrix') || rawLatex.includes('\\begin{');
+            const is2DMatrix = item.isMatrix || cleanMatStr.startsWith('[[') || cleanMatStr.startsWith('{{') || 
+                               cleanMatStr.includes('],[') || cleanMatStr.includes('};{') ||
+                               (cleanMatStr.startsWith('[') && cleanMatStr.includes(';')) ||
+                               cleanMatStr.startsWith('matrix') || cleanMatStr.startsWith('begin{') ||
+                               rawLatex.includes('matrix}') || rawLatex.includes('\\bmatrix') || rawLatex.includes('\\pmatrix') || rawLatex.includes('\\begin{');
             
-            if (isMatrix) {
+            if (is2DMatrix) {
                 // Se o rightSideClean tiver lbrace ou begin{matrix}, vamos tentar usar o latex diretamente!
                 let giacMatrix = '';
                 if (cleanMatStr.startsWith('lbrace') || cleanMatStr.startsWith('begin{') || rawLatex.includes('\\begin{') || !cleanMatStr.includes('{')) {
@@ -1415,6 +1436,24 @@ function compileAllExpressions() {
                 giacMatrix = giacMatrix.replace(/\]\s*\[/g, '],[');
                 const giacDef = `usr_${varName}:=${giacMatrix}`;
                 
+                // Armazena a matriz nativamente no StateManager.values para cálculo e indexação instantâneos
+                try {
+                    let parsedMatrix: any = null;
+                    try {
+                        parsedMatrix = JSON.parse(giacMatrix);
+                    } catch (_) {
+                        const matAst = new PrattParser(giacMatrix).parseExpression();
+                        parsedMatrix = MathEngine.evaluateAST(matAst, StateManager.values);
+                    }
+                    if (MatrixEngine.isMatrix(parsedMatrix)) {
+                        StateManager.defineVariable(varName, parsedMatrix);
+                        StateManager.values[varName] = parsedMatrix;
+                        activeVars.push(varName);
+                    }
+                } catch(e) {
+                    console.warn('[Main] Erro ao registrar matriz nativa:', e);
+                }
+
                 if (StateManager.giacDefinitions[varName] !== giacDef) {
                     StateManager.giacDefinitions[varName] = giacDef;
                     StateManager.casSolutions = {}; // INVALIDE CACHE SO DEPENDENTS UPDATE!
@@ -1429,12 +1468,57 @@ function compileAllExpressions() {
                 } else {
                     ExpressionManager.setResult(item.id, `= ${giacMatrix}`);
                 }
+                ExpressionManager.setSliderSuggestions(item.id, [], () => {});
                 return; // Encerra o processamento, pois não queremos renderizar gráfico disto
+            } else if (cleanMatStr.startsWith('[') || rightSideClean.includes('for ') || rightSideClean.toLowerCase().includes('polygon(')) {
+                // Definição nativa de Listas, Sequências, Matrizes e Vetores Desmos
+                try {
+                    const listAst = new PrattParser(rightSideClean).parseExpression();
+                    const listVal = MathEngine.evaluateAST(listAst, StateManager.values);
+                    StateManager.defineVariable(varName, listAst);
+                    StateManager.values[varName] = listVal;
+                    activeVars.push(varName);
+                    ExpressionManager.processBlockState(item.id, ascii, StateManager.values);
+                    if (MatrixEngine.isMatrix(listVal)) {
+                        ExpressionManager.setResult(item.id, MatrixEngine.formatMatrixDisplay(listVal));
+                    } else {
+                        ExpressionManager.setResult(item.id, ListEngine.formatListDisplay(listVal));
+                    }
+                    ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+
+                    // Sincroniza com Giac para comandos CAS que dependam de L
+                    if (Array.isArray(listVal)) {
+                        const giacListStr = `usr_${varName}:=[${listVal.map(v => typeof v === 'number' ? (isNaN(v) ? 'undef' : (!isFinite(v) ? (v > 0 ? 'infinity' : '-infinity') : v)) : JSON.stringify(v)).join(',')}]`;
+                        if (StateManager.giacDefinitions[varName] !== giacListStr) {
+                            StateManager.giacDefinitions[varName] = giacListStr;
+                            MathEngine.askGiac(giacListStr);
+                        }
+                    }
+
+                    // Se a lista contiver pontos, plota todos os pontos!
+                    if (Array.isArray(listVal) && listVal.length > 0 && typeof listVal[0] === 'object' && listVal[0] !== null && 'x' in listVal[0] && 'y' in listVal[0]) {
+                        validEquations.push({
+                            color: item.color,
+                            id: item.id,
+                            ast: listAst,
+                            isImplicit: false,
+                            isEdo: false,
+                            isDerivative: false,
+                            isPointsList: true,
+                            points: listVal,
+                            operator: '=',
+                            isHidden: !item.visible
+                        });
+                    }
+                    return;
+                } catch(e) {
+                    console.warn('[Main] Erro ao definir lista/matriz:', e);
+                }
             }
 
             const isMultiVarProd = varName.length > 1 && !varName.includes('_') && /[xyzt]/.test(varName);
             if (!['x', 'y', 'z', 't', 'e', 'pi'].includes(varName) && !isMultiVarProd && !genericCasMatch) {
-                // Suporte para declaração de ponto A = (x, y)
+                // Suporte para declaração de ponto A = (x, y) ou A = (x, y, z)
                 let pointAst: any = null;
                 try {
                     pointAst = new PrattParser(rightSideClean).parseExpression();
@@ -1445,7 +1529,14 @@ function compileAllExpressions() {
                 if (pointAst && pointAst[0] === 'Point') {
                     const evalX = MathEngine.compile(pointAst[1])(0, 0, StateManager.values);
                     const evalY = MathEngine.compile(pointAst[2])(0, 0, StateManager.values);
+                    const is3D = pointAst.length > 3;
+                    const evalZ = is3D ? MathEngine.compile(pointAst[3])(0, 0, StateManager.values) : undefined;
                     if (isFinite(evalX) && isFinite(evalY)) {
+                        const ptObj: any = { x: evalX, y: evalY };
+                        if (is3D && evalZ !== undefined && isFinite(evalZ)) ptObj.z = evalZ;
+                        StateManager.defineVariable(varName, pointAst);
+                        StateManager.values[varName] = ptObj;
+                        activeVars.push(varName);
                         validEquations.push({
                             color: item.color,
                             id: item.id,
@@ -1460,7 +1551,8 @@ function compileAllExpressions() {
                             operator: '=',
                             isHidden: !item.visible
                         });
-                        ExpressionManager.setResult(item.id, `= (${parseFloat(evalX.toFixed(3))}, ${parseFloat(evalY.toFixed(3))})`);
+                        ExpressionManager.setResult(item.id, `= ${PointEngine.formatPointDisplay(ptObj)}`);
+                        ExpressionManager.setSliderSuggestions(item.id, [], () => {});
                         return;
                     }
                 }
@@ -1631,6 +1723,77 @@ function compileAllExpressions() {
                 }
             }
 
+            // 4.5. LISTAS, MATRIZES E PONTOS NÃO ATRIBUÍDOS
+            if (ast) {
+                try {
+                    const evalRes = MathEngine.evaluateAST(ast, StateManager.values);
+                    if (PointEngine.isPoint(evalRes)) {
+                        validEquations.push({
+                            color: item.color,
+                            id: item.id,
+                            ast,
+                            isImplicit: false,
+                            isEdo: false,
+                            isDerivative: false,
+                            isPoint: true,
+                            pointX: evalRes.x,
+                            pointY: evalRes.y,
+                            pointLabel: `(${parseFloat(evalRes.x.toFixed(3))}, ${parseFloat(evalRes.y.toFixed(3))})`,
+                            operator: '=',
+                            isHidden: !item.visible
+                        });
+                        ExpressionManager.setResult(item.id, `= ${PointEngine.formatPointDisplay(evalRes)}`);
+                        ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                        return;
+                    }
+                    if (MatrixEngine.isMatrix(evalRes)) {
+                        ExpressionManager.setResult(item.id, `= ${MatrixEngine.formatMatrixDisplay(evalRes)}`);
+                        ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                        return;
+                    }
+                    if (ast[0] === 'Polygon' && Array.isArray(evalRes)) {
+                        validEquations.push({
+                            color: item.color,
+                            id: item.id,
+                            ast,
+                            isImplicit: false,
+                            isEdo: false,
+                            isDerivative: false,
+                            isPolygon: true,
+                            points: evalRes,
+                            operator: '=',
+                            isHidden: !item.visible
+                        });
+                        ExpressionManager.setResult(item.id, `Polígono (${evalRes.length} vértices)`);
+                        ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                        return;
+                    }
+                    if (Array.isArray(evalRes)) {
+                        // Verifica se é lista de pontos (ex: malha cartesiana ou múltiplos pontos: (1,1),(2,2))
+                        const isListOfPoints = evalRes.length > 0 && typeof evalRes[0] === 'object' && evalRes[0] !== null && 'x' in evalRes[0] && 'y' in evalRes[0];
+                        if (isListOfPoints) {
+                            validEquations.push({
+                                color: item.color,
+                                id: item.id,
+                                ast,
+                                isImplicit: false,
+                                isEdo: false,
+                                isDerivative: false,
+                                isPointsList: true,
+                                points: evalRes,
+                                operator: '=',
+                                isHidden: !item.visible
+                            });
+                        }
+                        ExpressionManager.setResult(item.id, ListEngine.formatListDisplay(evalRes));
+                        ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                        return;
+                    }
+                } catch (e) {
+                    // segue para outros modos se não for lista/matriz/ponto
+                }
+            }
+
             // MODO CALCULADORA (Sem gráficos)
             const isPlot = expressaoPlot.includes('x') || expressaoPlot.includes('y') || expressaoPlot.includes('z');
             if (!isPlot && !isImplicit && !isDerivativePlot && !isExplicitY && !isExplicitZ) {
@@ -1781,11 +1944,15 @@ function compileAllExpressions() {
                 const free = FaultTolerantParser.detectFreeVariables(cleanStr, [
                     ...Object.keys(StateManager.values),
                     ...Object.keys(StateManager.giacDefinitions),
-                    ...definedMatrixNames
+                    ...definedMatrixNames,
+                    ...definedUserFunctionNames,
+                    ...Object.keys(MathEngine.userFunctions)
                 ]);
                 const missingSliders = free.filter(v => 
                     StateManager.values[v] === undefined && 
                     !MathEngine.compiledFuncs[v] &&
+                    !MathEngine.userFunctions[v] &&
+                    !definedUserFunctionNames.has(v) &&
                     !StateManager.giacDefinitions[v] &&
                     !definedMatrixNames.has(v)
                 );
@@ -1803,8 +1970,10 @@ function compileAllExpressions() {
         }
     });
 
-    // Run Garbage Collection for deleted sliders
-    StateManager.gc(activeVars);
+    const currentBlockIds = new Set(rawData.map(r => r.id));
+
+    // Run Garbage Collection for deleted sliders and user functions
+    StateManager.gc(activeVars, currentBlockIds);
 
     // Limpeza Instantânea: Remove funções de usuário apagadas ou alteradas
     for (const fName in StateManager.userFunctions) {
@@ -1817,7 +1986,6 @@ function compileAllExpressions() {
     }
 
     // Limpeza de caches CAS de blocos inexistentes
-    const currentBlockIds = new Set(rawData.map(r => r.id));
     for (const bId in StateManager.casSolutions) {
         if (!currentBlockIds.has(bId)) {
             delete StateManager.casSolutions[bId];
@@ -1941,6 +2109,20 @@ function drawFrame() {
                     tableBlockId: tp.tableBlockId,
                     rowIndex: tp.rowIndex
                 });
+            });
+            return;
+        }
+
+        if (item.isPolygon && Array.isArray(item.points)) {
+            renderer.drawPolygon(item.points, color);
+            return;
+        }
+
+        if (item.isPointsList && Array.isArray(item.points)) {
+            renderer.drawPoints(item.points, color);
+            item.points.forEach(p => {
+                const label = `(${p.x}, ${p.y})`;
+                renderMemory_points.push({ mathX: p.x, mathY: p.y, type: 'point', color, label });
             });
             return;
         }
