@@ -45,6 +45,7 @@ export class HistoryManager {
     static init(onUpdate: () => void, onHistoryChange?: (canUndo: boolean, canRedo: boolean) => void) {
         this.onUpdateCallback = onUpdate;
         if (onHistoryChange) this.onHistoryChangeCallback = onHistoryChange;
+        this.notifyChange();
 
         // Listener global de atalhos de teclado Ctrl+Z e Ctrl+Y / Ctrl+Shift+Z
         window.addEventListener('keydown', (e) => {

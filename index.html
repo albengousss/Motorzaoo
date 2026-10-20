@@ -71,26 +71,65 @@
     <!-- Tailwind via Vite plugin (processado em build) -->
     <link rel="stylesheet" href="/src/style.css">
   </head>
-  <body class="flex flex-col-reverse md:flex-row h-screen overflow-hidden bg-white text-gray-800 font-sans antialiased">
+  <body class="flex flex-col h-screen overflow-hidden bg-white text-gray-800 font-sans antialiased">
+    
+    <!-- ═══════════════════════════════════════
+         HEADER GLOBAL (Desmos .dcg-header 46px)
+    ══════════════════════════════════════════ -->
+    <header id="dcg-header" class="h-[46px] min-h-[46px] max-h-[46px] w-full bg-[#2a2a2a] text-white flex items-center justify-between px-3 select-none z-40 shrink-0 border-b border-[#1f1f1f]">
+      <!-- Left: Menu, Title & Save Status -->
+      <div class="flex items-center gap-2">
+        <button id="header-menu-btn" type="button" class="w-8 h-8 flex items-center justify-center text-gray-300 hover:text-white hover:bg-white/10 rounded transition-colors cursor-pointer" title="Abrir Gráficos">
+          <i data-lucide="menu" class="w-5 h-5 pointer-events-none"></i>
+        </button>
+        <div class="flex items-center gap-2">
+          <span id="header-graph-title" class="text-sm font-semibold tracking-tight text-white hover:bg-white/10 px-2 py-1 rounded cursor-pointer transition-colors" title="Renomear gráfico">Gráfico sem título</span>
+          <span class="text-[11px] text-gray-400 hidden sm:inline flex items-center gap-1 font-normal opacity-80">
+            <i data-lucide="cloud" class="w-3.5 h-3.5 text-emerald-400 inline"></i> Salvo
+          </span>
+        </div>
+      </div>
+
+      <!-- Right: Quick Actions & Brand -->
+      <div class="flex items-center gap-1">
+        <button id="undo-btn" title="Desfazer (Ctrl+Z)" class="w-8 h-8 flex items-center justify-center text-gray-300 hover:text-white hover:bg-white/10 rounded transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed" disabled>
+          <i data-lucide="undo-2" class="w-4 h-4 pointer-events-none"></i>
+        </button>
+        <button id="redo-btn" title="Refazer (Ctrl+Y)" class="w-8 h-8 flex items-center justify-center text-gray-300 hover:text-white hover:bg-white/10 rounded transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed" disabled>
+          <i data-lucide="redo-2" class="w-4 h-4 pointer-events-none"></i>
+        </button>
+        <div class="h-4 w-px bg-white/20 mx-1"></div>
+        <button id="guide-sidebar-btn" title="Guia de Comandos & Ajuda (?)" class="w-8 h-8 flex items-center justify-center text-gray-300 hover:text-white hover:bg-white/10 rounded transition-colors cursor-pointer" onclick="if(window._toggleCommandsGuide) window._toggleCommandsGuide()">
+          <i data-lucide="help-circle" class="w-4 h-4 pointer-events-none"></i>
+        </button>
+        <div class="flex items-center gap-1 ml-2">
+          <span class="text-base font-black text-blue-400 leading-none">∑</span>
+          <span class="text-xs font-bold text-gray-200 tracking-tight">motor<span class="font-normal text-gray-400">zao</span></span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main App Workspace (Sidebar + Splitter + Canvas) -->
+    <div id="app-workspace" class="flex flex-col-reverse md:flex-row flex-1 overflow-hidden relative">
     
     <!-- ═══════════════════════════════════════
          SIDEBAR — Painel de Expressões
     ══════════════════════════════════════════ -->
-    <div id="sidebar" class="w-full md:w-[380px] bg-white border-t md:border-t-0 md:border-r border-gray-200 shadow-lg flex flex-col shrink-0 overflow-hidden z-10 h-[42vh] md:h-auto relative">
+    <div id="sidebar" class="w-full md:w-[500px] bg-white border-t md:border-t-0 md:border-r border-[#dcdcdc] flex flex-col shrink-0 overflow-hidden z-10 h-[42vh] md:h-auto relative">
 
-      <div id="sidebar-header" class="bg-white px-2.5 py-2 border-b border-gray-200 flex items-center justify-between select-none shrink-0 relative shadow-2xs z-30 overflow-visible">
+      <div id="sidebar-header" class="bg-[#f6f6f6] h-[48px] min-h-[48px] max-h-[48px] px-2 border-b border-[#dcdcdc] flex items-center justify-between select-none shrink-0 relative z-30 overflow-visible">
         <div id="drag-handle" class="w-8 h-1 bg-gray-300 rounded-full block md:hidden shadow-inner absolute -top-1 left-1/2 -translate-x-1/2"></div>
         
-        <!-- Left Tools: Add Item (+), Undo, Redo -->
+        <!-- Left Tools: Add Item (+), Edit List, Undo, Redo -->
         <div class="flex items-center gap-1">
           <!-- Add Item Button (+) with Dropdown -->
           <div class="relative overflow-visible">
-            <button id="add-item-btn" type="button" class="w-8 h-8 flex items-center justify-center rounded-lg text-gray-700 hover:text-blue-600 hover:bg-gray-100 active:bg-gray-200 transition-all cursor-pointer font-bold text-lg select-none" title="Adicionar Item">
+            <button id="add-item-btn" type="button" class="w-10 h-10 flex items-center justify-center rounded-[5px] text-[#333333] hover:bg-[#e8e8e8] active:bg-[#dedede] transition-colors cursor-pointer font-bold text-xl select-none" title="Adicionar Item">
               <i data-lucide="plus" class="w-5 h-5 pointer-events-none"></i>
             </button>
 
             <!-- Dropdown Menu -->
-            <div id="add-item-dropdown" class="absolute top-10 left-0 bg-white rounded-xl shadow-2xl border border-gray-200 py-1.5 w-44 z-50 hidden flex-col divide-y divide-gray-100">
+            <div id="add-item-dropdown" class="absolute top-11 left-0 bg-white rounded-[6px] shadow-xl border border-[#dcdcdc] py-1.5 w-44 z-50 hidden flex-col divide-y divide-gray-100">
               <button id="menu-add-expr" type="button" class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-blue-50 text-gray-700 hover:text-blue-600 text-xs font-semibold cursor-pointer transition-colors text-left">
                 <span class="w-5 text-center font-serif italic font-bold text-blue-600 pointer-events-none">f(x)</span>
                 <span class="pointer-events-none">Expressão</span>
@@ -114,30 +153,26 @@
             </div>
           </div>
 
-          <!-- Undo & Redo -->
-          <button id="undo-btn" title="Desfazer (Ctrl+Z)" class="w-7 h-7 flex items-center justify-center text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-md transition-all cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed" disabled>
-            <i data-lucide="undo-2" class="w-4 h-4"></i>
+          <!-- Edit List (Gear Icon) -->
+          <button id="edit-list-btn" type="button" title="Editar Lista" class="w-10 h-10 flex items-center justify-center rounded-[5px] text-[#555555] hover:text-[#222222] hover:bg-[#e8e8e8] active:bg-[#dedede] transition-colors cursor-pointer select-none">
+            <i data-lucide="settings" class="w-4 h-4 pointer-events-none"></i>
           </button>
-          <button id="redo-btn" title="Refazer (Ctrl+Y)" class="w-7 h-7 flex items-center justify-center text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-md transition-all cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed" disabled>
-            <i data-lucide="redo-2" class="w-4 h-4"></i>
+
+          <!-- Undo & Redo (Sidebar Secondary) -->
+          <button id="sidebar-undo-btn" type="button" title="Desfazer (Ctrl+Z)" class="w-10 h-10 flex items-center justify-center rounded-[5px] text-[#555555] hover:text-[#222222] hover:bg-[#e8e8e8] active:bg-[#dedede] transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed" disabled>
+            <i data-lucide="undo-2" class="w-4 h-4 pointer-events-none"></i>
+          </button>
+          <button id="sidebar-redo-btn" type="button" title="Refazer (Ctrl+Y)" class="w-10 h-10 flex items-center justify-center rounded-[5px] text-[#555555] hover:text-[#222222] hover:bg-[#e8e8e8] active:bg-[#dedede] transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed" disabled>
+            <i data-lucide="redo-2" class="w-4 h-4 pointer-events-none"></i>
           </button>
         </div>
 
-        <!-- Center: Title -->
-        <div class="flex items-center gap-1.5 opacity-80 hover:opacity-100 transition-opacity">
-          <span class="text-base font-black text-blue-600 leading-none">∑</span>
-          <span class="text-xs font-bold text-gray-700 tracking-tight">motor<span class="font-normal text-gray-400">zao</span></span>
-        </div>
-
-        <!-- Right Header Controls: Guide / Help & Collapse Chevron -->
+        <!-- Right Header Controls: Collapse Chevron (<<) & Mobile Toggle -->
         <div class="flex items-center gap-1">
-          <button id="guide-sidebar-btn" title="Guia de Comandos & Ajuda (?)" class="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-all cursor-pointer" onclick="if(window._toggleCommandsGuide) window._toggleCommandsGuide()">
-            <i data-lucide="help-circle" class="w-4 h-4"></i>
+          <button id="collapse-sidebar-btn" class="hidden md:flex items-center justify-center w-10 h-10 text-[#666666] hover:text-[#222222] hover:bg-[#e8e8e8] rounded-[5px] transition-colors cursor-pointer" title="Ocultar Painel Lateral (<<)">
+            <i data-lucide="chevrons-left" class="w-4 h-4 pointer-events-none"></i>
           </button>
-          <button id="collapse-sidebar-btn" class="hidden md:flex items-center justify-center w-7 h-7 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-all cursor-pointer" title="Ocultar Painel Lateral">
-            <i data-lucide="chevrons-left" class="w-4 h-4"></i>
-          </button>
-          <button id="toggle-sidebar-mobile-btn" class="flex md:hidden items-center justify-center w-7 h-7 text-gray-500 hover:text-blue-600 rounded-md transition-colors" title="Recolher / Expandir Painel">
+          <button id="toggle-sidebar-mobile-btn" class="flex md:hidden items-center justify-center w-9 h-9 text-gray-500 hover:text-blue-600 rounded-[5px] transition-colors" title="Recolher / Expandir Painel">
             <i data-lucide="chevron-down" id="sidebar-chevron-icon" class="w-4 h-4"></i>
           </button>
         </div>
@@ -160,13 +195,13 @@
     </div>
 
     <!-- Borda arrastável da barra lateral (Desktop) -->
-    <div id="sidebar-resizer" class="hidden md:flex items-center justify-center w-1.5 hover:w-2 bg-gray-200 hover:bg-purple-500 active:bg-purple-600 cursor-col-resize z-20 transition-all select-none touch-none shrink-0 group relative" title="Arraste a borda para redimensionar a barra lateral">
-      <div class="w-0.5 h-7 bg-gray-400 group-hover:bg-white group-active:bg-white rounded-full transition-colors pointer-events-none"></div>
+    <div id="sidebar-resizer" class="hidden md:flex items-center justify-center w-[6px] hover:bg-[#e0e0e0] active:bg-[#d0d0d0] border-r border-[#cccccc] cursor-col-resize z-20 transition-colors select-none touch-none shrink-0 group relative" title="Arraste a borda para redimensionar a barra lateral">
+      <div class="w-0.5 h-7 bg-[#b0b0b0] group-hover:bg-[#888888] rounded-full transition-colors pointer-events-none"></div>
     </div>
 
     <!-- Botão flutuante para restaurar a barra lateral quando recolhida -->
-    <button id="sidebar-expand-tab" class="fixed left-0 top-14 z-30 hidden bg-white hover:bg-purple-50 border border-gray-200 border-l-0 shadow-md py-2 px-1.5 rounded-r-lg text-gray-600 hover:text-purple-600 cursor-pointer transition-all flex items-center justify-center group" title="Expandir barra lateral">
-      <i data-lucide="chevron-right" class="w-4 h-4 group-hover:translate-x-0.5 transition-transform text-purple-600"></i>
+    <button id="sidebar-expand-tab" class="absolute left-0 top-2 z-30 hidden bg-[#ededed] hover:bg-[#e0e0e0] border border-[rgba(0,0,0,0.15)] border-l-0 shadow-sm w-[37px] h-[37px] rounded-r-[5px] text-[#444444] hover:text-[#111111] cursor-pointer transition-colors flex items-center justify-center group" title="Expandir barra lateral (>>)">
+      <i data-lucide="chevrons-right" class="w-4 h-4 text-[#444444] group-hover:translate-x-0.5 transition-transform"></i>
     </button>
 
     <!-- ═══════════════════════════════════════
@@ -184,23 +219,23 @@
         <button id="mode-3d-btn" class="px-3 py-1 text-xs font-bold rounded-md transition-all text-gray-500 hover:text-gray-900 cursor-pointer">3D</button>
       </div>
       
-      <!-- Controles Flutuantes do HUD (Estilo Desmos: Chave Inglesa e Cápsula de Zoom Vertical) -->
-      <div class="absolute top-4 right-4 flex flex-col items-center gap-2 z-20 select-none">
-        <!-- Botão Configurações do Gráfico (Ícone Wrench / Chave Inglesa) -->
-        <button id="settings-btn" title="Configurações do Gráfico" class="w-9 h-9 flex items-center justify-center bg-white/95 backdrop-blur-sm rounded-lg shadow-sm border border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50 active:bg-gray-100 transition-all cursor-pointer" onclick="if(window._toggleSettings) window._toggleSettings()">
-          <i data-lucide="wrench" class="w-4 h-4"></i>
+      <!-- Controles Flutuantes do HUD (Estilo Desmos: Chave Inglesa 37x37 e Cápsula de Zoom Vertical 37x71) -->
+      <div class="absolute top-[5px] right-[5px] flex flex-col items-center gap-1.5 z-20 select-none">
+        <!-- Botão Configurações do Gráfico (Ícone Wrench / Chave Inglesa 37x37px) -->
+        <button id="settings-btn" title="Configurações do Gráfico" class="w-[37px] h-[37px] flex items-center justify-center bg-[#ededed] hover:bg-[#e0e0e0] border border-[rgba(0,0,0,0.15)] rounded-[5px] text-[#444444] hover:text-[#111111] transition-colors cursor-pointer" onclick="if(window._toggleSettings) window._toggleSettings()">
+          <i data-lucide="wrench" class="w-4 h-4 pointer-events-none"></i>
         </button>
 
-        <!-- Cápsula Vertical de Zoom Integrada (Zoom In, Zoom Out, Vista Padrão) -->
-        <div class="flex flex-col bg-white/95 backdrop-blur-sm rounded-lg shadow-sm border border-gray-200 overflow-hidden divide-y divide-gray-200">
-          <button id="zoom-in-btn" title="Aproximar (+)" class="w-9 h-9 flex items-center justify-center text-gray-600 hover:text-blue-600 hover:bg-gray-50 active:bg-gray-100 transition-colors cursor-pointer" onclick="if(window._zoomIn) window._zoomIn()">
-            <i data-lucide="plus" class="w-4 h-4"></i>
+        <!-- Cápsula Vertical de Zoom Integrada (37x71px base, expande para 37x107px com Home) -->
+        <div id="zoom-container" class="flex flex-col bg-[#ededed] border border-[rgba(0,0,0,0.15)] rounded-[5px] overflow-hidden divide-y divide-[rgba(0,0,0,0.12)] w-[37px] transition-all duration-150">
+          <button id="zoom-in-btn" title="Aproximar (+)" class="w-[35px] h-[35px] flex items-center justify-center text-[#444444] hover:text-[#111111] hover:bg-[#e0e0e0] transition-colors cursor-pointer" onclick="if(window._zoomIn) window._zoomIn()">
+            <i data-lucide="plus" class="w-4 h-4 pointer-events-none"></i>
           </button>
-          <button id="zoom-out-btn" title="Afastar (-)" class="w-9 h-9 flex items-center justify-center text-gray-600 hover:text-blue-600 hover:bg-gray-50 active:bg-gray-100 transition-colors cursor-pointer" onclick="if(window._zoomOut) window._zoomOut()">
-            <i data-lucide="minus" class="w-4 h-4"></i>
+          <button id="zoom-out-btn" title="Afastar (-)" class="w-[35px] h-[35px] flex items-center justify-center text-[#444444] hover:text-[#111111] hover:bg-[#e0e0e0] transition-colors cursor-pointer" onclick="if(window._zoomOut) window._zoomOut()">
+            <i data-lucide="minus" class="w-4 h-4 pointer-events-none"></i>
           </button>
-          <button id="reset-view-btn" title="Padrão (Vista Padrão)" class="w-9 h-9 flex items-center justify-center text-gray-600 hover:text-blue-600 hover:bg-gray-50 active:bg-gray-100 transition-colors cursor-pointer" onclick="if(window._resetView) window._resetView()">
-            <i data-lucide="home" class="w-4 h-4"></i>
+          <button id="reset-view-btn" title="Padrão (Vista Padrão)" class="w-[35px] h-[35px] hidden items-center justify-center text-[#444444] hover:text-[#111111] hover:bg-[#e0e0e0] transition-colors cursor-pointer" onclick="if(window._resetView) window._resetView()">
+            <i data-lucide="home" class="w-4 h-4 pointer-events-none"></i>
           </button>
         </div>
       </div>
@@ -217,7 +252,7 @@
     <!-- ═══════════════════════════════════════
          GRAPH SETTINGS POPOVER (Desmos Style)
     ══════════════════════════════════════════ -->
-    <div id="graph-settings-popover" class="fixed top-14 right-4 z-50 hidden flex-col w-[320px] max-w-[92vw] bg-white/98 backdrop-blur-md rounded-2xl shadow-2xl border border-gray-200/90 text-gray-800 text-xs overflow-hidden transition-all duration-150 select-none">
+    <div id="graph-settings-popover" class="absolute top-[48px] right-[5px] z-50 hidden flex-col w-[290px] max-w-[92vw] bg-white rounded-[6px] shadow-xl border border-[rgba(0,0,0,0.15)] text-gray-800 text-xs overflow-hidden transition-all duration-150 select-none">
       
       <!-- Popover Header -->
       <div class="px-4 py-3 border-b border-gray-100 flex justify-between items-center bg-gray-50/70">
@@ -368,5 +403,6 @@
     <script src="/giacwasm.js"></script>
 
     <script type="module" src="/src/main.ts"></script>
+    </div>
   </body>
 </html>

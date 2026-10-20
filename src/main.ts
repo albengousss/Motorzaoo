@@ -2134,6 +2134,23 @@ function compileAllExpressions() {
     }
 }
 
+
+function updateZoomHomeButton() {
+    const resetBtn = document.getElementById('reset-view-btn');
+    if (!resetBtn) return;
+    const isAtDefault = StateManager.viewMode === '3d'
+        ? (Math.abs(Camera3D.distance - 18) < 1e-2 && Math.abs(Camera3D.theta - Math.PI / 4) < 1e-2 && Math.abs(Camera3D.phi - Math.PI / 6) < 1e-2 && Math.abs(Camera3D.target[0]) < 1e-3 && Math.abs(Camera3D.target[1]) < 1e-3 && Math.abs(Camera3D.target[2]) < 1e-3)
+        : (Math.abs(Camera.xMin - (-10)) < 1e-3 && Math.abs(Camera.xMax - 10) < 1e-3 && Math.abs(Camera.yMin - (-10)) < 1e-3 && Math.abs(Camera.yMax - 10) < 1e-3);
+    
+    if (isAtDefault) {
+        resetBtn.classList.add('hidden');
+        resetBtn.classList.remove('flex');
+    } else {
+        resetBtn.classList.remove('hidden');
+        resetBtn.classList.add('flex');
+    }
+}
+
 function drawFrame() {
     if (expressionsDirty) {
         compileAllExpressions();
@@ -2462,6 +2479,7 @@ function drawFrame() {
     if (globalTracePoint) {
         renderer.drawDiscretePoint(globalTracePoint.x, globalTracePoint.y, globalTracePoint.color);
     }
+    updateZoomHomeButton();
 }
 
 ExpressionManager.init(markExpressionsDirty);
@@ -3007,7 +3025,7 @@ const sidebarResizer = document.getElementById('sidebar-resizer');
 const sidebarExpandTab = document.getElementById('sidebar-expand-tab');
 const collapseSidebarBtn = document.getElementById('collapse-sidebar-btn');
 
-let savedSidebarWidth = 380;
+let savedSidebarWidth = 500;
 let isDraggingSidebarResizer = false;
 
 function collapseDesktopSidebar(fromDrag: boolean = false) {
@@ -3018,7 +3036,7 @@ function collapseDesktopSidebar(fromDrag: boolean = false) {
     sidebarEl.style.display = 'none';
     if (sidebarResizer) {
         sidebarResizer.style.display = 'none';
-        sidebarResizer.classList.remove('bg-purple-600', 'w-2', 'is-dragging');
+        sidebarResizer.classList.remove('is-dragging');
     }
     if (sidebarExpandTab) sidebarExpandTab.style.display = 'flex';
 
@@ -3036,7 +3054,7 @@ function collapseDesktopSidebar(fromDrag: boolean = false) {
 function expandDesktopSidebar() {
     if (window.innerWidth <= 768) return;
     sidebarEl.style.display = 'flex';
-    const restoreW = Math.max(220, Math.min(Math.floor(window.innerWidth * 0.75), savedSidebarWidth || 380));
+    const restoreW = Math.max(290, Math.min(Math.floor(window.innerWidth * 0.80), savedSidebarWidth || 500));
     sidebarEl.style.width = `${restoreW}px`;
     if (sidebarResizer) sidebarResizer.style.display = 'flex';
     if (sidebarExpandTab) sidebarExpandTab.style.display = 'none';
@@ -3058,14 +3076,14 @@ if (sidebarResizer) {
         sidebarResizer.setPointerCapture(e.pointerId);
         document.body.classList.add('select-none');
         document.body.style.cursor = 'col-resize';
-        sidebarResizer.classList.add('bg-purple-600', 'w-2', 'is-dragging');
+        sidebarResizer.classList.add('is-dragging');
     });
 
     sidebarResizer.addEventListener('pointermove', (e) => {
         if (!isDraggingSidebarResizer) return;
         const newWidth = e.clientX;
         const minCollapseThreshold = 100; // Arrastou além da barra para a esquerda: a barra e a matriz somem!
-        const maxAllowedWidth = Math.floor(window.innerWidth * 0.75);
+        const maxAllowedWidth = Math.floor(window.innerWidth * 0.80);
 
         if (newWidth < minCollapseThreshold) {
             try {
@@ -3082,7 +3100,7 @@ if (sidebarResizer) {
             if (sidebarExpandTab) sidebarExpandTab.style.display = 'none';
         }
 
-        const clampedWidth = Math.min(maxAllowedWidth, Math.max(100, newWidth));
+        const clampedWidth = Math.min(maxAllowedWidth, Math.max(290, newWidth));
         sidebarEl.style.width = `${clampedWidth}px`;
         savedSidebarWidth = clampedWidth;
 
@@ -3101,7 +3119,7 @@ if (sidebarResizer) {
         }
         document.body.classList.remove('select-none');
         document.body.style.cursor = '';
-        sidebarResizer.classList.remove('bg-purple-600', 'w-2', 'is-dragging');
+        sidebarResizer.classList.remove('is-dragging');
         resizeAll();
         drawFrame();
         ExpressionManager.updateAllMatrixSizes();

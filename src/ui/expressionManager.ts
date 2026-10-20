@@ -28,7 +28,7 @@ export class ExpressionManager {
             <div>
                 <span class="text-[11px] font-semibold text-gray-500 block mb-1.5">Cor</span>
                 <div class="grid grid-cols-6 gap-1.5" id="style-color-palette">
-                    ${['#c74440', '#2d70b3', '#388c46', '#6042a6', '#fa7e19', '#333333'].map(c => `
+                    ${['#c74440', '#2d70b3', '#388c46', '#6042a6', '#fa7e19', '#000000'].map(c => `
                         <button class="color-swatch w-7 h-7 rounded-full cursor-pointer transition-transform hover:scale-110 active:scale-95 border-2 border-white shadow-sm flex items-center justify-center" data-color="${c}" style="background-color: ${c}">
                         </button>
                     `).join('')}
@@ -185,16 +185,16 @@ export class ExpressionManager {
             const isVisible = visBtn.dataset.visible !== 'false';
             if (isVisible) {
                 visBtn.style.backgroundColor = color;
-                visBtn.style.border = '2px solid #ffffff';
-                visBtn.style.boxShadow = '0 0 0 1px ' + color;
+                visBtn.style.border = '2px solid ' + color;
+                visBtn.style.boxShadow = 'none';
             } else {
-                visBtn.style.backgroundColor = 'transparent';
+                visBtn.style.backgroundColor = '#ffffff';
                 visBtn.style.border = '2px dashed ' + color;
                 visBtn.style.boxShadow = 'none';
             }
         }
         if (numSpan) {
-            numSpan.style.color = '#757575';
+            numSpan.style.color = '#666666';
         }
     }
 
@@ -347,21 +347,24 @@ export class ExpressionManager {
             });
         }
 
-        // Botões Undo / Redo do cabeçalho
-        const undoBtn = document.getElementById('undo-btn') as HTMLButtonElement;
-        const redoBtn = document.getElementById('redo-btn') as HTMLButtonElement;
-        if (undoBtn) {
-            undoBtn.addEventListener('click', () => HistoryManager.undo());
-        }
-        if (redoBtn) {
-            redoBtn.addEventListener('click', () => HistoryManager.redo());
+        // Botões Undo / Redo do cabeçalho global e da sidebar
+        const undoBtns = [document.getElementById('undo-btn'), document.getElementById('sidebar-undo-btn')].filter(Boolean) as HTMLButtonElement[];
+        const redoBtns = [document.getElementById('redo-btn'), document.getElementById('sidebar-redo-btn')].filter(Boolean) as HTMLButtonElement[];
+        undoBtns.forEach(btn => btn.addEventListener('click', () => HistoryManager.undo()));
+        redoBtns.forEach(btn => btn.addEventListener('click', () => HistoryManager.redo()));
+
+        const editListBtn = document.getElementById('edit-list-btn');
+        if (editListBtn) {
+            editListBtn.addEventListener('click', () => {
+                if (this.container) this.container.classList.toggle('is-editing-list');
+            });
         }
 
         HistoryManager.init(
             () => this.onUpdateCallback(),
             (canUndo, canRedo) => {
-                if (undoBtn) undoBtn.disabled = !canUndo;
-                if (redoBtn) redoBtn.disabled = !canRedo;
+                undoBtns.forEach(btn => btn.disabled = !canUndo);
+                redoBtns.forEach(btn => btn.disabled = !canRedo);
             }
         );
 
@@ -379,7 +382,10 @@ export class ExpressionManager {
         blocks.forEach((block: any) => {
             if (block.dataset.type === 'expression') {
                 const numSpan = block.querySelector('.block-number');
-                if (numSpan) numSpan.innerText = index.toString();
+                if (numSpan) {
+                    numSpan.textContent = index.toString();
+                    numSpan.innerText = index.toString();
+                }
                 index++;
             }
         });
@@ -400,33 +406,35 @@ export class ExpressionManager {
         }
         if (folderId) {
             block.dataset.folderId = folderId;
-            block.className = 'flex border-b border-gray-100 bg-white transition-colors duration-200 relative group pl-3 border-l-4 border-l-blue-300';
+            block.className = 'flex border-b border-[#dcdcdc] bg-white transition-colors duration-150 relative group pl-3 border-l-4 border-l-blue-300 min-h-[43px]';
         } else {
-            block.className = 'flex border-b border-gray-100 bg-white transition-colors duration-200 relative group';
+            block.className = 'flex border-b border-[#dcdcdc] bg-white transition-colors duration-150 relative group min-h-[43px]';
         }
 
+        // Aba lateral esquerda (.dcg-tab) estilo Desmos (largura exata 38px)
         const grabZone = document.createElement('div');
-        grabZone.className = 'w-14 bg-white flex items-center justify-start pl-2 shrink-0 select-none gap-2';
+        grabZone.className = 'dcg-tab w-[38px] min-w-[38px] max-w-[38px] bg-[#eeeeee] flex items-center justify-center shrink-0 select-none relative';
         
-        const colors = ['#c74440', '#2d70b3', '#388c46', '#6042a6', '#fa7e19'];
+        // Ciclo estrito de 6 cores oficiais Desmos (Vermelho, Azul, Verde, Roxo, Laranja, Preto)
+        const colors = ['#c74440', '#2d70b3', '#388c46', '#6042a6', '#fa7e19', '#000000'];
         const colorIndex = Array.from(this.container.children).length % colors.length;
         const blockColor = colors[colorIndex];
         block.dataset.color = blockColor;
         block.dataset.lineStyle = 'solid';
         block.dataset.lineWidth = '2.5';
 
-        // Row Index Number (Desmos: número à esquerda do círculo)
+        // Row Index Number (Desmos: número 10.4px posicionado em top: 2px, left: 3px)
         const numberSpan = document.createElement('span');
         numberSpan.className = 'block-number';
-        numberSpan.style.cssText = 'font-size: 13px; font-weight: 500; color: #757575; min-width: 16px; text-align: right; cursor: grab; user-select: none;';
+        numberSpan.textContent = this.blockCounter.toString();
         numberSpan.innerText = this.blockCounter.toString();
 
-        // Desmos-style solid circle toggle
+        // Círculo oficial Desmos (29x29px centralizado na aba)
         const visibilityBtn = document.createElement('div');
         visibilityBtn.className = 'visibility-toggle';
         visibilityBtn.dataset.visible = 'true';
         visibilityBtn.title = 'Clique: ocultar/exibir | Botão direito ou segurar: estilo';
-        visibilityBtn.style.cssText = 'width: 22px; height: 22px; border-radius: 50%; background-color: ' + blockColor + '; border: 2px solid #ffffff; box-shadow: 0 0 0 1px ' + blockColor + '; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s ease; position: relative; flex-shrink: 0;';
+        visibilityBtn.style.cssText = 'width: 29px; height: 29px; border-radius: 50%; background-color: ' + blockColor + '; border: 2px solid ' + blockColor + '; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s ease; position: relative; margin: auto; flex-shrink: 0;';
         
         const warningTrigger = document.createElement('div');
         warningTrigger.className = 'block-warning-trigger hidden';
@@ -480,13 +488,13 @@ export class ExpressionManager {
             visibilityBtn.dataset.visible = isVisible ? 'false' : 'true';
             const currentColor = block.dataset.color || blockColor;
             if (isVisible) {
-                visibilityBtn.style.backgroundColor = 'transparent';
+                visibilityBtn.style.backgroundColor = '#ffffff';
                 visibilityBtn.style.border = '2px dashed ' + currentColor;
                 visibilityBtn.style.boxShadow = 'none';
             } else {
                 visibilityBtn.style.backgroundColor = currentColor;
-                visibilityBtn.style.border = '2px solid #ffffff';
-                visibilityBtn.style.boxShadow = '0 0 0 1px ' + currentColor;
+                visibilityBtn.style.border = '2px solid ' + currentColor;
+                visibilityBtn.style.boxShadow = 'none';
             }
             this.onUpdateCallback();
             HistoryManager.recordState(true);
@@ -498,7 +506,7 @@ export class ExpressionManager {
         };
         
         const iconSlot = document.createElement('div');
-        iconSlot.className = 'relative w-[24px] h-[24px] flex items-center justify-center shrink-0';
+        iconSlot.className = 'relative w-[29px] h-[29px] flex items-center justify-center shrink-0';
         iconSlot.appendChild(visibilityBtn);
         iconSlot.appendChild(warningTrigger);
 
@@ -550,6 +558,18 @@ export class ExpressionManager {
         `;
         contentZone.appendChild(sliderRow);
         
+        // Dynamic Focus Highlight: aba transiciona para #d2e7f5 e borda para #2d70b3
+        block.addEventListener('focusin', () => {
+            grabZone.style.backgroundColor = '#d2e7f5';
+            block.classList.add('is-focused');
+        });
+        block.addEventListener('focusout', (e) => {
+            if (!block.contains((e as FocusEvent).relatedTarget as Node)) {
+                grabZone.style.backgroundColor = '#eeeeee';
+                block.classList.remove('is-focused');
+            }
+        });
+
         block.appendChild(grabZone);
         block.appendChild(contentZone);
         this.container.appendChild(block);
@@ -1162,7 +1182,7 @@ export class ExpressionManager {
         }
 
         const grabZone = document.createElement('div');
-        grabZone.className = 'w-12 bg-transparent flex flex-col items-center justify-start pt-[14px] shrink-0 select-none text-amber-500 gap-1.5 cursor-grab';
+        grabZone.className = 'dcg-tab w-[38px] min-w-[38px] max-w-[38px] bg-[#eeeeee] flex flex-col items-center justify-center shrink-0 select-none text-amber-500 relative cursor-grab';
         grabZone.innerHTML = `
             <div class="w-7 h-7 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center shadow-xs" title="Bloco de Nota Explicativa">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
@@ -1363,7 +1383,7 @@ export class ExpressionManager {
         }
 
         const grabZone = document.createElement('div');
-        grabZone.className = 'w-12 bg-white flex flex-col items-center justify-start pt-[14px] shrink-0 select-none text-gray-500 gap-1.5';
+        grabZone.className = 'dcg-tab w-[38px] min-w-[38px] max-w-[38px] bg-[#eeeeee] flex flex-col items-center justify-center shrink-0 select-none text-gray-500 relative';
 
         const visibilityBtn = document.createElement('div');
         visibilityBtn.className = 'visibility-toggle';

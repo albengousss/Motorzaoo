@@ -1,6 +1,28 @@
 import { Camera } from './camera';
 import { StateManager } from '../core/stateManager';
 
+
+function formatDesmosAxisNumber(val: number, isRad: boolean = false): string {
+    if (Math.abs(val) < 1e-10) return '0';
+    // Se o valor estiver no modo radianos ou for múltiplo de π/4, formatar simbolicamente
+    const piRatio = val / Math.PI;
+    const nearestQuarter = Math.round(piRatio * 4);
+    if ((isRad || Math.abs(val % (Math.PI / 4)) < 1e-4) && Math.abs(piRatio * 4 - nearestQuarter) < 1e-4) {
+        const sign = nearestQuarter < 0 ? '-' : '';
+        const absQ = Math.abs(nearestQuarter);
+        if (absQ === 0) return '0';
+        if (absQ === 4) return `${sign}π`;
+        if (absQ === 8) return `${sign}2π`;
+        if (absQ % 4 === 0) return `${sign}${absQ / 4}π`;
+        if (absQ === 2) return `${sign}π/2`;
+        if (absQ === 6) return `${sign}3π/2`;
+        if (absQ % 2 === 0) return `${sign}${absQ / 2}π/2`;
+        if (absQ === 1) return `${sign}π/4`;
+        return `${sign}${absQ}π/4`;
+    }
+    return parseFloat(val.toFixed(6)).toString();
+}
+
 export class Renderer {
     private ctx: CanvasRenderingContext2D;
     private canvas: HTMLCanvasElement;
@@ -43,7 +65,7 @@ export class Renderer {
 	drawArea(points: {x: number, y: number}[], color: string = '#2d70b3') {
         if (points.length < 2) return;
         
-        this.ctx.fillStyle = color + '40'; // Adiciona 25% de opacidade na cor
+        this.ctx.fillStyle = color + '66'; // Opacidade oficial Desmos de 40% (#...66)
         this.ctx.beginPath();
         
         // Começa na base (y=0) do primeiro ponto
@@ -69,7 +91,7 @@ export class Renderer {
 
     drawPolygon(points: { x: number, y: number }[], color: string = '#2d70b3') {
         if (!points || points.length < 3) return;
-        this.ctx.fillStyle = color + '40'; // 25% opacity
+        this.ctx.fillStyle = color + '66'; // Opacidade oficial Desmos de 40% (#...66)
         this.ctx.beginPath();
         const startX = Camera.toPixelX(points[0].x);
         const startY = Camera.toPixelY(points[0].y);
@@ -105,7 +127,7 @@ export class Renderer {
         const rangeX = Camera.xMax - Camera.xMin;
         const rangeY = Camera.yMax - Camera.yMin;
 
-        // Calcula a escala de cada eixo independentemente para manter marcações perfeitas em qualquer proporção
+        // Calcula a escala de cada eixo independentemente com base na densidade ideal do Desmos
         const calcStep = (range: number) => {
             const rawStep = range / 10;
             const mag = Math.floor(Math.log10(rawStep));
@@ -116,65 +138,79 @@ export class Renderer {
             return step;
         };
 
-        const stepX = (StateManager.xStep && StateManager.xStep > 0) ? StateManager.xStep : calcStep(rangeX);
-        const stepY = (StateManager.yStep && StateManager.yStep > 0) ? StateManager.yStep : calcStep(rangeY);
+        const isRadMode = StateManager.angleMode === 'radians';
+        const majorStepX = (StateManager.xStep && StateManager.xStep > 0) ? StateManager.xStep : calcStep(rangeX);
+        const majorStepY = (StateManager.yStep && StateManager.yStep > 0) ? StateManager.yStep : calcStep(rangeY);
 
-        // Usar Camera.width/height (dimensões LÓGICAS)
+        // Subdivisão secundária (minor grid): 5 divisões por padrão ou 4 se passo for múltiplo de 2
+        const minorSubdivsX = (Math.round(majorStepX) % 2 === 0 && Math.round(majorStepX) % 5 !== 0) ? 4 : 5;
+        const minorStepX = majorStepX / minorSubdivsX;
+
+        const minorSubdivsY = (Math.round(majorStepY) % 2 === 0 && Math.round(majorStepY) % 5 !== 0) ? 4 : 5;
+        const minorStepY = majorStepY / minorSubdivsY;
+
         const W = Camera.width;
         const H = Camera.height;
 
         const isProjector = StateManager.projectorMode;
-        this.ctx.font = isProjector ? 'bold 14px Arial' : '12px Arial';
-        this.ctx.fillStyle = isProjector ? '#222' : '#666';
-        this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'top';
+        this.ctx.font = isProjector ? 'bold 16px Arial' : '13px Arial';
+        this.ctx.fillStyle = isProjector ? '#111111' : '#666666';
 
-        const axisWidth = isProjector ? 3 : 2;
-        const gridColor = isProjector ? '#c8c8c8' : '#e0e0e0';
-        const gridWidth = isProjector ? 1.5 : 1;
+        // Cores oficiais Desmos
+        const minorGridColor = isProjector ? 'rgba(0, 0, 0, 0.22)' : 'rgba(0, 0, 0, 0.1215)'; // #e0e0e0
+        const majorGridColor = isProjector ? 'rgba(0, 0, 0, 0.55)' : 'rgba(0, 0, 0, 0.40)';   // #999999
+        const axisColor = isProjector ? 'rgba(0, 0, 0, 1.0)' : 'rgba(0, 0, 0, 0.902)';          // #191919
+        const axisWidth = isProjector ? 2.5 : 1.5;
+
         const showAxes = this.showAxes && StateManager.showAxes;
         const showGrid = this.showGrid && StateManager.gridType !== 'none';
         const isPolar = StateManager.gridType === 'polar';
 
+        // Clamping suave das coordenadas do eixo 0 com margem para badges
         let zeroY = Camera.toPixelY(0);
-        if (zeroY < 20) zeroY = 20; 
-        if (zeroY > H - 20) zeroY = H - 20;
+        const isClampedY = zeroY < 22 || zeroY > H - 22;
+        if (zeroY < 22) zeroY = 22; 
+        if (zeroY > H - 22) zeroY = H - 22;
 
         let zeroX = Camera.toPixelX(0);
-        if (zeroX < 20) zeroX = 20;
-        if (zeroX > W - 20) zeroX = W - 20;
+        const isClampedX = zeroX < 26 || zeroX > W - 26;
+        if (zeroX < 26) zeroX = 26;
+        if (zeroX > W - 26) zeroX = W - 26;
 
         // 1. Grelha Polar (se ativada)
         if (showGrid && isPolar) {
-            const centerX = Camera.toPixelX(0);
-            const centerY = Camera.toPixelY(0);
+            const centerX = Math.floor(Camera.toPixelX(0)) + 0.5;
+            const centerY = Math.floor(Camera.toPixelY(0)) + 0.5;
             const maxRadiusMath = Math.hypot(
                 Math.max(Math.abs(Camera.xMin), Math.abs(Camera.xMax)),
                 Math.max(Math.abs(Camera.yMin), Math.abs(Camera.yMax))
             );
-            this.ctx.strokeStyle = gridColor;
-            this.ctx.lineWidth = gridWidth;
+            this.ctx.lineWidth = 1;
 
-            // Círculos concêntricos a cada stepX
-            for (let r = stepX; r <= maxRadiusMath * 1.25; r += stepX) {
+            // Círculos concêntricos: secundários (minor) e principais (major)
+            for (let r = minorStepX; r <= maxRadiusMath * 1.25; r += minorStepX) {
                 const pxRadius = (r / (Camera.xMax - Camera.xMin)) * W;
                 if (pxRadius <= 0) continue;
+                const isMajor = Math.abs(r % majorStepX) < 1e-5 || Math.abs(r % majorStepX - majorStepX) < 1e-5;
+                this.ctx.strokeStyle = isMajor ? majorGridColor : minorGridColor;
                 this.ctx.beginPath();
                 this.ctx.arc(centerX, centerY, pxRadius, 0, 2 * Math.PI);
                 this.ctx.stroke();
 
-                if (showAxes && r <= Camera.xMax) {
-                    const px = Camera.toPixelX(r);
-                    this.ctx.fillStyle = isProjector ? '#222' : '#666';
+                if (isMajor && showAxes && r <= Camera.xMax) {
+                    const px = Math.floor(Camera.toPixelX(r)) + 0.5;
+                    this.ctx.fillStyle = isProjector ? '#111111' : '#666666';
                     this.ctx.textAlign = 'center';
                     this.ctx.textBaseline = 'top';
-                    this.ctx.fillText(parseFloat(r.toFixed(4)).toString(), px, zeroY + 5);
+                    this.ctx.fillText(formatDesmosAxisNumber(r, isRadMode), px, zeroY + 5);
                 }
             }
 
-            // Raios angulares a cada 15 graus
+            // Raios angulares a cada 15 graus (secundários) e 30 graus (principais)
             const rayLength = Math.hypot(W, H) * 1.5;
             for (let deg = 0; deg < 360; deg += 15) {
+                const isMajorRay = deg % 30 === 0;
+                this.ctx.strokeStyle = isMajorRay ? majorGridColor : minorGridColor;
                 const rad = (deg * Math.PI) / 180;
                 this.ctx.beginPath();
                 this.ctx.moveTo(centerX, centerY);
@@ -183,69 +219,145 @@ export class Renderer {
             }
         }
 
-        // 2. Grelha Cartesiana e Eixo X
-        const startX = Math.ceil(Camera.xMin / stepX) * stepX;
-        for (let x = startX; x <= Camera.xMax; x += stepX) {
-            const px = Camera.toPixelX(x);
-            const isAxis = Math.abs(x) < 1e-10;
-            if ((isAxis && showAxes) || (!isAxis && showGrid && !isPolar)) {
-                this.ctx.beginPath();
-                this.ctx.moveTo(px, 0);
-                this.ctx.lineTo(px, H);
-                
-                if (isAxis) {
-                    this.ctx.strokeStyle = hoverY ? '#2d70b3' : '#000';
-                    this.ctx.lineWidth = hoverY ? (axisWidth + 1) : axisWidth;
-                } else {
-                    this.ctx.strokeStyle = gridColor;
-                    this.ctx.lineWidth = gridWidth;
+        // 2. Grelha Cartesiana em 2 Camadas (Minor e Major) + Eixo X (half-pixel alignment +0.5)
+        if (showGrid && !isPolar) {
+            // Camada Secundária (Minor Gridlines)
+            this.ctx.strokeStyle = minorGridColor;
+            this.ctx.lineWidth = 1;
+            this.ctx.beginPath();
+            const startMinorX = Math.ceil(Camera.xMin / minorStepX) * minorStepX;
+            for (let x = startMinorX; x <= Camera.xMax; x += minorStepX) {
+                const isMajor = Math.abs(x % majorStepX) < 1e-5 || Math.abs(x % majorStepX - majorStepX) < 1e-5;
+                const isAxis = Math.abs(x) < 1e-10;
+                if (!isMajor && !isAxis) {
+                    const px = Math.floor(Camera.toPixelX(x)) + 0.5;
+                    this.ctx.moveTo(px, 0);
+                    this.ctx.lineTo(px, H);
                 }
-                this.ctx.stroke();
+            }
+            this.ctx.stroke();
 
-                if (!isAxis && showAxes) {
-                    const numStr = parseFloat(x.toFixed(4)).toString();
-                    this.ctx.fillStyle = isProjector ? '#222' : '#666';
-                    this.ctx.textAlign = 'center';
-                    this.ctx.textBaseline = 'top';
-                    this.ctx.fillText(numStr, px, zeroY + 5);
+            // Camada Principal (Major Gridlines)
+            this.ctx.strokeStyle = majorGridColor;
+            this.ctx.lineWidth = 1;
+            this.ctx.beginPath();
+            const startMajorX = Math.ceil(Camera.xMin / majorStepX) * majorStepX;
+            for (let x = startMajorX; x <= Camera.xMax; x += majorStepX) {
+                const isAxis = Math.abs(x) < 1e-10;
+                if (!isAxis) {
+                    const px = Math.floor(Camera.toPixelX(x)) + 0.5;
+                    this.ctx.moveTo(px, 0);
+                    this.ctx.lineTo(px, H);
                 }
+            }
+            this.ctx.stroke();
+        }
+
+        // 3. Grelha Cartesiana em 2 Camadas (Minor e Major) + Eixo Y (half-pixel alignment +0.5)
+        if (showGrid && !isPolar) {
+            // Camada Secundária (Minor Gridlines Y)
+            this.ctx.strokeStyle = minorGridColor;
+            this.ctx.lineWidth = 1;
+            this.ctx.beginPath();
+            const startMinorY = Math.ceil(Camera.yMin / minorStepY) * minorStepY;
+            for (let y = startMinorY; y <= Camera.yMax; y += minorStepY) {
+                const isMajor = Math.abs(y % majorStepY) < 1e-5 || Math.abs(y % majorStepY - majorStepY) < 1e-5;
+                const isAxis = Math.abs(y) < 1e-10;
+                if (!isMajor && !isAxis) {
+                    const py = Math.floor(Camera.toPixelY(y)) + 0.5;
+                    this.ctx.moveTo(0, py);
+                    this.ctx.lineTo(W, py);
+                }
+            }
+            this.ctx.stroke();
+
+            // Camada Principal (Major Gridlines Y)
+            this.ctx.strokeStyle = majorGridColor;
+            this.ctx.lineWidth = 1;
+            this.ctx.beginPath();
+            const startMajorY = Math.ceil(Camera.yMin / majorStepY) * majorStepY;
+            for (let y = startMajorY; y <= Camera.yMax; y += majorStepY) {
+                const isAxis = Math.abs(y) < 1e-10;
+                if (!isAxis) {
+                    const py = Math.floor(Camera.toPixelY(y)) + 0.5;
+                    this.ctx.moveTo(0, py);
+                    this.ctx.lineTo(W, py);
+                }
+            }
+            this.ctx.stroke();
+        }
+
+        // 4. Desenho dos Eixos Principais (X=0 e Y=0) com cor #191919 e espessura 1.5px
+        if (showAxes) {
+            // Eixo Vertical Y (X = 0)
+            const pyAxisX = Math.floor(Camera.toPixelX(0)) + 0.5;
+            if (pyAxisX >= -10 && pyAxisX <= W + 10) {
+                this.ctx.strokeStyle = hoverY ? '#2d70b3' : axisColor;
+                this.ctx.lineWidth = hoverY ? (axisWidth + 1) : axisWidth;
+                this.ctx.beginPath();
+                this.ctx.moveTo(pyAxisX, 0);
+                this.ctx.lineTo(pyAxisX, H);
+                this.ctx.stroke();
+            }
+
+            // Eixo Horizontal X (Y = 0)
+            const pxAxisY = Math.floor(Camera.toPixelY(0)) + 0.5;
+            if (pxAxisY >= -10 && pxAxisY <= H + 10) {
+                this.ctx.strokeStyle = hoverX ? '#2d70b3' : axisColor;
+                this.ctx.lineWidth = hoverX ? (axisWidth + 1) : axisWidth;
+                this.ctx.beginPath();
+                this.ctx.moveTo(0, pxAxisY);
+                this.ctx.lineTo(W, pxAxisY);
+                this.ctx.stroke();
             }
         }
 
-        // 3. Grelha Cartesiana e Eixo Y
-        this.ctx.textAlign = 'right';
-        this.ctx.textBaseline = 'middle';
-        const startY = Math.ceil(Camera.yMin / stepY) * stepY;
-        for (let y = startY; y <= Camera.yMax; y += stepY) {
-            const py = Camera.toPixelY(y);
-            const isAxis = Math.abs(y) < 1e-10;
-            if ((isAxis && showAxes) || (!isAxis && showGrid && !isPolar)) {
-                this.ctx.beginPath();
-                this.ctx.moveTo(0, py);
-                this.ctx.lineTo(W, py);
-                
-                if (isAxis) {
-                    this.ctx.strokeStyle = hoverX ? '#2d70b3' : '#000';
-                    this.ctx.lineWidth = hoverX ? (axisWidth + 1) : axisWidth;
-                } else {
-                    this.ctx.strokeStyle = gridColor;
-                    this.ctx.lineWidth = gridWidth;
-                }
-                this.ctx.stroke();
+        // 5. Rótulos Numéricos dos Eixos (com suporte a badge translúcido de borda e múltiplos de π)
+        if (showAxes) {
+            this.ctx.font = isProjector ? 'bold 16px Arial' : '13px Arial';
+            this.ctx.fillStyle = isProjector ? '#111111' : '#666666';
 
-                if (!isAxis && showAxes) {
-                    const numStr = parseFloat(y.toFixed(4)).toString();
-                    this.ctx.fillStyle = isProjector ? '#222' : '#666';
-                    this.ctx.textAlign = 'right';
-                    this.ctx.textBaseline = 'middle';
-                    this.ctx.fillText(numStr, zeroX - 5, py);
+            // Rótulos do Eixo X
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'top';
+            const startMajorX = Math.ceil(Camera.xMin / majorStepX) * majorStepX;
+            for (let x = startMajorX; x <= Camera.xMax; x += majorStepX) {
+                if (Math.abs(x) < 1e-10) continue;
+                const px = Math.floor(Camera.toPixelX(x)) + 0.5;
+                const numStr = formatDesmosAxisNumber(x, isRadMode);
+
+                // Badge de fundo suave se estiver colado na borda da tela
+                if (isClampedY) {
+                    const textMetrics = this.ctx.measureText(numStr);
+                    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+                    this.ctx.fillRect(px - textMetrics.width / 2 - 2, zeroY + 3, textMetrics.width + 4, 16);
+                    this.ctx.fillStyle = isProjector ? '#111111' : '#666666';
                 }
+                this.ctx.fillText(numStr, px, zeroY + 4);
+            }
+
+            // Rótulos do Eixo Y
+            this.ctx.textAlign = 'right';
+            this.ctx.textBaseline = 'middle';
+            const startMajorY = Math.ceil(Camera.yMin / majorStepY) * majorStepY;
+            for (let y = startMajorY; y <= Camera.yMax; y += majorStepY) {
+                if (Math.abs(y) < 1e-10) continue;
+                const py = Math.floor(Camera.toPixelY(y)) + 0.5;
+                const numStr = formatDesmosAxisNumber(y, isRadMode);
+
+                if (isClampedX) {
+                    const textMetrics = this.ctx.measureText(numStr);
+                    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+                    this.ctx.fillRect(zeroX - textMetrics.width - 7, py - 8, textMetrics.width + 4, 16);
+                    this.ctx.fillStyle = isProjector ? '#111111' : '#666666';
+                }
+                this.ctx.fillText(numStr, zeroX - 5, py);
             }
         }
 
-        // 4. Setas nos Eixos (se ativadas)
+        // 6. Setas nos Eixos (se ativadas)
         if (showAxes && StateManager.showArrows) {
-            this.ctx.fillStyle = '#000';
+            this.ctx.fillStyle = axisColor;
             // Seta no Eixo X (apontando para a direita)
             if (zeroY >= 0 && zeroY <= H) {
                 this.ctx.beginPath();
@@ -266,10 +378,10 @@ export class Renderer {
             }
         }
 
-        // 5. Legendas dos Eixos X e Y
+        // 7. Legendas dos Eixos X e Y
         if (showAxes) {
-            this.ctx.fillStyle = isProjector ? '#111' : '#444';
-            this.ctx.font = isProjector ? 'bold 13px Arial' : 'italic 12px Arial';
+            this.ctx.fillStyle = isProjector ? '#111111' : '#444444';
+            this.ctx.font = isProjector ? 'bold 14px Arial' : 'italic 13px Arial';
             if (StateManager.xLabel && StateManager.xLabel.trim()) {
                 this.ctx.textAlign = 'right';
                 this.ctx.textBaseline = 'bottom';
