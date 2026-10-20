@@ -6,7 +6,7 @@
     <title>motor-calc</title>
     <style>
       /* MathLive Overrides & Desmos-style Keyboard Theme */
-      @media (min-width: 769px) { math-field::part(virtual-keyboard-toggle) { display: none; } }
+      math-field::part(virtual-keyboard-toggle), math-field::part(menu-toggle) { display: none !important; }
       math-virtual-keyboard {
         --keyboard-background: #edf1f5;
         --keyboard-toolbar-background: #f8fafc;
@@ -217,7 +217,7 @@
     <!-- ═══════════════════════════════════════
          GRAPH SETTINGS POPOVER (Desmos Style)
     ══════════════════════════════════════════ -->
-    <div id="graph-settings-popover" class="absolute top-14 right-4 z-40 hidden flex-col w-[320px] max-w-[92vw] bg-white/98 backdrop-blur-md rounded-2xl shadow-2xl border border-gray-200/90 text-gray-800 text-xs overflow-hidden transition-all duration-150 select-none">
+    <div id="graph-settings-popover" class="fixed top-14 right-4 z-50 hidden flex-col w-[320px] max-w-[92vw] bg-white/98 backdrop-blur-md rounded-2xl shadow-2xl border border-gray-200/90 text-gray-800 text-xs overflow-hidden transition-all duration-150 select-none">
       
       <!-- Popover Header -->
       <div class="px-4 py-3 border-b border-gray-100 flex justify-between items-center bg-gray-50/70">

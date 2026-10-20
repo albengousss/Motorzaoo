@@ -339,6 +339,7 @@ export class ExpressionManager {
         
         const warningTrigger = document.createElement('div');
         warningTrigger.className = 'block-warning-trigger hidden';
+        warningTrigger.style.display = 'none';
         warningTrigger.innerHTML = `
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2.5">
                 <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
@@ -405,9 +406,13 @@ export class ExpressionManager {
             this.openStylePopover(block, visibilityBtn);
         };
         
+        const iconSlot = document.createElement('div');
+        iconSlot.className = 'relative w-[24px] h-[24px] flex items-center justify-center shrink-0';
+        iconSlot.appendChild(visibilityBtn);
+        iconSlot.appendChild(warningTrigger);
+
         grabZone.appendChild(numberSpan);
-        grabZone.appendChild(visibilityBtn);
-        grabZone.appendChild(warningTrigger);
+        grabZone.appendChild(iconSlot);
 
         // --- ÁREA DE CONTEÚDO (Matemática + Slider) ---
         const contentZone = document.createElement('div');
@@ -2595,6 +2600,7 @@ export class ExpressionManager {
         if (errorMsg) {
             if (warningTrigger) {
                 warningTrigger.classList.remove('hidden');
+                warningTrigger.style.display = 'flex';
                 if (tooltipEl) tooltipEl.innerText = errorMsg;
             }
             if (visibilityBtn) {
@@ -2603,6 +2609,7 @@ export class ExpressionManager {
         } else {
             if (warningTrigger) {
                 warningTrigger.classList.add('hidden');
+                warningTrigger.style.display = 'none';
                 if (tooltipEl) tooltipEl.innerText = '';
             }
             if (visibilityBtn) {

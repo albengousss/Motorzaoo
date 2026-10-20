@@ -540,13 +540,13 @@ function compileAllExpressions() {
                         MathEngine.compiledFuncs[funcName] = MathEngine.compileMultivariable(ast, paramNames);
                     }
                     ExpressionManager.setError(item.id, null);
-                    ExpressionManager.setResult(item.id, `Matriz ${funcName}(${paramNames.join(', ')}) salva`);
+                    ExpressionManager.setResult(item.id, '');
                 } catch(e) {
                     ExpressionManager.setError(item.id, `Erro: ${(e as Error).message}`);
                 }
             } else {
                 ExpressionManager.setError(item.id, null);
-                ExpressionManager.setResult(item.id, `Matriz ${rawName} salva`);
+                ExpressionManager.setResult(item.id, '');
             }
             ExpressionManager.setSliderSuggestions(item.id, [], () => {});
             return;
@@ -1329,16 +1329,16 @@ function compileAllExpressions() {
                             }
 
                             if (isMatrixValued) {
-                                ExpressionManager.setResult(item.id, `Matriz ${funcName}(${paramNames.join(', ')}) salva`);
+                                ExpressionManager.setResult(item.id, '');
                             } else {
-                                ExpressionManager.setResult(item.id, `Função ${funcName}(${paramNames.join(', ')}) guardada`);
+                                ExpressionManager.setResult(item.id, '');
                             }
                         } else {
                             // Função monovariável (ex: f(x) = x^2 ou f(x) = [[x, 0], [0, x]])
                             const paramName = paramNames[0];
                             if (isMatrixValued) {
                                 MathEngine.compiledFuncs[funcName] = MathEngine.compile(ast, paramName);
-                                ExpressionManager.setResult(item.id, `Matriz ${funcName}(${paramName}) salva`);
+                                ExpressionManager.setResult(item.id, '');
                                 ExpressionManager.setError(item.id, null);
                                 ExpressionManager.setSliderSuggestions(item.id, [], () => {});
                                 const giacDef = `usr_${funcName}(${paramName}):=${expr}`;
@@ -1392,10 +1392,10 @@ function compileAllExpressions() {
                                     if (unbound.length > 0) {
                                         ExpressionManager.setResult(item.id, `Defina o slider para: ${unbound.join(', ')}`);
                                     } else {
-                                        ExpressionManager.setResult(item.id, `Função ${funcName}(${paramName}) salva`);
+                                        ExpressionManager.setResult(item.id, '');
                                     }
                                 } else {
-                                    ExpressionManager.setResult(item.id, `Função ${funcName}(${paramName}) salva`);
+                                    ExpressionManager.setResult(item.id, '');
                                 }
                                 
                                 // Envia para o Giac para poder ser integrada/derivada simbolicamente!

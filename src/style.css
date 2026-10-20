@@ -220,13 +220,26 @@ math-field::part(selection),
 ═════════════════════════════════════════════════════════════ */
 
 .block-warning-trigger {
-  position: relative;
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
-  height: 100%;
   cursor: pointer;
+  z-index: 5;
+}
+
+.block-warning-trigger.hidden,
+.block-warning-trigger[style*="display: none"] {
+  display: none !important;
+}
+
+math-field::part(menu-toggle) {
+  display: none !important;
+}
+
+math-field::part(virtual-keyboard-toggle) {
+  display: none !important;
 }
 
 .warning-popover-tooltip {
