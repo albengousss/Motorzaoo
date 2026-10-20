@@ -198,14 +198,14 @@ export class ExpressionManager {
         }
     }
 
-    static init(onUpdate: () => void) {
+    static init(onUpdate?: () => void) {
         if (typeof document !== 'undefined') {
             this.container = document.getElementById('expressions-list')!;
             this.addBtn = document.getElementById('add-expr-btn')!;
         }
         this.initStylePopover();
 
-        this.onUpdateCallback = onUpdate;
+        this.onUpdateCallback = onUpdate || (() => {});
         
         // Botão Principal Adicionar Item (+) do Cabeçalho
         const addItemBtn = document.getElementById('add-item-btn');
@@ -535,13 +535,22 @@ export class ExpressionManager {
         const contentZone = document.createElement('div');
         contentZone.className = 'flex flex-col grow overflow-hidden';
         const topRow = document.createElement('div');
-        topRow.className = 'flex items-center px-2 py-2 gap-2 overflow-hidden min-h-[50px] relative';
+        topRow.className = 'flex items-center px-2 py-2 gap-2 overflow-visible min-h-[50px] relative';
 
         const mathContainer = document.createElement('div');
-        mathContainer.className = 'flex items-center grow overflow-hidden min-w-0';
+        mathContainer.className = 'flex items-center grow overflow-visible min-w-0 relative';
 
         const mf = document.createElement('math-field');
         mf.className = 'border-none outline-none text-lg bg-transparent w-full';
+
+        const matrixHandle = document.createElement('div');
+        matrixHandle.className = 'matrix-inline-handle';
+        matrixHandle.title = 'Arraste para redimensionar matriz (m × n)';
+        matrixHandle.style.display = 'none';
+
+        const matrixTooltip = document.createElement('div');
+        matrixTooltip.className = 'matrix-inline-tooltip';
+        matrixTooltip.style.display = 'none';
         
         const resultSpan = document.createElement('div');
         resultSpan.className = 'result-display text-gray-800 text-sm font-semibold shrink-0 ml-auto mr-1 hidden select-text flex items-center gap-1.5 transition-all';
@@ -551,10 +560,203 @@ export class ExpressionManager {
         delBtn.className = 'block-delete-btn bg-transparent border-none text-gray-400 cursor-pointer p-1 shrink-0 ml-auto transition-opacity opacity-0 group-hover:opacity-100 hover:text-gray-700 hover:bg-gray-100 rounded-md outline-none';
 
         mathContainer.appendChild(mf);
+        mathContainer.appendChild(matrixHandle);
+        mathContainer.appendChild(matrixTooltip);
         topRow.appendChild(mathContainer);
         topRow.appendChild(resultSpan);
         topRow.appendChild(delBtn);
         contentZone.appendChild(topRow);
+
+        const parseMatrixFromLatex = (latex: string) => {
+            const match = latex.match(/([\s\S]*?)\\begin\{(?:b|p|v|V)?matrix\}([\s\S]*?)\\end\{(?:b|p|v|V)?matrix\}([\s\S]*)/);
+            if (!match) return null;
+            const prefix = match[1];
+            const body = match[2];
+            const suffix = match[3];
+            const rawRows = body.split(/\\\\|\\cr|\\newline/);
+            const grid: string[][] = [];
+            for (const rStr of rawRows) {
+                if (!rStr.trim()) continue;
+                const colStrs = rStr.split('&');
+                const rowArr = colStrs.map((c: string) => {
+                    const clean = c.replace(/#\?/g, '').replace(/#@/g, '').replace(/\\placeholder\{[^}]*\}/g, '').trim();
+                    return clean || '0';
+                });
+                if (rowArr.length > 0) grid.push(rowArr);
+            }
+            const rows = grid.length || 1;
+            const cols = Math.max(1, ...grid.map(r => r.length));
+            return { prefix, rows, cols, grid, suffix };
+        };
+
+        const buildResizedMatrixLatex = (prefix: string, newRows: number, newCols: number, existingGrid: string[][], suffix: string) => {
+            const rowStrs: string[] = [];
+            for (let r = 0; r < newRows; r++) {
+                const colStrs: string[] = [];
+                for (let c = 0; c < newCols; c++) {
+                    const val = existingGrid[r] && existingGrid[r][c] !== undefined && existingGrid[r][c].trim() !== ''
+                        ? existingGrid[r][c].trim()
+                        : '0';
+                    colStrs.push(val);
+                }
+                rowStrs.join && rowStrs.push(colStrs.join(' & '));
+            }
+            return `${prefix}\\begin{bmatrix} ${rowStrs.join(' \\\\ ')} \\end{bmatrix}${suffix}`;
+        };
+
+        const mathEl = mf as any;
+        let isDraggingHandle = false;
+
+        const updateHandlePosition = () => {
+            const latex = typeof mathEl.getValue === 'function' ? mathEl.getValue('latex') : (mathEl.value || '');
+            const hasMatrix = /\\begin\{(?:b|p|v|V)?matrix\}/.test(latex);
+            if (!hasMatrix) {
+                matrixHandle.style.display = 'none';
+                matrixTooltip.style.display = 'none';
+                return;
+            }
+
+            const isHovered = block.matches(':hover');
+            const isFocused = block.classList.contains('is-focused') || document.activeElement === mf || (mf.shadowRoot && mf.shadowRoot.activeElement);
+            if (!isDraggingHandle && !isFocused && !isHovered) {
+                matrixHandle.style.display = 'none';
+                matrixTooltip.style.display = 'none';
+                return;
+            }
+
+            matrixHandle.style.display = 'block';
+
+            const containerRect = mathContainer.getBoundingClientRect();
+            let handleLeft = 0;
+            let handleTop = 0;
+
+            const shadow = mf.shadowRoot;
+            if (shadow) {
+                const delims = shadow.querySelectorAll('.ML__delimsizing, .ML__close, .ML__matrix, .ML__base [data-atom-id]');
+                let rightmostEl: any = null;
+                let maxX = -Infinity;
+                delims.forEach((el: any) => {
+                    const r = el.getBoundingClientRect();
+                    if (r.width > 0 && r.right > maxX) {
+                        maxX = r.right;
+                        rightmostEl = el;
+                    }
+                });
+                if (rightmostEl) {
+                    const rect = rightmostEl.getBoundingClientRect();
+                    if (rect.width > 0 && rect.height > 0 && containerRect.width > 0) {
+                        handleLeft = rect.right - containerRect.left - 4;
+                        handleTop = rect.bottom - containerRect.top - 6;
+                    }
+                }
+            }
+
+            if (handleLeft <= 0 || handleTop <= 0) {
+                const mfRect = mf.getBoundingClientRect();
+                if (mfRect.width > 0 && containerRect.width > 0) {
+                    handleLeft = Math.min(mfRect.width, 180);
+                    handleTop = Math.max(24, mfRect.height - 12);
+                } else {
+                    handleLeft = 140;
+                    handleTop = 32;
+                }
+            }
+
+            matrixHandle.style.left = `${handleLeft}px`;
+            matrixHandle.style.top = `${handleTop}px`;
+            matrixTooltip.style.left = `${handleLeft + 7}px`;
+            matrixTooltip.style.top = `${handleTop - 6}px`;
+        };
+
+        (block as any)._updateMatrixHandle = updateHandlePosition;
+
+        let startX = 0;
+        let startY = 0;
+        let initialRows = 2;
+        let initialCols = 2;
+        let currentRows = 2;
+        let currentCols = 2;
+        let pfx = '';
+        let sfx = '';
+        let matrixGrid: string[][] = [];
+
+        matrixHandle.addEventListener('pointerdown', (e: PointerEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            matrixHandle.setPointerCapture(e.pointerId);
+            isDraggingHandle = true;
+            matrixHandle.classList.add('is-dragging');
+
+            const latex = typeof mathEl.getValue === 'function' ? mathEl.getValue('latex') : (mathEl.value || '');
+            const parsed = parseMatrixFromLatex(latex);
+            if (parsed) {
+                pfx = parsed.prefix;
+                sfx = parsed.suffix;
+                initialRows = parsed.rows;
+                initialCols = parsed.cols;
+                matrixGrid = parsed.grid;
+            } else {
+                pfx = '';
+                sfx = '';
+                initialRows = 2;
+                initialCols = 2;
+                matrixGrid = [['0', '0'], ['0', '0']];
+            }
+            currentRows = initialRows;
+            currentCols = initialCols;
+            startX = e.clientX;
+            startY = e.clientY;
+
+            matrixTooltip.innerText = `${currentRows} × ${currentCols}`;
+            matrixTooltip.style.display = 'block';
+        });
+
+        matrixHandle.addEventListener('pointermove', (e: PointerEvent) => {
+            if (!isDraggingHandle) return;
+            e.preventDefault();
+            e.stopPropagation();
+
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+
+            const dCols = Math.round(dx / 36);
+            const dRows = Math.round(dy / 28);
+
+            const targetRows = Math.min(8, Math.max(1, initialRows + dRows));
+            const targetCols = Math.min(8, Math.max(1, initialCols + dCols));
+
+            if (targetRows !== currentRows || targetCols !== currentCols) {
+                currentRows = targetRows;
+                currentCols = targetCols;
+                matrixTooltip.innerText = `${currentRows} × ${currentCols}`;
+
+                const newLatex = buildResizedMatrixLatex(pfx, currentRows, currentCols, matrixGrid, sfx);
+                mathEl.setValue(newLatex, { mode: 'math' });
+                updateHandlePosition();
+                this.onUpdateCallback();
+            }
+        });
+
+        const endDragHandle = (e: PointerEvent) => {
+            if (!isDraggingHandle) return;
+            isDraggingHandle = false;
+            matrixHandle.classList.remove('is-dragging');
+            matrixTooltip.style.display = 'none';
+            try {
+                matrixHandle.releasePointerCapture(e.pointerId);
+            } catch (_) {}
+            updateHandlePosition();
+            this.onUpdateCallback();
+            HistoryManager.recordState(true);
+        };
+
+        matrixHandle.addEventListener('pointerup', endDragHandle);
+        matrixHandle.addEventListener('pointercancel', endDragHandle);
+
+        block.addEventListener('mouseenter', () => updateHandlePosition());
+        block.addEventListener('mouseleave', () => {
+            if (!isDraggingHandle) updateHandlePosition();
+        });
 
         // --- CHIPS DE SUGESTÃO DE SLIDERS (DESMOS STYLE) ---
         const sliderChipsRow = document.createElement('div');
@@ -580,11 +782,13 @@ export class ExpressionManager {
         block.addEventListener('focusin', () => {
             grabZone.style.backgroundColor = '#d2e7f5';
             block.classList.add('is-focused');
+            updateHandlePosition();
         });
         block.addEventListener('focusout', (e) => {
             if (!block.contains((e as FocusEvent).relatedTarget as Node)) {
                 grabZone.style.backgroundColor = '#eeeeee';
                 block.classList.remove('is-focused');
+                updateHandlePosition();
             }
         });
 
@@ -610,6 +814,8 @@ export class ExpressionManager {
         mathField.mathVirtualKeyboardPolicy = 'auto';
         mathField.menuItems = [];
         mathField.inlineShortcuts = {
+            'matrix': '\\begin{bmatrix} 0 & 0 \\\\ 0 & 0 \\end{bmatrix}',
+            'matriz': '\\begin{bmatrix} 0 & 0 \\\\ 0 & 0 \\end{bmatrix}',
             'pi': '\\pi',
             'theta': '\\theta',
             'alpha': '\\alpha',
@@ -1016,10 +1222,15 @@ export class ExpressionManager {
                               cleanLatex.match(/^(?:([a-zA-Z_][a-zA-Z0-9_]*(?:\s*\([^)]*\))?)\s*=\s*)?#([1-8])(?:x|X|\*|\\times)?([1-8])$/i);
             if (hashMatch) {
                 const rawName = hashMatch[1] ? hashMatch[1].trim() : undefined;
-                const targetName = rawName ? (rawName.includes('(') ? rawName : (rawName.length === 1 ? rawName.toUpperCase() : rawName)) : undefined;
+                const prefix = rawName ? `${rawName} = ` : '';
                 const rCount = parseInt(hashMatch[2]);
                 const cCount = parseInt(hashMatch[3]);
-                this.convertBlockToMatrix(block.id, targetName, rCount, cCount);
+                const matLatex = this.generateMatrixLatex(rCount, cCount);
+                mathEl.setValue(prefix + matLatex, { mode: 'math' });
+                mf.focus();
+                updateHandlePosition();
+                this.onUpdateCallback();
+                HistoryManager.recordState(true);
                 return;
             }
 
@@ -1028,74 +1239,49 @@ export class ExpressionManager {
                                 cleanLatex.match(/^(?:([a-zA-Z_][a-zA-Z0-9_]*(?:\s*\([^)]*\))?)\s*=\s*)?\\?matri[xz]$/i);
             if (matrixMatch) {
                 const rawName = matrixMatch[1] ? matrixMatch[1].trim() : undefined;
-                const targetName = rawName ? (rawName.includes('(') ? rawName : (rawName.length === 1 ? rawName.toUpperCase() : rawName)) : undefined;
-                this.convertBlockToMatrix(block.id, targetName, 2, 2);
+                const prefix = rawName ? `${rawName} = ` : '';
+                const matLatex = this.generateMatrixLatex(2, 2);
+                mathEl.setValue(prefix + matLatex, { mode: 'math' });
+                mf.focus();
+                updateHandlePosition();
+                this.onUpdateCallback();
+                HistoryManager.recordState(true);
                 return;
             }
 
-            // Se o usuário inseriu ou colou uma matriz LaTeX (\begin{bmatrix}, \begin{pmatrix}, etc.) ou bracket notation [[1, 2], [3, 4]]
-            if (rawLatex.includes('\\begin{bmatrix}') || rawLatex.includes('\\begin{pmatrix}') || rawLatex.includes('\\begin{matrix}') || cleanLatex.startsWith('[[') || cleanLatex.includes('=[[')) {
-                const nameMatch = rawLatex.match(/^\s*([a-zA-Z_][a-zA-Z0-9_]*(?:\s*\([^)]*\))?)\s*=/);
-                const rawN = nameMatch ? nameMatch[1].trim() : undefined;
-                const targetName = rawN ? (rawN.includes('(') ? rawN : (rawN.length === 1 ? rawN.toUpperCase() : rawN)) : undefined;
-                const matContentMatch = rawLatex.match(/\\begin\{(?:b|p|v|V)?matrix\}([\s\S]*?)\\end\{(?:b|p|v|V)?matrix\}/);
-                if (matContentMatch) {
-                    const rowStrs = matContentMatch[1].split(/\\\\/);
-                    const parsedData: string[][] = [];
-                    for (const rStr of rowStrs) {
-                        if (!rStr.trim()) continue;
-                        const colStrs = rStr.split('&');
-                        const rowArr = colStrs.map((c: string) => {
-                            const clean = c.replace(/#\?/g, '').replace(/#@/g, '').replace(/\\placeholder\{[^}]*\}/g, '').trim();
-                            return clean || '0';
-                        });
-                        if (rowArr.length > 0) parsedData.push(rowArr);
+            // Sintaxe de colchetes: [[1, 2], [3, 4]] ou A = [[1, 2], [3, 4]] ou f(x) = [[x, 0], [0, x]]
+            const bracketMatch = cleanLatex.match(/^(?:([a-zA-Z_][a-zA-Z0-9_]*(?:\s*\([^)]*\))?)\s*=\s*)?(\[\[.*\]\])$/);
+            if (bracketMatch) {
+                const rawBn = bracketMatch[1] ? bracketMatch[1].trim() : undefined;
+                const prefix = rawBn ? `${rawBn} = ` : '';
+                try {
+                    const rawInner = bracketMatch[2];
+                    const rowMatches = rawInner.slice(1, -1).split(/\],\s*\[/);
+                    const parsedGrid: string[][] = [];
+                    for (const rStr of rowMatches) {
+                        const cleanCells = rStr.replace(/[\[\]]/g, '').split(',').map((c: string) => c.trim() || '0');
+                        if (cleanCells.length > 0) parsedGrid.push(cleanCells);
                     }
-                    if (parsedData.length > 0) {
-                        const rCount = Math.min(8, parsedData.length);
-                        const cCount = Math.min(8, Math.max(...parsedData.map((r: string[]) => r.length)));
-                        for (const r of parsedData) {
+                    if (parsedGrid.length > 0) {
+                        const rCount = Math.min(8, parsedGrid.length);
+                        const cCount = Math.min(8, Math.max(...parsedGrid.map(r => r.length)));
+                        for (const r of parsedGrid) {
                             while (r.length < cCount) r.push('0');
                         }
-                        this.addMatrix({ name: targetName, rows: rCount, cols: cCount, data: parsedData }, true, block.dataset.folderId, block);
-                        this.updateBlockNumbers();
+                        const matLatex = this.generateMatrixLatex(rCount, cCount, parsedGrid);
+                        mathEl.setValue(prefix + matLatex, { mode: 'math' });
+                        mf.focus();
+                        updateHandlePosition();
                         this.onUpdateCallback();
                         HistoryManager.recordState(true);
                         return;
                     }
-                }
-
-                // Sintaxe de colchetes: [[1, 2], [3, 4]] ou A = [[1, 2], [3, 4]] ou f(x) = [[x, 0], [0, x]]
-                const bracketMatch = cleanLatex.match(/^(?:([a-zA-Z_][a-zA-Z0-9_]*(?:\s*\([^)]*\))?)\s*=\s*)?(\[\[.*\]\])$/);
-                if (bracketMatch) {
-                    const rawBn = bracketMatch[1] ? bracketMatch[1].trim() : undefined;
-                    const bTargetName = rawBn ? (rawBn.includes('(') ? rawBn : (rawBn.length === 1 ? rawBn.toUpperCase() : rawBn)) : undefined;
-                    try {
-                        const rawInner = bracketMatch[2];
-                        const rowMatches = rawInner.slice(1, -1).split(/\],\s*\[/);
-                        const parsedGrid: string[][] = [];
-                        for (const rStr of rowMatches) {
-                            const cleanCells = rStr.replace(/[\[\]]/g, '').split(',').map((c: string) => c.trim() || '0');
-                            if (cleanCells.length > 0) parsedGrid.push(cleanCells);
-                        }
-                        if (parsedGrid.length > 0) {
-                            const rCount = Math.min(8, parsedGrid.length);
-                            const cCount = Math.min(8, Math.max(...parsedGrid.map(r => r.length)));
-                            for (const r of parsedGrid) {
-                                while (r.length < cCount) r.push('0');
-                            }
-                            this.addMatrix({ name: bTargetName, rows: rCount, cols: cCount, data: parsedGrid }, true, block.dataset.folderId, block);
-                            this.updateBlockNumbers();
-                            this.onUpdateCallback();
-                            HistoryManager.recordState(true);
-                            return;
-                        }
-                    } catch(e) {
-                        console.warn('[ExpressionManager] Failed to parse matrix input:', e);
-                    }
+                } catch(e) {
+                    console.warn('[ExpressionManager] Failed to parse matrix input:', e);
                 }
             }
 
+            updateHandlePosition();
             this.onUpdateCallback();
             HistoryManager.recordState(false);
         });
@@ -1362,579 +1548,42 @@ export class ExpressionManager {
         folderId?: string,
         replaceBlock?: HTMLElement
     ): string {
-        this.blockCounter++;
-        const blockId = replaceBlock ? replaceBlock.id : ('matrix-block-' + this.blockCounter);
+        const rawName = matrixData?.name?.trim();
+        const rows = Math.min(8, Math.max(1, matrixData?.rows || 2));
+        const cols = Math.min(8, Math.max(1, matrixData?.cols || 2));
+        const prefix = rawName ? `${rawName} = ` : '';
+        const matrixLatex = this.generateMatrixLatex(rows, cols, matrixData?.data);
+        const fullLatex = prefix + matrixLatex;
 
-        const rawName = matrixData?.name;
-        const defaultName = rawName !== undefined && rawName !== null && rawName.trim() !== '' ? rawName.trim() : '';
-        let rows = Math.min(8, Math.max(1, matrixData?.rows || 2));
-        let cols = Math.min(8, Math.max(1, matrixData?.cols || 2));
-        let cellValues = matrixData?.data ? JSON.parse(JSON.stringify(matrixData.data)) : Array.from({ length: rows }, (_, r) =>
-            Array.from({ length: cols }, (_, c) => (rows === cols && r === c ? '1' : '0'))
-        );
+        let targetBlock = replaceBlock;
+        let blockId = targetBlock?.id;
 
-        const block = document.createElement('div');
-        block.id = blockId;
-        block.dataset.type = 'matrix';
-        block.dataset.rows = rows.toString();
-        block.dataset.cols = cols.toString();
-        const blockColor = '#7c3aed';
-        block.dataset.color = blockColor;
-        block.dataset.lineStyle = 'solid';
-        block.dataset.lineWidth = '2.5';
-        if (folderId) {
-            block.dataset.folderId = folderId;
-            block.className = 'flex border-b border-gray-100 bg-white transition-colors duration-200 relative group pl-3 border-l-4 border-l-purple-300';
+        if (!targetBlock) {
+            blockId = this.addBlock(autoFocus, fullLatex, folderId);
+            targetBlock = document.getElementById(blockId) || undefined;
         } else {
-            block.className = 'flex border-b border-gray-100 bg-white transition-colors duration-200 relative group';
+            const mf = targetBlock.querySelector('math-field') as any;
+            if (mf) {
+                mf.setValue(fullLatex, { mode: 'math' });
+                if (autoFocus) mf.focus();
+            }
         }
 
-        const grabZone = document.createElement('div');
-        grabZone.className = 'w-12 bg-white flex flex-col items-center justify-start pt-[14px] shrink-0 select-none text-gray-500 gap-1.5';
-
-        const visibilityBtn = document.createElement('div');
-        visibilityBtn.className = 'visibility-toggle';
-        visibilityBtn.dataset.visible = 'true';
-        visibilityBtn.title = 'Clique: ocultar/exibir | Botão direito ou segurar: estilo';
-        visibilityBtn.style.cssText = `width: 28px; height: 28px; border-radius: 50%; border: 2px solid ${blockColor}; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; background: ${blockColor}20; position: relative;`;
-
-        const nameBadge = document.createElement('span');
-        nameBadge.className = 'font-bold text-sm text-purple-700 select-none';
-        nameBadge.innerText = defaultName || 'M';
-        visibilityBtn.appendChild(nameBadge);
-
-        visibilityBtn.onclick = () => {
-            const isVisible = visibilityBtn.dataset.visible === 'true';
-            visibilityBtn.dataset.visible = isVisible ? 'false' : 'true';
-            visibilityBtn.style.background = isVisible ? 'transparent' : `${block.dataset.color || blockColor}20`;
-            visibilityBtn.style.borderStyle = isVisible ? 'dashed' : 'solid';
-            nameBadge.style.opacity = isVisible ? '0.3' : '1';
-            this.onUpdateCallback();
-            HistoryManager.recordState(true);
-        };
-        visibilityBtn.oncontextmenu = (e) => {
-            e.preventDefault();
-            this.openStylePopover(block, visibilityBtn);
-        };
-        grabZone.appendChild(visibilityBtn);
-
-        const contentZone = document.createElement('div');
-        contentZone.className = 'flex flex-col grow overflow-visible px-2 py-3 gap-2 min-w-0';
-
-        // Header do Bloco: Nome, Dimensões e Controles de Redimensionamento (+L, -L, +C, -C)
-        const headerRow = document.createElement('div');
-        headerRow.className = 'flex items-center gap-2 flex-wrap';
-
-        const nameInput = document.createElement('input');
-        nameInput.type = 'text';
-        nameInput.className = 'matrix-name-input font-bold text-base text-purple-900 px-1.5 py-0.5 bg-purple-50/80 border border-purple-200 rounded focus:bg-white focus:border-purple-500 outline-none transition-all';
-        nameInput.value = defaultName;
-        nameInput.placeholder = 'Nome';
-        nameInput.title = 'Nome da Matriz (opcional, ex: A, M, f(x))';
-        const updateNameInputWidth = () => {
-            const charCount = (nameInput.value || '').length || 1;
-            nameInput.style.width = Math.min(160, Math.max(32, charCount * 9 + 14)) + 'px';
-        };
-        updateNameInputWidth();
-
-        const eqSpan = document.createElement('span');
-        eqSpan.className = 'text-gray-400 font-bold text-sm';
-        eqSpan.innerText = '=';
-        eqSpan.style.display = defaultName ? 'inline' : 'none';
-
-        nameInput.oninput = () => {
-            const val = nameInput.value.trim();
-            const badgeVal = val.includes('(') ? (val.split('(')[0].trim() || val) : val;
-            nameBadge.innerText = badgeVal || 'M';
-            eqSpan.style.display = val ? 'inline' : 'none';
-            updateNameInputWidth();
-            updateGiacDefinition();
-            this.onUpdateCallback();
-            HistoryManager.recordState(false);
-        };
-
-        const dimBadge = document.createElement('span');
-        dimBadge.className = 'matrix-dim-badge px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200 select-none';
-        dimBadge.innerText = `${rows}×${cols}`;
-
-        // Controles de Linhas e Colunas (+ Linha, - Linha, + Coluna, - Coluna)
-        const ctrlGroup = document.createElement('div');
-        ctrlGroup.className = 'flex items-center gap-1 bg-gray-100 p-0.5 rounded-md text-xs';
-
-        const createCtrlBtn = (text: string, title: string, onClick: () => void) => {
-            const btn = document.createElement('button');
-            btn.className = 'px-1.5 py-0.5 rounded bg-white hover:bg-purple-600 hover:text-white font-semibold text-gray-700 transition-colors shadow-2xs cursor-pointer text-[11px]';
-            btn.innerText = text;
-            btn.title = title;
-            btn.onclick = (e) => {
-                e.stopPropagation();
-                onClick();
-            };
-            return btn;
-        };
-
-        // Grade da Matriz com Parênteses / Colchetes Estilizados, Bordas Arrastáveis e Alça Interativa
-        const gridWrapper = document.createElement('div');
-        gridWrapper.className = 'flex flex-col my-1 pb-3 pr-3 select-none relative self-start w-fit overflow-visible';
-
-        const matrixBody = document.createElement('div');
-        matrixBody.className = 'flex items-stretch select-none relative inline-flex w-fit';
-
-        const bracketLeft = document.createElement('div');
-        bracketLeft.className = 'border-l-2 border-t-2 border-b-2 border-gray-800 w-2.5 self-stretch rounded-l-xs shrink-0 mr-1.5 my-0.5 select-none pointer-events-none';
-
-        const gridCenterCol = document.createElement('div');
-        gridCenterCol.className = 'flex flex-col select-none w-fit';
-
-        const gridContainer = document.createElement('div');
-        gridContainer.className = 'grid gap-1.5 py-1 px-1 select-none w-fit';
-
-        // Borda inferior arrastável para alterar linhas
-        const bottomBorder = document.createElement('div');
-        bottomBorder.className = 'matrix-bottom-resizable w-full mt-0.5 select-none touch-none';
-        bottomBorder.title = 'Arraste a borda inferior para redimensionar linhas';
-
-        gridCenterCol.appendChild(gridContainer);
-        gridCenterCol.appendChild(bottomBorder);
-
-        const rightBracketWrapper = document.createElement('div');
-        rightBracketWrapper.className = 'relative flex items-center self-stretch shrink-0 select-none touch-none';
-        rightBracketWrapper.title = 'Arraste a borda para redimensionar colunas';
-
-        const bracketRight = document.createElement('div');
-        bracketRight.className = 'bracket-right-resizable border-r-2 border-t-2 border-b-2 border-gray-800 w-4 self-stretch rounded-r-xs shrink-0 ml-1.5 my-0.5 select-none flex items-center justify-center touch-none';
-        bracketRight.title = 'Arraste a borda para redimensionar colunas';
-        bracketRight.innerHTML = `<span class="w-0.5 h-3.5 bg-gray-400 rounded-full opacity-60"></span>`;
-
-        const dragHandle = document.createElement('div');
-        dragHandle.className = 'matrix-drag-handle touch-none';
-        dragHandle.title = 'Arraste o vértice para redimensionar linhas e colunas (m × n)';
-
-        const dimTooltip = document.createElement('div');
-        dimTooltip.className = 'matrix-dim-tooltip';
-        dimTooltip.innerText = `${rows} × ${cols}`;
-
-        rightBracketWrapper.appendChild(bracketRight);
-        rightBracketWrapper.appendChild(dragHandle);
-        rightBracketWrapper.appendChild(dimTooltip);
-
-        matrixBody.appendChild(bracketLeft);
-        matrixBody.appendChild(gridCenterCol);
-        matrixBody.appendChild(rightBracketWrapper);
-
-        gridWrapper.appendChild(matrixBody);
-
-        let startX = 0;
-        let startY = 0;
-        let startRows = rows;
-        let startCols = cols;
-        let activeDragEl: HTMLElement | null = null;
-        let resizeMode: 'both' | 'cols' | 'rows' = 'both';
-
-        const computeCellWidth = () => {
-            const sidebar = document.getElementById('sidebar');
-            const measuredWidth = contentZone.clientWidth > 0
-                ? contentZone.clientWidth
-                : (sidebar && sidebar.clientWidth > 0 ? sidebar.clientWidth - 56 : 280);
-            const availWidth = measuredWidth - 58;
-            const gap = 6;
-            const gapsTotal = Math.max(0, cols - 1) * gap;
-            const fitWidth = Math.floor((availWidth - gapsTotal) / cols);
-            // Escala suavemente entre 20px (para 8 colunas ou barras estreitas) e 56px (barras largas)
-            return Math.max(20, Math.min(56, fitWidth));
-        };
-
-        const updateCellVisuals = () => {
-            const cellW = computeCellWidth();
-            const cellH = Math.max(22, Math.min(34, Math.round(cellW * 0.72)));
-            gridContainer.style.gridTemplateColumns = `repeat(${cols}, ${cellW}px)`;
-            const cells = gridContainer.querySelectorAll<HTMLInputElement>('.matrix-cell');
-            cells.forEach((cell) => {
-                cell.style.width = `${cellW}px`;
-                cell.style.height = `${cellH}px`;
-                cell.style.fontSize = cellW < 28 ? '10px' : (cellW < 36 ? '11px' : '12px');
-                cell.style.padding = cellW < 28 ? '1px 1px' : (cellW < 36 ? '2px 1px' : '4px 2px');
-            });
-        };
-        (block as any)._updateCellVisuals = updateCellVisuals;
-
-        const updateGiacDefinition = () => {
-            const curName = nameInput.value.trim();
-            if (!curName) {
-                // Anonymous matrix: don't pollute global giac definitions
-                return;
-            }
-            const giacMatrix = `[[${cellValues.map((r: string[]) => r.map((c: string) => (c && c.trim()) || '0').join(', ')).join('], [')}]]`;
-            const funcMatch = curName.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]+)\)$/);
-            if (funcMatch) {
-                const funcName = funcMatch[1];
-                const paramNames = funcMatch[2].split(',').map(s => s.trim());
-                const giacDef = `usr_${funcName}(${paramNames.join(',')}):=${giacMatrix}`;
-                StateManager.giacDefinitions[funcName] = giacDef;
-                StateManager.casSolutions = {};
-                MathEngine.askGiac(giacDef);
-                try {
-                    const matrixAst = new PrattParser(giacMatrix).parseExpression();
-                    MathEngine.userFunctions[funcName] = { params: paramNames, expr: giacMatrix, ast: matrixAst, blockId: block.id };
-                    StateManager.userFunctions[funcName] = { params: paramNames, expr: giacMatrix, ast: matrixAst, blockId: block.id };
-                    if (paramNames.length === 1) {
-                        MathEngine.compiledFuncs[funcName] = MathEngine.compile(matrixAst, paramNames[0]);
-                    } else if (paramNames.length > 1) {
-                        MathEngine.compiledFuncs[funcName] = MathEngine.compileMultivariable(matrixAst, paramNames);
-                    }
-                } catch(e) {
-                    console.warn('[ExpressionManager] Failed to compile matrix user function:', e);
-                }
-            } else {
-                const giacDef = `usr_${curName}:=${giacMatrix}`;
-                StateManager.giacDefinitions[curName] = giacDef;
-                StateManager.casSolutions = {};
-                MathEngine.askGiac(giacDef);
-            }
-        };
-
-        const onPointerMove = (e: PointerEvent) => {
-            const dx = e.clientX - startX;
-            const dy = e.clientY - startY;
-
-            const curCellW = computeCellWidth();
-            const colStep = Math.max(22, curCellW + 6);
-            const rowStep = 32;
-
-            let targetCols = startCols;
-            let targetRows = startRows;
-
-            if (resizeMode === 'both' || resizeMode === 'cols') {
-                targetCols = startCols + Math.round(dx / colStep);
-            }
-            if (resizeMode === 'both' || resizeMode === 'rows') {
-                targetRows = startRows + Math.round(dy / rowStep);
-            }
-
-            // Arrasto além da barra para a esquerda:
-            // Mostra indicação visual de remoção / desaparecimento
-            if (targetCols <= 0) {
-                dimTooltip.innerText = 'Remover matriz';
-                dimTooltip.classList.add('visible', 'matrix-remove-hint');
-                matrixBody.style.opacity = '0.35';
-                matrixBody.style.filter = 'grayscale(80%)';
-                return;
-            } else {
-                matrixBody.style.opacity = '1';
-                matrixBody.style.filter = 'none';
-                dimTooltip.classList.remove('matrix-remove-hint');
-            }
-
-            targetCols = Math.min(8, Math.max(1, targetCols));
-            targetRows = Math.min(8, Math.max(1, targetRows));
-
-            if (targetCols !== cols || targetRows !== rows) {
-                const newValues: string[][] = [];
-                for (let r = 0; r < targetRows; r++) {
-                    newValues[r] = [];
-                    for (let c = 0; c < targetCols; c++) {
-                        const existing = cellValues[r]?.[c];
-                        newValues[r][c] = (existing !== undefined && existing !== null && existing.trim() !== '') ? existing.trim() : '0';
-                    }
-                }
-                rows = targetRows;
-                cols = targetCols;
-                cellValues = newValues;
-                renderGrid();
-                dimTooltip.innerText = `${rows} × ${cols}`;
-                dimTooltip.classList.add('visible');
-                this.onUpdateCallback();
-            }
-        };
-
-        const onPointerUp = (e: PointerEvent) => {
-            if (activeDragEl) {
-                try {
-                    activeDragEl.releasePointerCapture(e.pointerId);
-                } catch(err) {
-                    console.warn('[ExpressionManager] Failed to release pointer capture:', err);
-                }
-                activeDragEl = null;
-            }
-            bracketRight.classList.remove('matrix-dragging');
-            bottomBorder.classList.remove('matrix-dragging');
-            dragHandle.classList.remove('matrix-dragging');
-            dimTooltip.classList.remove('visible', 'matrix-remove-hint');
-            matrixBody.style.opacity = '1';
-            matrixBody.style.filter = 'none';
-            window.removeEventListener('pointermove', onPointerMove);
-            window.removeEventListener('pointerup', onPointerUp);
-            window.removeEventListener('pointercancel', onPointerUp);
-
-            const dx = e.clientX - startX;
-            const curCellW = computeCellWidth();
-            const colStep = Math.max(22, curCellW + 6);
-            const finalCols = startCols + Math.round(dx / colStep);
-
-            if ((resizeMode === 'both' || resizeMode === 'cols') && finalCols <= 0) {
-                // Arrastou além da barra: a matriz some!
-                const currentName = nameInput.value.trim();
-                if (currentName) {
-                    const cleanName = currentName.includes('(') ? currentName.split('(')[0].trim() : currentName;
-                    delete StateManager.giacDefinitions[cleanName];
-                    delete StateManager.casSolutions[cleanName];
-                    delete MathEngine.userFunctions[cleanName];
-                    delete StateManager.userFunctions[cleanName];
-                    delete MathEngine.compiledFuncs[cleanName];
-                }
-                block.remove();
-                this.updateBlockNumbers();
-                HistoryManager.recordState(true);
-                this.onUpdateCallback();
-                return;
-            }
-
-            updateGiacDefinition();
-            this.onUpdateCallback();
-            HistoryManager.recordState(true);
-        };
-
-        const startResize = (mode: 'both' | 'cols' | 'rows') => (e: PointerEvent) => {
-            e.preventDefault();
-            e.stopPropagation();
-            startX = e.clientX;
-            startY = e.clientY;
-            startRows = rows;
-            startCols = cols;
-            resizeMode = mode;
-            activeDragEl = (e.currentTarget as HTMLElement) || dragHandle;
-            try {
-                activeDragEl.setPointerCapture(e.pointerId);
-            } catch(err) {
-                console.warn('[ExpressionManager] Failed to set pointer capture:', err);
-            }
-            if (mode === 'both' || mode === 'cols') bracketRight.classList.add('matrix-dragging');
-            if (mode === 'both' || mode === 'rows') bottomBorder.classList.add('matrix-dragging');
-            dragHandle.classList.add('matrix-dragging');
-            dimTooltip.innerText = `${rows} × ${cols}`;
-            dimTooltip.classList.add('visible');
-            window.addEventListener('pointermove', onPointerMove);
-            window.addEventListener('pointerup', onPointerUp);
-            window.addEventListener('pointercancel', onPointerUp);
-        };
-
-        dragHandle.addEventListener('pointerdown', startResize('both'));
-        bracketRight.addEventListener('pointerdown', startResize('cols'));
-        rightBracketWrapper.addEventListener('pointerdown', startResize('cols'));
-        bottomBorder.addEventListener('pointerdown', startResize('rows'));
-
-        const focusCell = (r: number, c: number) => {
-            const target = gridContainer.querySelector(`.matrix-cell[data-r="${r}"][data-c="${c}"]`) as HTMLInputElement;
-            if (target) {
-                target.focus();
-                target.select();
-            }
-        };
-
-        const renderGrid = () => {
-            block.dataset.rows = rows.toString();
-            block.dataset.cols = cols.toString();
-            dimBadge.innerText = `${rows}×${cols}`;
-            dimTooltip.innerText = `${rows} × ${cols}`;
-            gridContainer.innerHTML = '';
-            
-            const cellW = computeCellWidth();
-            const cellH = Math.max(24, Math.min(30, Math.round(cellW * 0.72)));
-            gridContainer.style.gridTemplateColumns = `repeat(${cols}, ${cellW}px)`;
-
-            for (let r = 0; r < rows; r++) {
-                if (!cellValues[r]) cellValues[r] = [];
-                for (let c = 0; c < cols; c++) {
-                    const rawVal = cellValues[r][c];
-                    const val = (rawVal !== undefined && rawVal !== null && rawVal.trim() !== '') ? rawVal.trim() : '0';
-                    cellValues[r][c] = val;
-                    const cell = document.createElement('input');
-                    cell.type = 'text';
-                    cell.placeholder = '0';
-                    cell.className = 'matrix-cell text-center font-mono font-medium py-1 px-1 rounded border border-gray-200 hover:border-purple-300 focus:border-purple-600 focus:bg-white outline-none transition-all shadow-2xs bg-white/70';
-                    cell.style.width = `${cellW}px`;
-                    cell.style.height = `${cellH}px`;
-                    cell.style.fontSize = cellW < 32 ? '11px' : '12px';
-                    cell.style.padding = cellW < 32 ? '2px 1px' : '4px 2px';
-                    cell.dataset.r = r.toString();
-                    cell.dataset.c = c.toString();
-                    cell.value = val;
-
-                    cell.onfocus = () => {
-                        cell.select();
-                    };
-
-                    // Autocomplete instantâneo com 0 quando o usuário apaga (Backspace / Delete)
-                    cell.onkeydown = (e: KeyboardEvent) => {
-                        if (e.key === 'Backspace' || e.key === 'Delete') {
-                            const isAllSelected = (cell.selectionStart === 0 && cell.selectionEnd === cell.value.length);
-                            if (isAllSelected || cell.value.length <= 1) {
-                                e.preventDefault();
-                                cell.value = '0';
-                                cellValues[r][c] = '0';
-                                cell.select();
-                                updateGiacDefinition();
-                                this.onUpdateCallback();
-                                HistoryManager.recordState(false);
-                                return;
-                            }
-                        } else if (e.key === 'ArrowRight' && cell.selectionStart === cell.value.length) {
-                            if (cell.value.trim() === '') { cell.value = '0'; cellValues[r][c] = '0'; }
-                            if (c < cols - 1) focusCell(r, c + 1);
-                            else if (r < rows - 1) focusCell(r + 1, 0);
-                        } else if (e.key === 'ArrowLeft' && cell.selectionEnd === 0) {
-                            if (cell.value.trim() === '') { cell.value = '0'; cellValues[r][c] = '0'; }
-                            if (c > 0) focusCell(r, c - 1);
-                            else if (r > 0) focusCell(r - 1, cols - 1);
-                        } else if (e.key === 'ArrowDown') {
-                            if (cell.value.trim() === '') { cell.value = '0'; cellValues[r][c] = '0'; }
-                            if (r < rows - 1) focusCell(r + 1, c);
-                        } else if (e.key === 'ArrowUp') {
-                            if (cell.value.trim() === '') { cell.value = '0'; cellValues[r][c] = '0'; }
-                            if (r > 0) focusCell(r - 1, c);
-                        } else if (e.key === 'Tab') {
-                            if (cell.value.trim() === '') { cell.value = '0'; cellValues[r][c] = '0'; }
-                        } else if (e.key === 'Enter') {
-                            e.preventDefault();
-                            if (cell.value.trim() === '') {
-                                cell.value = '0';
-                                cellValues[r][c] = '0';
-                            }
-                            if (c < cols - 1) {
-                                focusCell(r, c + 1);
-                            } else if (r < rows - 1) {
-                                focusCell(r + 1, 0);
-                            } else if (rows < 8) {
-                                addRow();
-                                setTimeout(() => focusCell(r + 1, 0), 10);
-                            }
-                        }
-                    };
-
-                    cell.oninput = () => {
-                        if (cell.value.trim() === '') {
-                            cell.value = '0';
-                            cellValues[r][c] = '0';
-                            cell.select();
-                        } else {
-                            cellValues[r][c] = cell.value.trim();
-                        }
-                        updateGiacDefinition();
-                        this.onUpdateCallback();
-                        HistoryManager.recordState(false);
-                    };
-
-                    cell.onblur = () => {
-                        if (cell.value.trim() === '') {
-                            cell.value = '0';
-                            cellValues[r][c] = '0';
-                            updateGiacDefinition();
-                            this.onUpdateCallback();
-                            HistoryManager.recordState(false);
-                        }
-                    };
-
-                    gridContainer.appendChild(cell);
-                }
-            }
-            updateGiacDefinition();
-        };
-
-        const addRow = () => {
-            if (rows >= 8) return;
-            rows++;
-            cellValues.push(new Array(cols).fill('0'));
-            renderGrid();
-            this.onUpdateCallback();
-            HistoryManager.recordState(true);
-        };
-
-        const delRow = () => {
-            if (rows <= 1) return;
-            rows--;
-            cellValues.pop();
-            renderGrid();
-            this.onUpdateCallback();
-            HistoryManager.recordState(true);
-        };
-
-        const addCol = () => {
-            if (cols >= 8) return;
-            cols++;
-            cellValues.forEach((row: string[]) => row.push('0'));
-            renderGrid();
-            this.onUpdateCallback();
-            HistoryManager.recordState(true);
-        };
-
-        const delCol = () => {
-            if (cols <= 1) return;
-            cols--;
-            cellValues.forEach((row: string[]) => row.pop());
-            renderGrid();
-            this.onUpdateCallback();
-            HistoryManager.recordState(true);
-        };
-
-        ctrlGroup.appendChild(createCtrlBtn('+L', 'Adicionar Linha (+ Linha)', addRow));
-        ctrlGroup.appendChild(createCtrlBtn('-L', 'Remover Linha (- Linha)', delRow));
-        ctrlGroup.appendChild(createCtrlBtn('+C', 'Adicionar Coluna (+ Coluna)', addCol));
-        ctrlGroup.appendChild(createCtrlBtn('-C', 'Remover Coluna (- Coluna)', delCol));
-
-        const delBtn = document.createElement('button');
-        delBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
-        delBtn.className = 'bg-transparent border-none text-gray-400 cursor-pointer p-1 shrink-0 ml-auto transition-all opacity-40 hover:opacity-100 hover:text-red-500 outline-none';
-        delBtn.onclick = () => {
-            block.remove();
-            this.updateBlockNumbers();
-            HistoryManager.recordState(true);
-            this.onUpdateCallback();
-        };
-
-        headerRow.appendChild(nameInput);
-        headerRow.appendChild(eqSpan);
-        headerRow.appendChild(dimBadge);
-        headerRow.appendChild(ctrlGroup);
-        headerRow.appendChild(delBtn);
-
-        contentZone.appendChild(headerRow);
-        contentZone.appendChild(gridWrapper);
-
-        block.appendChild(grabZone);
-        block.appendChild(contentZone);
-
-        this.setupBlockDrag(block, grabZone);
-
-        if (replaceBlock && replaceBlock.parentNode) {
-            replaceBlock.parentNode.replaceChild(block, replaceBlock);
-        } else {
-            this.container.appendChild(block);
+        if (targetBlock && typeof (targetBlock as any)._updateMatrixHandle === 'function') {
+            (targetBlock as any)._updateMatrixHandle();
         }
 
-        renderGrid();
-
-        if (autoFocus) {
-            setTimeout(() => {
-                focusCell(0, 0);
-            }, 50);
-        }
-
-        ExpressionManager.setError(block.id, null);
         this.updateBlockNumbers();
         this.onUpdateCallback();
         HistoryManager.recordState(true);
-        return blockId;
+        return blockId || '';
     }
 
     static convertBlockToMatrix(blockId: string, name?: string, rows: number = 2, cols: number = 2): string | null {
         const targetBlock = document.getElementById(blockId);
         if (!targetBlock) return null;
         const folderId = targetBlock.dataset.folderId;
-        const mid = this.addMatrix({ name: name !== undefined ? name : undefined, rows, cols }, true, folderId, targetBlock);
-        this.updateBlockNumbers();
-        this.onUpdateCallback();
-        HistoryManager.recordState(true);
-        return mid;
+        return this.addMatrix({ name: name !== undefined ? name : undefined, rows, cols }, true, folderId, targetBlock);
     }
 
     static addTable(
@@ -2725,8 +2374,8 @@ export class ExpressionManager {
                 const curColor = block.dataset.color || '#2d70b3';
                 const isVisible = visibilityBtn.dataset.visible !== 'false';
                 visibilityBtn.style.backgroundColor = isVisible ? curColor : 'transparent';
-                visibilityBtn.style.border = isVisible ? '2px solid #ffffff' : ('2px dashed ' + curColor);
-                visibilityBtn.style.boxShadow = isVisible ? ('0 0 0 1px ' + curColor) : 'none';
+                visibilityBtn.style.border = isVisible ? ('2px solid ' + curColor) : ('2px dashed ' + curColor);
+                visibilityBtn.style.boxShadow = 'none';
             }
         }
     }
@@ -2940,6 +2589,13 @@ export class ExpressionManager {
                     return;
                 }
 
+                if (mathStr.startsWith('[[') && mathStr.endsWith(']]')) {
+                    mathStr = mathStr.replace(/\[\[/g, '\\begin{bmatrix} ')
+                                     .replace(/\]\]/g, ' \\end{bmatrix}')
+                                     .replace(/\],\s*\[/g, ' \\\\ ')
+                                     .replace(/,\s*/g, ' & ');
+                }
+
                 if (win.katex && !mathStr.includes('Erro') && !mathStr.includes('indefinido') && !mathStr.includes('carregar')) {
                     try {
                         const html = win.katex.renderToString(mathStr, { throwOnError: false });
@@ -2955,14 +2611,14 @@ export class ExpressionManager {
     }
 
     /**
-     * Recalcula em tempo real os tamanhos visuais das células de todas as matrizes
+     * Recalcula em tempo real os tamanhos e posições das alças de todas as matrizes
      * de acordo com a largura atual da barra lateral e sua borda arrastável.
      */
     static updateAllMatrixSizes(): void {
-        const matrixBlocks = document.querySelectorAll<HTMLElement>('div[data-type="matrix"]');
-        matrixBlocks.forEach((block) => {
-            if (typeof (block as any)._updateCellVisuals === 'function') {
-                (block as any)._updateCellVisuals();
+        const blocks = document.querySelectorAll<HTMLElement>('#expressions-list > div');
+        blocks.forEach((block) => {
+            if (typeof (block as any)._updateMatrixHandle === 'function') {
+                (block as any)._updateMatrixHandle();
             }
         });
     }

@@ -1,8 +1,12 @@
+// @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
 import { FaultTolerantParser } from '../src/core/faultTolerantParser';
 import { GLRenderer } from '../src/graphics/glRenderer';
 import { PrattParser } from '../src/core/prattParser';
 import { StateManager } from '../src/core/stateManager';
+import { ExpressionManager } from '../src/ui/expressionManager';
+import { MatrixEngine } from '../src/core/matrixEngine';
+import { MathEngine } from '../src/core/mathEngine';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -147,5 +151,90 @@ describe('Regression Suite: 2D z-sliders, GLSL uniforms, ABNT2 deadkeys, KaTeX f
         const missingAfter = freeAfter.filter(v => StateManager.values[v] === undefined);
         expect(missingAfter).toEqual([]);
         // Now missingAfter is empty, so the curve IS plotted with z = 1!
+    });
+
+    it('generates Desmos-compliant inline matrix LaTeX with zero defaults', () => {
+        const mat22 = ExpressionManager.generateMatrixLatex(2, 2);
+        expect(mat22).toBe('\\begin{bmatrix} 0 & 0 \\\\ 0 & 0 \\end{bmatrix}');
+
+        const mat34 = ExpressionManager.generateMatrixLatex(3, 4);
+        expect(mat34).toBe('\\begin{bmatrix} 0 & 0 & 0 & 0 \\\\ 0 & 0 & 0 & 0 \\\\ 0 & 0 & 0 & 0 \\end{bmatrix}');
+
+        const customData = ExpressionManager.generateMatrixLatex(2, 2, [['1', '2'], ['3', '4']]);
+        expect(customData).toBe('\\begin{bmatrix} 1 & 2 \\\\ 3 & 4 \\end{bmatrix}');
+    });
+
+    it('distinguishes pure literal matrix from matrix operations', () => {
+        const pureAst = new PrattParser('[[1, 2], [3, 4]]').parseExpression();
+        const pureClean = '[[1, 2], [3, 4]]';
+        const isPureLiteral = (pureAst[0] === 'List' && Array.isArray(pureAst[1]) && pureAst[1][0] === 'List') ||
+            /^\[\[\s*-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?)*\s*\](?:\s*,\s*\[\s*-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?)*\s*\])*\]$/.test(pureClean.trim());
+        expect(isPureLiteral).toBe(true);
+
+        const opAst = new PrattParser('[[1, 2], [3, 4]] * 2').parseExpression();
+        const opClean = '[[1, 2], [3, 4]] * 2';
+        const isOpLiteral = (opAst[0] === 'List' && Array.isArray(opAst[1]) && opAst[1][0] === 'List') ||
+            /^\[\[\s*-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?)*\s*\](?:\s*,\s*\[\s*-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?)*\s*\])*\]$/.test(opClean.trim());
+        expect(isOpLiteral).toBe(false);
+
+        // Op evaluation evaluates to a matrix
+        const evalRes = MathEngine.evaluateAST(opAst, {});
+        expect(MatrixEngine.isMatrix(evalRes)).toBe(true);
+        expect(evalRes).toEqual([[2, 4], [6, 8]]);
+        expect(MatrixEngine.formatMatrixDisplay(evalRes)).toBe('[[2, 4], [6, 8]]');
+    });
+
+    it('creates pure inline math-field blocks and handles for matrices without legacy purple widgets', () => {
+        document.body.innerHTML = `
+            <div id="expressions-list"></div>
+            <button id="add-expression-btn"></button>
+            <div id="sidebar"></div>
+        `;
+        ExpressionManager.init();
+
+        const blockId = ExpressionManager.addMatrix({ name: 'A', rows: 2, cols: 2 });
+        const block = document.getElementById(blockId);
+        expect(block).toBeTruthy();
+
+        // Must NOT be a custom widget card
+        expect(block?.dataset.type).not.toBe('matrix');
+        expect(block?.querySelector('.matrix-name-input')).toBeNull();
+        expect(block?.querySelector('.matrix-dim-badge')).toBeNull();
+
+        // MUST be a standard math-field expression block with inline handle
+        const mf = block?.querySelector('math-field') as any;
+        expect(mf).toBeTruthy();
+        expect(mf.value).toBe('A = \\begin{bmatrix} 0 & 0 \\\\ 0 & 0 \\end{bmatrix}');
+
+        const handle = block?.querySelector('.matrix-inline-handle');
+        expect(handle).toBeTruthy();
+
+        const tooltip = block?.querySelector('.matrix-inline-tooltip');
+        expect(tooltip).toBeTruthy();
+    });
+
+    it('restores clean Desmos color circle border on setError(blockId, null) without white ring gap', () => {
+        document.body.innerHTML = `
+            <div id="expressions-list"></div>
+            <button id="add-expression-btn"></button>
+            <div id="sidebar"></div>
+        `;
+        ExpressionManager.init();
+
+        const blockId = ExpressionManager.addBlock(false, 'x^2');
+        const block = document.getElementById(blockId)!;
+        block.dataset.color = '#2d70b3';
+        const visBtn = block.querySelector('.visibility-toggle') as HTMLElement;
+        expect(visBtn).toBeTruthy();
+
+        // Trigger error then clear error
+        ExpressionManager.setError(blockId, 'Algum erro');
+        expect(visBtn.style.display).toBe('none');
+
+        ExpressionManager.setError(blockId, null);
+        expect(visBtn.style.display).toBe('flex');
+        expect(visBtn.style.border).toMatch(/2px solid (?:#2d70b3|rgb\(45, 112, 179\))/);
+        expect(visBtn.style.border).not.toContain('#ffffff');
+        expect(visBtn.style.boxShadow).toBe('none');
     });
 });

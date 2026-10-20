@@ -1823,7 +1823,9 @@ function compileAllExpressions() {
                         return;
                     }
                     if (MatrixEngine.isMatrix(evalRes)) {
-                        if (cleanStr.trim().startsWith('[[')) {
+                        const isPureLiteralMatrix = (ast[0] === 'List' && Array.isArray(ast[1]) && ast[1][0] === 'List') ||
+                            /^\[\[\s*-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?)*\s*\](?:\s*,\s*\[\s*-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?)*\s*\])*\]$/.test(cleanStr.trim());
+                        if (isPureLiteralMatrix) {
                             ExpressionManager.setResult(item.id, '');
                         } else {
                             ExpressionManager.setResult(item.id, `= ${MatrixEngine.formatMatrixDisplay(evalRes)}`);
