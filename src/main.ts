@@ -396,10 +396,11 @@ function scheduleFrame() {
 function compileAllExpressions() {
     // Inicializa funções pré-compiladas do motor matemático (add, sub, mul, div, listEngine, matrixEngine, pointEngine, etc.)
     MathEngine.initCompiledFuncs();
+    StateManager.updateViewportDimensions(Camera.width, Camera.height);
 
     const rawData = ExpressionManager.getAllExpressions();
     validEquations = [];
-    const activeVars: string[] = [];
+    const activeVars: string[] = ['width', 'height'];
     const definedUserFunctionNames = new Set<string>();
     const definedMatrixNames = new Set<string>();
 

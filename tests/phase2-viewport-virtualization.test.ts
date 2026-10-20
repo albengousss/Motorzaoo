@@ -2,6 +2,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { StateManager } from '../src/core/stateManager';
 import { FaultTolerantParser } from '../src/core/faultTolerantParser';
+import { LatexNormalizer } from '../src/core/latexNormalizer';
+import { PrattParser } from '../src/core/prattParser';
+import { MathEngine } from '../src/core/mathEngine';
 import { parseStepInput, formatStepForDisplay } from '../src/core/stepParser';
 import { ExpressionManager } from '../src/ui/expressionManager';
 
@@ -81,9 +84,10 @@ describe('Phase 1 Residuals & Phase 2 Viewport & Virtualization Suite', () => {
         });
     });
 
-    describe('2. Minor Grid Subdivisions (Mantissa Normalization at Any Zoom Magnitude)', () => {
-        const getNormalizedSubdivisions = (step: number, isRad: boolean) => {
-            if (isRad || Math.abs(step % (Math.PI / 4)) < 1e-4) return 4;
+    describe('2. Minor Grid Subdivisions (Desmos Parity: no false 4-subdivision forcing)', () => {
+        const getNormalizedSubdivisions = (step: number) => {
+            const piQuarterRatio = step / (Math.PI / 4);
+            if (Math.abs(piQuarterRatio - Math.round(piQuarterRatio)) < 1e-4) return 4;
             const mag = Math.floor(Math.log10(step));
             const mantissa = Math.round(step / Math.pow(10, mag)); // 1, 2, ou 5
             if (mantissa === 2) return 4;
@@ -91,28 +95,29 @@ describe('Phase 1 Residuals & Phase 2 Viewport & Virtualization Suite', () => {
         };
 
         it('computes 4 subdivisions for mantissa 2 and 5 for mantissa 1 and 5 in standard zoom', () => {
-            expect(getNormalizedSubdivisions(1, false)).toBe(5);
-            expect(getNormalizedSubdivisions(2, false)).toBe(4);
-            expect(getNormalizedSubdivisions(5, false)).toBe(5);
-            expect(getNormalizedSubdivisions(10, false)).toBe(5);
-            expect(getNormalizedSubdivisions(20, false)).toBe(4);
-            expect(getNormalizedSubdivisions(50, false)).toBe(5);
+            expect(getNormalizedSubdivisions(1)).toBe(5);
+            expect(getNormalizedSubdivisions(2)).toBe(4);
+            expect(getNormalizedSubdivisions(5)).toBe(5);
+            expect(getNormalizedSubdivisions(10)).toBe(5);
+            expect(getNormalizedSubdivisions(20)).toBe(4);
+            expect(getNormalizedSubdivisions(50)).toBe(5);
         });
 
         it('correctly handles decimal zoom scales (< 0.5) without round-to-zero bugs', () => {
-            expect(getNormalizedSubdivisions(0.5, false)).toBe(5);
-            expect(getNormalizedSubdivisions(0.2, false)).toBe(4);
-            expect(getNormalizedSubdivisions(0.1, false)).toBe(5);
-            expect(getNormalizedSubdivisions(0.05, false)).toBe(5);
-            expect(getNormalizedSubdivisions(0.02, false)).toBe(4);
-            expect(getNormalizedSubdivisions(0.01, false)).toBe(5);
-            expect(getNormalizedSubdivisions(0.002, false)).toBe(4);
+            expect(getNormalizedSubdivisions(0.5)).toBe(5);
+            expect(getNormalizedSubdivisions(0.2)).toBe(4);
+            expect(getNormalizedSubdivisions(0.1)).toBe(5);
+            expect(getNormalizedSubdivisions(0.05)).toBe(5);
+            expect(getNormalizedSubdivisions(0.02)).toBe(4);
+            expect(getNormalizedSubdivisions(0.01)).toBe(5);
+            expect(getNormalizedSubdivisions(0.002)).toBe(4);
         });
 
-        it('uses 4 subdivisions in radian mode or steps of pi/4, pi/2, pi', () => {
-            expect(getNormalizedSubdivisions(Math.PI / 2, false)).toBe(4);
-            expect(getNormalizedSubdivisions(Math.PI, false)).toBe(4);
-            expect(getNormalizedSubdivisions(1, true)).toBe(4);
+        it('uses 4 subdivisions when step is a multiple of pi/4, pi/2, or pi', () => {
+            expect(getNormalizedSubdivisions(Math.PI / 4)).toBe(4);
+            expect(getNormalizedSubdivisions(Math.PI / 2)).toBe(4);
+            expect(getNormalizedSubdivisions(Math.PI)).toBe(4);
+            expect(getNormalizedSubdivisions(2 * Math.PI)).toBe(4);
         });
     });
 
@@ -168,6 +173,19 @@ describe('Phase 1 Residuals & Phase 2 Viewport & Virtualization Suite', () => {
             expect(StateManager.values['aspect']).toBeCloseTo(1920 / 1080, 6);
         });
 
+        it('preserves width and height during StateManager.gc() even with empty activeVars', () => {
+            StateManager.updateViewportDimensions(1420, 900);
+            StateManager.values['user_slider'] = 42;
+
+            // Run GC with user_slider deleted (empty activeVars)
+            StateManager.gc([]);
+
+            // user_slider must be deleted, but width and height must remain!
+            expect(StateManager.values['user_slider']).toBeUndefined();
+            expect(StateManager.values['width']).toBe(1420);
+            expect(StateManager.values['height']).toBe(900);
+        });
+
         it('clears state cleanly during StateManager.clearAll()', () => {
             StateManager.updateViewportDimensions(1280, 720);
             StateManager.clearAll();
@@ -189,7 +207,36 @@ describe('Phase 1 Residuals & Phase 2 Viewport & Virtualization Suite', () => {
         });
     });
 
-    describe('5. Edit List Mode & Done Button Coordination', () => {
+    describe('5. Multi-Letter Viewport Identifiers (width & height) Normalization & Parsing', () => {
+        it('normalizes \\operatorname{width} and \\operatorname{height} to plain identifiers', () => {
+            expect(LatexNormalizer.normalize('\\operatorname{width}')).toBe('width');
+            expect(LatexNormalizer.normalize('\\operatorname{height}')).toBe('height');
+            expect(LatexNormalizer.normalize('\\mathrm{width}')).toBe('width');
+            expect(LatexNormalizer.normalize('\\text{height}')).toBe('height');
+        });
+
+        it('heals space-separated or dot-multiplied letters (w i d t h, w*i*d*t*h) to width and height', () => {
+            expect(LatexNormalizer.normalize('w i d t h')).toBe('width');
+            expect(LatexNormalizer.normalize('h e i g h t')).toBe('height');
+            expect(LatexNormalizer.normalize('w \\cdot i \\cdot d \\cdot t \\cdot h')).toBe('width');
+            expect(LatexNormalizer.normalize('h \\cdot e \\cdot i \\cdot g \\cdot h \\cdot t')).toBe('height');
+        });
+
+        it('parses and evaluates width / height in PrattParser & MathEngine correctly', () => {
+            const parser = new PrattParser('width / height');
+            const ast = parser.parse();
+            expect(ast).toEqual(['Divide', 'width', 'height']);
+
+            StateManager.updateViewportDimensions(1600, 900);
+            const val = MathEngine.evaluateAST(ast, StateManager.values);
+            expect(val).toBeCloseTo(1600 / 900, 6);
+
+            const compiled = MathEngine.compile(ast);
+            expect(compiled(0, 0, StateManager.values)).toBeCloseTo(1600 / 900, 6);
+        });
+    });
+
+    describe('6. Edit List Mode & Done Button Coordination', () => {
         it('toggles is-editing-list and swaps #edit-list-btn and #done-edit-list-btn', () => {
             const editBtn = document.getElementById('edit-list-btn') as HTMLButtonElement;
             const doneBtn = document.getElementById('done-edit-list-btn') as HTMLButtonElement;

@@ -170,13 +170,18 @@ export class LatexNormalizer {
         const spacedFuncs = [
             'r e d u c e d r o w e c h e l o n f o r m', 'd e t e r m i n a n t', 'm a t r i x r a n k',
             't r a n s p o s e', 'a r c s i n', 'a r c c o s', 'a r c t a n', 's i n h', 'c o s h', 't a n h',
-            'c o s s e c', 'c o t a n', 't r a n', 't r a c e', 'i n v e r t', 'r r e f', 'r a n k',
+            'c o s s e c', 'c o t a n', 't r a n', 't r a c e', 'i n v e r t', 'r r e f', 'r a n k', 'w i d t h', 'h e i g h t',
             's i n', 'c o s', 't a n', 's e c', 'c s c', 'c o t', 'l o g', 'l n', 'e x p', 'd e t', 'i n v', 't r'
         ];
         spacedFuncs.forEach(func => {
             const regex = new RegExp(func.split('').join('\\s*'), 'gi');
             s = s.replace(regex, func.replace(/\s+/g, ''));
         });
+
+        // Conserta letras espaçadas ou multiplicadas de width e height
+        s = s
+            .replace(/(?:^|[^a-zA-Z_])w\s*(?:\*|\s)\s*i\s*(?:\*|\s)\s*d\s*(?:\*|\s)\s*t\s*(?:\*|\s)\s*h(?![a-zA-Z0-9_])/gi, (m) => m.startsWith('w') || m.startsWith('W') ? 'width' : m[0] + 'width')
+            .replace(/(?:^|[^a-zA-Z_])h\s*(?:\*|\s)\s*e\s*(?:\*|\s)\s*i\s*(?:\*|\s)\s*g\s*(?:\*|\s)\s*h\s*(?:\*|\s)\s*t(?![a-zA-Z0-9_])/gi, (m) => m.startsWith('h') || m.startsWith('H') ? 'height' : m[0] + 'height');
 
         // Limpa wrappers de texto e operadores LaTeX que o MathLive gera
         s = s

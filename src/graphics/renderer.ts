@@ -144,18 +144,20 @@ export class Renderer {
         const majorStepY = (StateManager.yStep && StateManager.yStep > 0) ? StateManager.yStep : calcStep(rangeY);
 
         // Subdivisão secundária (minor grid) precisa para qualquer magnitude (10^-15 a 10^15)
-        const getNormalizedSubdivisions = (step: number, isRad: boolean) => {
-            if (isRad || Math.abs(step % (Math.PI / 4)) < 1e-4) return 4;
+        // No Desmos oficial: 4 subdivisões se o passo for comensurável com π/4 ou mantissa 2; 5 subdivisões para mantissa 1 e 5
+        const getNormalizedSubdivisions = (step: number) => {
+            const piQuarterRatio = step / (Math.PI / 4);
+            if (Math.abs(piQuarterRatio - Math.round(piQuarterRatio)) < 1e-4) return 4;
             const mag = Math.floor(Math.log10(step));
             const mantissa = Math.round(step / Math.pow(10, mag)); // 1, 2, ou 5
             if (mantissa === 2) return 4;
             return 5;
         };
 
-        const minorSubdivsX = getNormalizedSubdivisions(majorStepX, isRadMode);
+        const minorSubdivsX = getNormalizedSubdivisions(majorStepX);
         const minorStepX = majorStepX / minorSubdivsX;
 
-        const minorSubdivsY = getNormalizedSubdivisions(majorStepY, isRadMode);
+        const minorSubdivsY = getNormalizedSubdivisions(majorStepY);
         const minorStepY = majorStepY / minorSubdivsY;
 
         const W = Camera.width;

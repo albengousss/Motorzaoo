@@ -88,7 +88,7 @@ export class StateManager {
      * Limpeza (Garbage Collection): Remove variáveis que já não existem nos blocos
      */
     static gc(activeVars: string[], activeBlockIds?: Set<string>) {
-        const activeSet = new Set(activeVars);
+        const activeSet = new Set([...activeVars, 'width', 'height']);
         const allKeys = new Set([
             ...Object.keys(this.values),
             ...Object.keys(this.asts),

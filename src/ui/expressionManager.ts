@@ -638,6 +638,8 @@ export class ExpressionManager {
             'times': '\\times',
             'div': '\\div',
             'e': 'e',
+            'width': '\\operatorname{width}',
+            'height': '\\operatorname{height}',
             'd/dx': '\\frac{d}{dx}',
             'ddx': '\\frac{d}{dx}',
             'diff': '\\frac{d}{dx}',
