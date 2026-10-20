@@ -55,6 +55,7 @@ export class Renderer {
             
             // Comunica a câmera para ela arrumar a proporção (usando tamanho lógico)!
             Camera.resize(rect.width, rect.height);
+            StateManager.updateViewportDimensions(rect.width, rect.height);
         }
     }
 
@@ -142,11 +143,19 @@ export class Renderer {
         const majorStepX = (StateManager.xStep && StateManager.xStep > 0) ? StateManager.xStep : calcStep(rangeX);
         const majorStepY = (StateManager.yStep && StateManager.yStep > 0) ? StateManager.yStep : calcStep(rangeY);
 
-        // Subdivisão secundária (minor grid): 5 divisões por padrão ou 4 se passo for múltiplo de 2
-        const minorSubdivsX = (Math.round(majorStepX) % 2 === 0 && Math.round(majorStepX) % 5 !== 0) ? 4 : 5;
+        // Subdivisão secundária (minor grid) precisa para qualquer magnitude (10^-15 a 10^15)
+        const getNormalizedSubdivisions = (step: number, isRad: boolean) => {
+            if (isRad || Math.abs(step % (Math.PI / 4)) < 1e-4) return 4;
+            const mag = Math.floor(Math.log10(step));
+            const mantissa = Math.round(step / Math.pow(10, mag)); // 1, 2, ou 5
+            if (mantissa === 2) return 4;
+            return 5;
+        };
+
+        const minorSubdivsX = getNormalizedSubdivisions(majorStepX, isRadMode);
         const minorStepX = majorStepX / minorSubdivsX;
 
-        const minorSubdivsY = (Math.round(majorStepY) % 2 === 0 && Math.round(majorStepY) % 5 !== 0) ? 4 : 5;
+        const minorSubdivsY = getNormalizedSubdivisions(majorStepY, isRadMode);
         const minorStepY = majorStepY / minorSubdivsY;
 
         const W = Camera.width;
@@ -187,11 +196,12 @@ export class Renderer {
             );
             this.ctx.lineWidth = 1;
 
-            // Círculos concêntricos: secundários (minor) e principais (major)
-            for (let r = minorStepX; r <= maxRadiusMath * 1.25; r += minorStepX) {
+            const totalCircles = Math.floor((maxRadiusMath * 1.25) / minorStepX);
+            for (let k = 1; k <= totalCircles; k++) {
+                const r = k * minorStepX;
                 const pxRadius = (r / (Camera.xMax - Camera.xMin)) * W;
                 if (pxRadius <= 0) continue;
-                const isMajor = Math.abs(r % majorStepX) < 1e-5 || Math.abs(r % majorStepX - majorStepX) < 1e-5;
+                const isMajor = (k % minorSubdivsX === 0);
                 this.ctx.strokeStyle = isMajor ? majorGridColor : minorGridColor;
                 this.ctx.beginPath();
                 this.ctx.arc(centerX, centerY, pxRadius, 0, 2 * Math.PI);
@@ -219,32 +229,36 @@ export class Renderer {
             }
         }
 
-        // 2. Grelha Cartesiana em 2 Camadas (Minor e Major) + Eixo X (half-pixel alignment +0.5)
+        // 2. Grelha Cartesiana em 2 Camadas (Minor e Major) + Eixo X (Indexação inteira k imune a deriva IEEE-754)
         if (showGrid && !isPolar) {
-            // Camada Secundária (Minor Gridlines)
+            const kMinX = Math.ceil(Camera.xMin / minorStepX);
+            const kMaxX = Math.floor(Camera.xMax / minorStepX);
+
+            // Camada Secundária (Minor Gridlines X)
             this.ctx.strokeStyle = minorGridColor;
             this.ctx.lineWidth = 1;
             this.ctx.beginPath();
-            const startMinorX = Math.ceil(Camera.xMin / minorStepX) * minorStepX;
-            for (let x = startMinorX; x <= Camera.xMax; x += minorStepX) {
-                const isMajor = Math.abs(x % majorStepX) < 1e-5 || Math.abs(x % majorStepX - majorStepX) < 1e-5;
-                const isAxis = Math.abs(x) < 1e-10;
-                if (!isMajor && !isAxis) {
-                    const px = Math.floor(Camera.toPixelX(x)) + 0.5;
-                    this.ctx.moveTo(px, 0);
-                    this.ctx.lineTo(px, H);
+            for (let k = kMinX; k <= kMaxX; k++) {
+                if (k % minorSubdivsX !== 0) {
+                    const x = k * minorStepX;
+                    if (Math.abs(x) > 1e-10) {
+                        const px = Math.floor(Camera.toPixelX(x)) + 0.5;
+                        this.ctx.moveTo(px, 0);
+                        this.ctx.lineTo(px, H);
+                    }
                 }
             }
             this.ctx.stroke();
 
-            // Camada Principal (Major Gridlines)
+            // Camada Principal (Major Gridlines X)
             this.ctx.strokeStyle = majorGridColor;
             this.ctx.lineWidth = 1;
             this.ctx.beginPath();
-            const startMajorX = Math.ceil(Camera.xMin / majorStepX) * majorStepX;
-            for (let x = startMajorX; x <= Camera.xMax; x += majorStepX) {
-                const isAxis = Math.abs(x) < 1e-10;
-                if (!isAxis) {
+            const kMajorMinX = Math.ceil(Camera.xMin / majorStepX);
+            const kMajorMaxX = Math.floor(Camera.xMax / majorStepX);
+            for (let k = kMajorMinX; k <= kMajorMaxX; k++) {
+                const x = k * majorStepX;
+                if (Math.abs(x) > 1e-10) {
                     const px = Math.floor(Camera.toPixelX(x)) + 0.5;
                     this.ctx.moveTo(px, 0);
                     this.ctx.lineTo(px, H);
@@ -253,20 +267,23 @@ export class Renderer {
             this.ctx.stroke();
         }
 
-        // 3. Grelha Cartesiana em 2 Camadas (Minor e Major) + Eixo Y (half-pixel alignment +0.5)
+        // 3. Grelha Cartesiana em 2 Camadas (Minor e Major) + Eixo Y (Indexação inteira k imune a deriva IEEE-754)
         if (showGrid && !isPolar) {
+            const kMinY = Math.ceil(Camera.yMin / minorStepY);
+            const kMaxY = Math.floor(Camera.yMax / minorStepY);
+
             // Camada Secundária (Minor Gridlines Y)
             this.ctx.strokeStyle = minorGridColor;
             this.ctx.lineWidth = 1;
             this.ctx.beginPath();
-            const startMinorY = Math.ceil(Camera.yMin / minorStepY) * minorStepY;
-            for (let y = startMinorY; y <= Camera.yMax; y += minorStepY) {
-                const isMajor = Math.abs(y % majorStepY) < 1e-5 || Math.abs(y % majorStepY - majorStepY) < 1e-5;
-                const isAxis = Math.abs(y) < 1e-10;
-                if (!isMajor && !isAxis) {
-                    const py = Math.floor(Camera.toPixelY(y)) + 0.5;
-                    this.ctx.moveTo(0, py);
-                    this.ctx.lineTo(W, py);
+            for (let k = kMinY; k <= kMaxY; k++) {
+                if (k % minorSubdivsY !== 0) {
+                    const y = k * minorStepY;
+                    if (Math.abs(y) > 1e-10) {
+                        const py = Math.floor(Camera.toPixelY(y)) + 0.5;
+                        this.ctx.moveTo(0, py);
+                        this.ctx.lineTo(W, py);
+                    }
                 }
             }
             this.ctx.stroke();
@@ -275,10 +292,11 @@ export class Renderer {
             this.ctx.strokeStyle = majorGridColor;
             this.ctx.lineWidth = 1;
             this.ctx.beginPath();
-            const startMajorY = Math.ceil(Camera.yMin / majorStepY) * majorStepY;
-            for (let y = startMajorY; y <= Camera.yMax; y += majorStepY) {
-                const isAxis = Math.abs(y) < 1e-10;
-                if (!isAxis) {
+            const kMajorMinY = Math.ceil(Camera.yMin / majorStepY);
+            const kMajorMaxY = Math.floor(Camera.yMax / majorStepY);
+            for (let k = kMajorMinY; k <= kMajorMaxY; k++) {
+                const y = k * majorStepY;
+                if (Math.abs(y) > 1e-10) {
                     const py = Math.floor(Camera.toPixelY(y)) + 0.5;
                     this.ctx.moveTo(0, py);
                     this.ctx.lineTo(W, py);
@@ -320,8 +338,10 @@ export class Renderer {
             // Rótulos do Eixo X
             this.ctx.textAlign = 'center';
             this.ctx.textBaseline = 'top';
-            const startMajorX = Math.ceil(Camera.xMin / majorStepX) * majorStepX;
-            for (let x = startMajorX; x <= Camera.xMax; x += majorStepX) {
+            const kMajorMinX = Math.ceil(Camera.xMin / majorStepX);
+            const kMajorMaxX = Math.floor(Camera.xMax / majorStepX);
+            for (let k = kMajorMinX; k <= kMajorMaxX; k++) {
+                const x = k * majorStepX;
                 if (Math.abs(x) < 1e-10) continue;
                 const px = Math.floor(Camera.toPixelX(x)) + 0.5;
                 const numStr = formatDesmosAxisNumber(x, isRadMode);
@@ -339,8 +359,10 @@ export class Renderer {
             // Rótulos do Eixo Y
             this.ctx.textAlign = 'right';
             this.ctx.textBaseline = 'middle';
-            const startMajorY = Math.ceil(Camera.yMin / majorStepY) * majorStepY;
-            for (let y = startMajorY; y <= Camera.yMax; y += majorStepY) {
+            const kMajorMinY = Math.ceil(Camera.yMin / majorStepY);
+            const kMajorMaxY = Math.floor(Camera.yMax / majorStepY);
+            for (let k = kMajorMinY; k <= kMajorMaxY; k++) {
+                const y = k * majorStepY;
                 if (Math.abs(y) < 1e-10) continue;
                 const py = Math.floor(Camera.toPixelY(y)) + 0.5;
                 const numStr = formatDesmosAxisNumber(y, isRadMode);
@@ -635,7 +657,7 @@ export class Renderer {
     drawFills(fills: {x:number, y:number, w:number, h:number}[], color: string = '#2d70b3') {
         if (fills.length === 0) return;
         
-        this.ctx.fillStyle = color + '40'; // O '40' no hex significa 25% de opacidade
+        this.ctx.fillStyle = color + '66'; // Opacidade oficial Desmos de 40% (#...66)
         this.ctx.beginPath();
         
         fills.forEach(f => {

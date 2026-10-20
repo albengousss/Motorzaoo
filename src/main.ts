@@ -1,3 +1,4 @@
+import { parseStepInput, formatStepForDisplay } from './core/stepParser';
 import 'mathlive';
 import './style.css';
 import { PrattParser } from './core/prattParser';
@@ -35,17 +36,18 @@ import { CommandsGuideModal } from './ui/commandsGuideModal';
 const renderer = new Renderer('graphCanvas');
 const glRenderer = new GLRenderer('webglCanvas');
 const renderer3d = new Renderer3D('canvas3d');
-const colors = ['#c74440', '#2d70b3', '#388c46', '#6042a6', '#fa7e19'];
+const colors = ['#c74440', '#2d70b3', '#388c46', '#6042a6', '#fa7e19', '#000000'];
 
 function resizeAll() {
     renderer.resize();
     glRenderer.resize();
     renderer3d.resize();
+    StateManager.updateViewportDimensions(Camera.width, Camera.height);
 }
 
 function getFreeVariables(ast: any, boundVars: string[] = []): string[] {
     const vars = new Set<string>();
-    const standardNames = new Set(['pi', 'e', ...boundVars]);
+    const standardNames = new Set(['pi', 'e', 'width', 'height', ...boundVars]);
 
     function walk(node: any) {
         if (typeof node === 'string') {
@@ -2571,8 +2573,8 @@ function updateAngleButtons() {
             if (xmaxInput) xmaxInput.value = Camera.xMax.toFixed(2);
             if (yminInput) yminInput.value = Camera.yMin.toFixed(2);
             if (ymaxInput) ymaxInput.value = Camera.yMax.toFixed(2);
-            if (xstepInput) xstepInput.value = StateManager.xStep ? StateManager.xStep.toString() : '';
-            if (ystepInput) ystepInput.value = StateManager.yStep ? StateManager.yStep.toString() : '';
+            if (xstepInput) xstepInput.value = formatStepForDisplay(StateManager.xStep);
+            if (ystepInput) ystepInput.value = formatStepForDisplay(StateManager.yStep);
             if (xlabelInput) xlabelInput.value = StateManager.xLabel || '';
             if (ylabelInput) ylabelInput.value = StateManager.yLabel || '';
             if (axesCb) axesCb.checked = StateManager.showAxes;
@@ -2601,6 +2603,9 @@ function updateAngleButtons() {
         drawFrame();
     }
 };
+
+
+export { parseStepInput, formatStepForDisplay };
 
 function initSettingsPopoverListeners() {
     const popover = document.getElementById('graph-settings-popover');
@@ -2640,14 +2645,12 @@ function initSettingsPopoverListeners() {
     });
 
     document.getElementById('setting-xstep')?.addEventListener('input', (e: any) => {
-        const val = parseFloat(e.target.value);
-        StateManager.xStep = (Number.isFinite(val) && val > 0) ? val : null;
+        StateManager.xStep = parseStepInput(e.target.value);
         drawFrame();
     });
 
     document.getElementById('setting-ystep')?.addEventListener('input', (e: any) => {
-        const val = parseFloat(e.target.value);
-        StateManager.yStep = (Number.isFinite(val) && val > 0) ? val : null;
+        StateManager.yStep = parseStepInput(e.target.value);
         drawFrame();
     });
 
@@ -2733,22 +2736,73 @@ function initSettingsPopoverListeners() {
     drawFrame();
 };
 
-(window as any)._zoomIn = () => {
-    if (StateManager.viewMode === '3d') {
-        Camera3D.zoom(0.8);
-    } else {
-        Camera.zoom(0.8, 0.8, Camera.width / 2, Camera.height / 2);
+let activeZoomAnimation: number | null = null;
+
+function animateSmoothZoom(targetScaleFactor: number, duration: number = 200) {
+    if (activeZoomAnimation !== null) {
+        cancelAnimationFrame(activeZoomAnimation);
+        activeZoomAnimation = null;
     }
-    drawFrame();
+
+    if (StateManager.viewMode === '3d') {
+        Camera3D.zoom(targetScaleFactor);
+        drawFrame();
+        return;
+    }
+
+    const startXMin = Camera.xMin;
+    const startXMax = Camera.xMax;
+    const startYMin = Camera.yMin;
+    const startYMax = Camera.yMax;
+
+    const centerX = (startXMin + startXMax) / 2;
+    const centerY = (startYMin + startYMax) / 2;
+    const halfSpanX = ((startXMax - startXMin) * targetScaleFactor) / 2;
+    const halfSpanY = ((startYMax - startYMin) * targetScaleFactor) / 2;
+
+    const targetXMin = centerX - halfSpanX;
+    const targetXMax = centerX + halfSpanX;
+    const targetYMin = centerY - halfSpanY;
+    const targetYMax = centerY + halfSpanY;
+
+    if (targetXMax - targetXMin <= 1e-8 || targetYMax - targetYMin <= 1e-8) return;
+
+    const startTime = performance.now();
+
+    function step(now: number) {
+        const elapsed = now - startTime;
+        const progress = Math.min(1, elapsed / duration);
+        // Desmos cubic ease-out: 1 - (1 - progress)^3
+        const ease = 1 - Math.pow(1 - progress, 3);
+
+        Camera.xMin = startXMin + (targetXMin - startXMin) * ease;
+        Camera.xMax = startXMax + (targetXMax - startXMax) * ease;
+        Camera.yMin = startYMin + (targetYMin - startYMin) * ease;
+        Camera.yMax = startYMax + (targetYMax - startYMax) * ease;
+
+        drawFrame();
+
+        if (progress < 1) {
+            activeZoomAnimation = requestAnimationFrame(step);
+        } else {
+            Camera.xMin = targetXMin;
+            Camera.xMax = targetXMax;
+            Camera.yMin = targetYMin;
+            Camera.yMax = targetYMax;
+            activeZoomAnimation = null;
+            drawFrame();
+        }
+    }
+
+    activeZoomAnimation = requestAnimationFrame(step);
+}
+
+(window as any)._zoomIn = () => {
+    animateSmoothZoom(0.5, 200);
 };
 
 (window as any)._zoomOut = () => {
-    if (StateManager.viewMode === '3d') {
-        Camera3D.zoom(1.25);
-    } else {
-        Camera.zoom(1.25, 1.25, Camera.width / 2, Camera.height / 2);
-    }
-    drawFrame();
+    animateSmoothZoom(2.0, 200);
 };
 
 /** Limpa todas as expressões e reinicia o estado */
@@ -2758,6 +2812,7 @@ function initSettingsPopoverListeners() {
     if (list) list.innerHTML = '';
     ExpressionManager.blockCounter = 0;
     StateManager.clearAll();
+    StateManager.updateViewportDimensions(Camera.width, Camera.height);
     MathEngine.userFunctions = {};
     MathEngine.initCompiledFuncs();
     ImplicitEngine.clearCache();
@@ -3028,43 +3083,95 @@ const collapseSidebarBtn = document.getElementById('collapse-sidebar-btn');
 let savedSidebarWidth = 500;
 let isDraggingSidebarResizer = false;
 
+let activeSidebarAnimation: number | null = null;
+
+function animateSidebarWidth(targetWidth: number, onComplete?: () => void) {
+    if (window.innerWidth <= 768) return;
+    if (activeSidebarAnimation !== null) {
+        cancelAnimationFrame(activeSidebarAnimation);
+        activeSidebarAnimation = null;
+    }
+
+    const startW = sidebarEl.getBoundingClientRect().width;
+    const diff = targetWidth - startW;
+    if (Math.abs(diff) < 2) {
+        sidebarEl.style.width = `${targetWidth}px`;
+        if (targetWidth === 0) {
+            sidebarEl.style.display = 'none';
+            if (sidebarResizer) sidebarResizer.style.display = 'none';
+            if (sidebarExpandTab) sidebarExpandTab.style.display = 'flex';
+        } else {
+            sidebarEl.style.display = 'flex';
+            if (sidebarResizer) sidebarResizer.style.display = 'flex';
+            if (sidebarExpandTab) sidebarExpandTab.style.display = 'none';
+        }
+        resizeAll();
+        drawFrame();
+        ExpressionManager.updateAllMatrixSizes();
+        onComplete?.();
+        return;
+    }
+
+    const duration = 200; // ms
+    const startTime = performance.now();
+
+    function step(now: number) {
+        const elapsed = now - startTime;
+        const progress = Math.min(1, elapsed / duration);
+        // Desmos cubic ease-out curve
+        const ease = 1 - Math.pow(1 - progress, 3);
+        const currentWidth = startW + diff * ease;
+        sidebarEl.style.width = `${currentWidth}px`;
+        resizeAll();
+        drawFrame();
+        ExpressionManager.updateAllMatrixSizes();
+
+        if (progress < 1) {
+            activeSidebarAnimation = requestAnimationFrame(step);
+        } else {
+            sidebarEl.style.width = `${targetWidth}px`;
+            if (targetWidth === 0) {
+                sidebarEl.style.display = 'none';
+                if (sidebarResizer) sidebarResizer.style.display = 'none';
+                if (sidebarExpandTab) sidebarExpandTab.style.display = 'flex';
+            } else {
+                sidebarEl.style.display = 'flex';
+                if (sidebarResizer) sidebarResizer.style.display = 'flex';
+                if (sidebarExpandTab) sidebarExpandTab.style.display = 'none';
+            }
+            activeSidebarAnimation = null;
+            resizeAll();
+            drawFrame();
+            ExpressionManager.updateAllMatrixSizes();
+            onComplete?.();
+        }
+    }
+    activeSidebarAnimation = requestAnimationFrame(step);
+}
+
 function collapseDesktopSidebar(fromDrag: boolean = false) {
     if (window.innerWidth <= 768) return;
     const currentW = sidebarEl.getBoundingClientRect().width;
-    if (currentW > 100) savedSidebarWidth = currentW;
-    sidebarEl.style.width = '0px';
-    sidebarEl.style.display = 'none';
-    if (sidebarResizer) {
-        sidebarResizer.style.display = 'none';
-        sidebarResizer.classList.remove('is-dragging');
-    }
-    if (sidebarExpandTab) sidebarExpandTab.style.display = 'flex';
+    if (currentW > 150) savedSidebarWidth = currentW;
 
     if (fromDrag || isDraggingSidebarResizer) {
         isDraggingSidebarResizer = false;
         document.body.classList.remove('select-none');
         document.body.style.cursor = '';
+        if (sidebarResizer) sidebarResizer.classList.remove('is-dragging');
     }
 
-    resizeAll();
-    drawFrame();
-    ExpressionManager.updateAllMatrixSizes();
+    animateSidebarWidth(0);
 }
 
 function expandDesktopSidebar() {
     if (window.innerWidth <= 768) return;
     sidebarEl.style.display = 'flex';
-    const restoreW = Math.max(290, Math.min(Math.floor(window.innerWidth * 0.80), savedSidebarWidth || 500));
-    sidebarEl.style.width = `${restoreW}px`;
+    sidebarEl.style.width = '0px';
     if (sidebarResizer) sidebarResizer.style.display = 'flex';
     if (sidebarExpandTab) sidebarExpandTab.style.display = 'none';
-    resizeAll();
-    drawFrame();
-    setTimeout(() => {
-        resizeAll();
-        drawFrame();
-        ExpressionManager.updateAllMatrixSizes();
-    }, 20);
+    const restoreW = Math.max(290, Math.min(Math.floor(window.innerWidth * 0.80), savedSidebarWidth || 500));
+    animateSidebarWidth(restoreW);
 }
 
 if (sidebarResizer) {
@@ -3082,7 +3189,7 @@ if (sidebarResizer) {
     sidebarResizer.addEventListener('pointermove', (e) => {
         if (!isDraggingSidebarResizer) return;
         const newWidth = e.clientX;
-        const minCollapseThreshold = 100; // Arrastou além da barra para a esquerda: a barra e a matriz somem!
+        const minCollapseThreshold = 150; // Arrastou além da barra para a esquerda: anima colapso suave!
         const maxAllowedWidth = Math.floor(window.innerWidth * 0.80);
 
         if (newWidth < minCollapseThreshold) {
@@ -3100,7 +3207,7 @@ if (sidebarResizer) {
             if (sidebarExpandTab) sidebarExpandTab.style.display = 'none';
         }
 
-        const clampedWidth = Math.min(maxAllowedWidth, Math.max(290, newWidth));
+        const clampedWidth = Math.min(maxAllowedWidth, Math.max(220, newWidth));
         sidebarEl.style.width = `${clampedWidth}px`;
         savedSidebarWidth = clampedWidth;
 
@@ -3205,12 +3312,20 @@ setTimeout(() => {
         (window as any).mathVirtualKeyboard.addEventListener('virtual-keyboard-toggle', () => {
             const vk = (window as any).mathVirtualKeyboard;
             const kbIcon = document.getElementById('keyboard-btn-icon');
+            const exprList = document.getElementById('expressions-list');
             if (vk.visible) {
                 if (kbIcon) {
                     kbIcon.setAttribute('data-lucide', 'chevron-down');
                     if ((window as any).lucide) (window as any).lucide.createIcons();
                 }
-                if (window.innerWidth <= 768) {
+                if (window.innerWidth > 768) {
+                    if (exprList) exprList.style.paddingBottom = '252px';
+                    const activeEl = document.activeElement as HTMLElement;
+                    if (activeEl && activeEl.tagName && activeEl.tagName.toLowerCase() === 'math-field') {
+                        const block = activeEl.closest('.group') as HTMLElement;
+                        if (block) block.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }
+                } else {
                     const keyboardHeight = vk.boundingRect.height || 280;
                     
                     if (!sidebarEl.dataset.savedHeight) {
@@ -3238,7 +3353,9 @@ setTimeout(() => {
                     kbIcon.setAttribute('data-lucide', 'keyboard');
                     if ((window as any).lucide) (window as any).lucide.createIcons();
                 }
-                if (window.innerWidth <= 768) {
+                if (window.innerWidth > 768) {
+                    if (exprList) exprList.style.paddingBottom = '0px';
+                } else {
                     sidebarEl.style.marginBottom = '0px';
                     sidebarEl.style.maxHeight = '';
                     sidebarEl.style.flex = '';

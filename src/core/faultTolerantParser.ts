@@ -35,7 +35,7 @@ export class FaultTolerantParser {
 
     // Coordenadas universais e constantes matemáticas protegidas
     public static readonly PROTECTED_IDENTIFIERS = new Set([
-        'x', 'y', 'z', 'pi', 'e'
+        'x', 'y', 'z', 'pi', 'e', 'width', 'height'
     ]);
 
     /**

@@ -354,9 +354,27 @@ export class ExpressionManager {
         redoBtns.forEach(btn => btn.addEventListener('click', () => HistoryManager.redo()));
 
         const editListBtn = document.getElementById('edit-list-btn');
+        const doneEditListBtn = document.getElementById('done-edit-list-btn');
         if (editListBtn) {
             editListBtn.addEventListener('click', () => {
-                if (this.container) this.container.classList.toggle('is-editing-list');
+                if (this.container) {
+                    this.container.classList.add('is-editing-list');
+                    editListBtn.classList.add('hidden');
+                    if (doneEditListBtn) {
+                        doneEditListBtn.classList.remove('hidden');
+                        doneEditListBtn.classList.add('flex');
+                    }
+                }
+            });
+        }
+        if (doneEditListBtn) {
+            doneEditListBtn.addEventListener('click', () => {
+                if (this.container) {
+                    this.container.classList.remove('is-editing-list');
+                    doneEditListBtn.classList.add('hidden');
+                    doneEditListBtn.classList.remove('flex');
+                    if (editListBtn) editListBtn.classList.remove('hidden');
+                }
             });
         }
 
@@ -530,7 +548,7 @@ export class ExpressionManager {
 
         const delBtn = document.createElement('button');
         delBtn.innerHTML = '<i data-lucide="x" class="w-4 h-4"></i>';
-        delBtn.className = 'bg-transparent border-none text-gray-400 cursor-pointer p-1 shrink-0 ml-auto transition-opacity opacity-0 group-hover:opacity-100 hover:text-gray-700 hover:bg-gray-100 rounded-md outline-none';
+        delBtn.className = 'block-delete-btn bg-transparent border-none text-gray-400 cursor-pointer p-1 shrink-0 ml-auto transition-opacity opacity-0 group-hover:opacity-100 hover:text-gray-700 hover:bg-gray-100 rounded-md outline-none';
 
         mathContainer.appendChild(mf);
         topRow.appendChild(mathContainer);
@@ -1215,7 +1233,7 @@ export class ExpressionManager {
 
         const delBtn = document.createElement('button');
         delBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
-        delBtn.className = 'bg-transparent border-none text-gray-400 cursor-pointer p-1 shrink-0 ml-auto transition-all opacity-40 hover:opacity-100 hover:text-red-500 outline-none';
+        delBtn.className = 'block-delete-btn bg-transparent border-none text-gray-400 cursor-pointer p-1 shrink-0 ml-auto transition-all opacity-40 hover:opacity-100 hover:text-red-500 outline-none';
         delBtn.onclick = () => {
             block.remove();
             this.updateBlockNumbers();
@@ -1446,7 +1464,7 @@ export class ExpressionManager {
 
         const delBtn = document.createElement('button');
         delBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
-        delBtn.className = 'bg-transparent border-none text-gray-400 cursor-pointer p-1 shrink-0 ml-2 transition-all opacity-40 hover:opacity-100 hover:text-red-500 outline-none';
+        delBtn.className = 'block-delete-btn bg-transparent border-none text-gray-400 cursor-pointer p-1 shrink-0 ml-2 transition-all opacity-40 hover:opacity-100 hover:text-red-500 outline-none';
         delBtn.onclick = () => {
             block.remove();
             this.updateBlockNumbers();

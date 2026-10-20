@@ -130,6 +130,29 @@ export class StateManager {
     /**
      * Limpa completamente todos os estados e caches gerenciados
      */
+    /**
+     * Injeta as dimensões de viewport lógicas (width, height) no estado reativo
+     */
+    static updateViewportDimensions(w: number, h: number) {
+        if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return;
+        let changed = false;
+        if (this.values['width'] !== w) {
+            this.values['width'] = w;
+            this.varVersions['width'] = (this.varVersions['width'] || 0) + 1;
+            this.cascadeUpdate('width');
+            changed = true;
+        }
+        if (this.values['height'] !== h) {
+            this.values['height'] = h;
+            this.varVersions['height'] = (this.varVersions['height'] || 0) + 1;
+            this.cascadeUpdate('height');
+            changed = true;
+        }
+        if (changed) {
+            this.globalCacheVersion++;
+        }
+    }
+
     static clearAll() {
         this.values = {};
         this.asts = {};

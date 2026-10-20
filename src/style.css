@@ -503,3 +503,40 @@ div[data-type="expression"].is-focused .dcg-tab {
 .frac-toggle-btn:active {
   transform: scale(0.95);
 }
+
+/* ═════════════════════════════════════════════════════════════
+   FASE 1 & 2: MODO EDIÇÃO DE LISTA & VIRTUALIZAÇÃO DOM
+   ═════════════════════════════════════════════════════════════ */
+
+/* Modo Edição de Lista (#edit-list-btn e #done-edit-list-btn) */
+#expressions-list.is-editing-list .block-delete-btn,
+#expressions-list.is-editing-list button.group-hover\:opacity-100 {
+  opacity: 1 !important;
+  display: flex !important;
+  visibility: visible !important;
+  color: #c74440 !important;
+}
+
+#expressions-list.is-editing-list .dcg-tab {
+  background-color: #f0f0f0 !important;
+}
+
+/* Phase 2: DOM Windowing Virtualization para Sidebar com centenas de expressões */
+div[data-type="expression"],
+div[data-type="table"],
+div[data-type="note"],
+div[data-type="folder"],
+div[data-type="matrix"] {
+  content-visibility: auto;
+  contain-intrinsic-size: 52px;
+}
+
+div[data-type="expression"]:focus-within,
+div[data-type="table"]:focus-within,
+div[data-type="note"]:focus-within,
+div[data-type="folder"]:focus-within,
+div[data-type="matrix"]:focus-within,
+div[data-type="expression"].is-focused,
+#expressions-list.is-editing-list > div {
+  content-visibility: visible !important;
+}
