@@ -437,6 +437,18 @@ function compileAllExpressions() {
         } else if (!item.isMatrix && !item.isTable) {
             const ascii = item.rawAscii || '';
             const cleanStr = LatexNormalizer.normalize(ascii, item.latex, definedMatrixNames);
+            const matrixAssignMatch = cleanStr.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*(\[\[[\s\S]*\]\])$/);
+            if (matrixAssignMatch) {
+                const rawName = matrixAssignMatch[1].trim();
+                const rightSide = matrixAssignMatch[2].trim();
+                definedMatrixNames.add(rawName);
+                const giacDef = "usr_" + rawName + ":=" + rightSide;
+                if (StateManager.giacDefinitions[rawName] !== giacDef) {
+                    StateManager.giacDefinitions[rawName] = giacDef;
+                    StateManager.casSolutions = {};
+                    MathEngine.askGiac(giacDef);
+                }
+            }
             const funcMatch = cleanStr.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\(([^)]+)\)\s*=\s*(.+)$/);
             if (funcMatch) {
                 const funcName = funcMatch[1].replace(/[\{\}\\]/g, '');
@@ -1515,19 +1527,11 @@ function compileAllExpressions() {
                     console.warn('[Main] Erro ao registrar matriz nativa:', e);
                 }
 
+                ExpressionManager.setResult(item.id, '');
                 if (StateManager.giacDefinitions[varName] !== giacDef) {
                     StateManager.giacDefinitions[varName] = giacDef;
                     StateManager.casSolutions = {}; // INVALIDE CACHE SO DEPENDENTS UPDATE!
-                    MathEngine.askGiac(giacDef).then(res => {
-                        let formattedRes = res.replace(/"/g, '')
-                                              .replace(/matrix\s*\[/g, '[')
-                                              .replace(/list\s*\[/g, '[')
-                                              .replace(/usr_/g, '')
-                                              .trim();
-                        ExpressionManager.setResult(item.id, formattedRes.includes('Erro') ? `- Erro no cálculo` : `= ${formattedRes}`);
-                    });
-                } else {
-                    ExpressionManager.setResult(item.id, `= ${giacMatrix}`);
+                    MathEngine.askGiac(giacDef);
                 }
                 ExpressionManager.setSliderSuggestions(item.id, [], () => {});
                 return; // Encerra o processamento, pois não queremos renderizar gráfico disto
@@ -1808,7 +1812,11 @@ function compileAllExpressions() {
                         return;
                     }
                     if (MatrixEngine.isMatrix(evalRes)) {
-                        ExpressionManager.setResult(item.id, `= ${MatrixEngine.formatMatrixDisplay(evalRes)}`);
+                        if (cleanStr.trim().startsWith('[[')) {
+                            ExpressionManager.setResult(item.id, '');
+                        } else {
+                            ExpressionManager.setResult(item.id, `= ${MatrixEngine.formatMatrixDisplay(evalRes)}`);
+                        }
                         ExpressionManager.setSliderSuggestions(item.id, [], () => {});
                         return;
                     }

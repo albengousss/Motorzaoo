@@ -114,6 +114,39 @@ export class LatexNormalizer {
         if (!s) return '';
 
         // Limpeza de marcas e espaçamentos LaTeX
+        if (_rawLatex && (_rawLatex.includes('\\begin{') || _rawLatex.includes('matrix}')) && !s.includes('\\begin{')) {
+            const namePrefixMatch = s.match(/^([a-zA-Z_][a-zA-Z0-9_]*(?:\s*\([^)]*\))?)\s*=/);
+            const prefix = namePrefixMatch ? `${namePrefixMatch[1].trim()} = ` : '';
+            const matContentMatch = _rawLatex.match(/\\begin\{(?:b|p|v|V)?matrix\}[\s\S]*?\\end\{(?:b|p|v|V)?matrix\}/);
+            if (matContentMatch) {
+                s = `${prefix}${matContentMatch[0]}`;
+            }
+        }
+
+        // Normalização de Matrizes LaTeX (\begin{bmatrix} ... \end{bmatrix}) para listas aninhadas [[...]]
+        s = s.replace(/\\begin\{(?:b|p|v|V)?matrix\}([\s\S]*?)\\end\{(?:b|p|v|V)?matrix\}/g, (_m, body) => {
+            const rawRows = body.split(/\\\\|\\cr|\\newline/);
+            const parsedRows: string[] = [];
+            for (const rStr of rawRows) {
+                if (!rStr.trim()) continue;
+                const rawCols = rStr.split('&');
+                const cleanCols = rawCols.map((c: string) => {
+                    const clean = c
+                        .replace(/\\placeholder\{[^}]*\}/g, '')
+                        .replace(/#\?/g, '')
+                        .replace(/#@/g, '')
+                        .replace(/\\text\{([^}]*)\}/g, '$1')
+                        .replace(/\\mathrm\{([^}]*)\}/g, '$1')
+                        .trim();
+                    return clean || '0';
+                });
+                if (cleanCols.length > 0) {
+                    parsedRows.push(`[${cleanCols.join(', ')}]`);
+                }
+            }
+            return parsedRows.length > 0 ? `[${parsedRows.join(', ')}]` : '[[0, 0], [0, 0]]';
+        });
+
         s = s
             .replace(/\\left\./g, '')
             .replace(/\\right\./g, '')
