@@ -314,7 +314,6 @@ export class PrattParser {
             // Limpa as chaves e remove espaços em branco (ex: f_{1} vira f_1)
             let rawName = token.value.replace(/[\{\}\\]/g, '').trim(); 
             let name = rawName.toLowerCase();
-            if (name === 'ln') name = 'log';
             if (name === 'tg') name = 'tan';
             if (name === 'cossec') name = 'csc';
             if (name === 'cotan') name = 'cot';
@@ -342,6 +341,24 @@ export class PrattParser {
                 }
                 this.eat(TokenTypes.PARENTHESIS_RIGHT);
 
+                if (name === 'log') {
+                    if (args.length === 2) {
+                        return ['Log', args[0], args[1]];
+                    }
+                    return ['Log', args[0]];
+                }
+                if (name === 'log') {
+                    if (args.length === 2) {
+                        return ['Log', args[0], args[1]];
+                    }
+                    return ['Log', args[0]];
+                }
+                if (name === 'log') {
+                    if (args.length === 2) {
+                        return ['Log', args[0], args[1]];
+                    }
+                    return ['Log', args[0]];
+                }
                 if (unaryMathFuncs.includes(name)) {
                     return [name.charAt(0).toUpperCase() + name.slice(1), args[0]];
                 }

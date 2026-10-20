@@ -33,8 +33,7 @@ export class Renderer3D {
 
     // Resolução da malha explícita
     private meshGridSize = 64;
-    private meshVertexBuffer: WebGLBuffer | null = null;
-    private meshIndexBuffer: WebGLBuffer | null = null;
+    private surfaceMeshCache: Map<string, { vbo: WebGLBuffer, ibo: WebGLBuffer, indexCount: number, scopeKey: string }> = new Map();
 
     constructor(canvasId: string = 'canvas3d') {
         this.canvas = document.getElementById(canvasId) as HTMLCanvasElement;
@@ -229,27 +228,7 @@ export class Renderer3D {
     }
 
     private initMeshGeometry() {
-        const gl = this.gl!;
-        const N = this.meshGridSize;
-        const indices: number[] = [];
-
-        for (let j = 0; j < N; j++) {
-            for (let i = 0; i < N; i++) {
-                const p1 = j * (N + 1) + i;
-                const p2 = p1 + 1;
-                const p3 = (j + 1) * (N + 1) + i;
-                const p4 = p3 + 1;
-
-                indices.push(p1, p2, p3);
-                indices.push(p2, p4, p3);
-            }
-        }
-
-        this.meshIndexBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.meshIndexBuffer);
-        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
-
-        this.meshVertexBuffer = gl.createBuffer();
+        // Buffers de malha 3D são alocados e cacheados dinamicamente por superfície em this.surfaceMeshCache
     }
 
     private initQuadGeometry() {
@@ -478,6 +457,38 @@ export class Renderer3D {
 
     private renderExplicitSurface(surf: Surface3DItem, scope: any, viewProj: Float32Array, eyePos: number[], lightDir: number[]) {
         const gl = this.gl!;
+        const scopeKey = JSON.stringify(scope || {});
+        const cachedMesh = this.surfaceMeshCache.get(surf.id);
+
+        if (cachedMesh && cachedMesh.scopeKey === scopeKey) {
+            gl.useProgram(this.surfaceProgram!);
+            gl.bindBuffer(gl.ARRAY_BUFFER, cachedMesh.vbo);
+            const aPos = gl.getAttribLocation(this.surfaceProgram!, 'a_position');
+            const aNorm = gl.getAttribLocation(this.surfaceProgram!, 'a_normal');
+            const uVP = gl.getUniformLocation(this.surfaceProgram!, 'u_viewProj');
+            const uEye = gl.getUniformLocation(this.surfaceProgram!, 'u_eyePos');
+            const uLight = gl.getUniformLocation(this.surfaceProgram!, 'u_lightDir');
+            const uAlpha = gl.getUniformLocation(this.surfaceProgram!, 'u_alpha');
+            const uBaseCol = gl.getUniformLocation(this.surfaceProgram!, 'u_baseColor');
+
+            gl.enableVertexAttribArray(aPos);
+            gl.enableVertexAttribArray(aNorm);
+            gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 24, 0);
+            gl.vertexAttribPointer(aNorm, 3, gl.FLOAT, false, 24, 12);
+
+            gl.uniformMatrix4fv(uVP, false, viewProj);
+            gl.uniform3fv(uEye, new Float32Array(eyePos));
+            gl.uniform3fv(uLight, new Float32Array(lightDir));
+            gl.uniform1f(uAlpha, 0.92);
+
+            const rgbSurf = this.hexToRgb(surf.color || '#3b82f6');
+            gl.uniform3fv(uBaseCol, new Float32Array(rgbSurf));
+
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, cachedMesh.ibo);
+            gl.drawElements(gl.TRIANGLES, cachedMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+            return;
+        }
+
         const N = this.meshGridSize;
         const bounds = 5.0;
         const step = (bounds * 2) / N;
@@ -565,8 +576,11 @@ export class Renderer3D {
 
         if (dynamicIndices.length === 0) return;
 
+        let targetVBO = cachedMesh ? cachedMesh.vbo : gl.createBuffer()!;
+        let targetIBO = cachedMesh ? cachedMesh.ibo : gl.createBuffer()!;
+
         gl.useProgram(this.surfaceProgram!);
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.meshVertexBuffer);
+        gl.bindBuffer(gl.ARRAY_BUFFER, targetVBO);
         gl.bufferData(gl.ARRAY_BUFFER, vertexData, gl.DYNAMIC_DRAW);
 
         const aPos = gl.getAttribLocation(this.surfaceProgram!, 'a_position');
@@ -590,9 +604,16 @@ export class Renderer3D {
         const rgbSurf = this.hexToRgb(surf.color || '#3b82f6');
         gl.uniform3fv(uBaseCol, new Float32Array(rgbSurf));
 
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.meshIndexBuffer);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, targetIBO);
         gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(dynamicIndices), gl.DYNAMIC_DRAW);
         gl.drawElements(gl.TRIANGLES, dynamicIndices.length, gl.UNSIGNED_SHORT, 0);
+
+        this.surfaceMeshCache.set(surf.id, {
+            vbo: targetVBO,
+            ibo: targetIBO,
+            indexCount: dynamicIndices.length,
+            scopeKey
+        });
     }
 
     private renderImplicitRaymarch(surf: Surface3DItem, invViewProj: Float32Array, eyePos: number[], lightDir: number[], scope: Record<string, number> = {}) {

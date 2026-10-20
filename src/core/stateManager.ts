@@ -1,8 +1,10 @@
+import { ListEngine } from './listEngine';
 import { MathEngine } from './mathEngine';
 
 // Conecta o armazenamento de valores do StateManager ao escopo global do MathEngine
 MathEngine.globalScopeProvider = () => StateManager.values;
 MathEngine.angleModeProvider = () => StateManager.angleMode;
+ListEngine.angleModeProvider = () => StateManager.angleMode;
 
 export class StateManager {
     // Memória rápida: Valores numéricos ou listas prontos para o motor gráfico ler

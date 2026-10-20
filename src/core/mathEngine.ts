@@ -3,6 +3,11 @@ import { MatrixEngine } from './matrixEngine';
 import { PointEngine, type Point } from './pointEngine';
 
 export class MathEngine {
+    public static readonly WINDOW_GLOBALS = new Set([
+        'window', 'document', 'location', 'navigator', 'screen', 'history',
+        'top', 'self', 'parent', 'frames', 'length', 'name', 'status', 'closed',
+        'origin', 'opener', 'frameElement', 'customElements', 'crypto', 'sessionStorage', 'localStorage'
+    ]);
     private static giacWorker: Worker | null = null;
     private static giacCallbacks: Record<string, (result: string) => void> = {};
     private static reqCounter = 0;
@@ -261,7 +266,8 @@ export class MathEngine {
                 if (fn === 'cbrt') return Math.cbrt(args[0]);
                 if (fn === 'abs') return Math.abs(args[0]);
                 if (fn === 'exp') return Math.exp(args[0]);
-                if (fn === 'log' || fn === 'ln') return Math.log(args[0]);
+                if (fn === 'ln') return Math.log(args[0]);
+                if (fn === 'log') return args.length > 1 ? (Math.log(args[1]) / Math.log(args[0])) : Math.log10(args[0]);
                 if (fn === 'asin') return this.fromRad(Math.asin(args[0]));
                 if (fn === 'acos') return this.fromRad(Math.acos(args[0]));
                 if (fn === 'atan') return this.fromRad(args.length > 1 ? Math.atan2(args[0], args[1]) : Math.atan(args[0]));
@@ -589,7 +595,8 @@ export class MathEngine {
                 if (op === 'Sec') return 1 / Math.cos(this.toRad(arg));
                 if (op === 'Csc') return 1 / Math.sin(this.toRad(arg));
                 if (op === 'Cot') return 1 / Math.tan(this.toRad(arg));
-                if (op === 'Log' || op === 'Ln') return Math.log(arg);
+                if (op === 'Ln') return Math.log(arg);
+                if (op === 'Log') return ast.length > 2 ? (Math.log(this.evaluateAST(ast[2], scope)) / Math.log(this.evaluateAST(ast[1], scope))) : Math.log10(arg);
                 if (op === 'Exp') return Math.exp(arg);
                 if (op === 'Asin') return this.fromRad(Math.asin(arg));
                 if (op === 'Acos') return this.fromRad(Math.acos(arg));
@@ -680,7 +687,10 @@ export class MathEngine {
             if (cleanNode === paramName) return 'x'; 
             if (cleanNode === dependentVar) return 'y';
             
-            return `(typeof scope !== 'undefined' && scope[${JSON.stringify(cleanNode)}] !== undefined ? scope[${JSON.stringify(cleanNode)}] : (typeof ${cleanNode} !== 'undefined' ? ${cleanNode} : 0))`;
+            if (MathEngine.WINDOW_GLOBALS.has(cleanNode)) {
+                return `(typeof scope !== 'undefined' && scope && scope[${JSON.stringify(cleanNode)}] !== undefined ? scope[${JSON.stringify(cleanNode)}] : 0)`;
+            }
+            return `(typeof scope !== 'undefined' && scope && scope[${JSON.stringify(cleanNode)}] !== undefined ? scope[${JSON.stringify(cleanNode)}] : (typeof ${cleanNode} !== 'undefined' ? ${cleanNode} : 0))`;
         }
         if (Array.isArray(node)) {
             const op = node[0];
@@ -709,7 +719,13 @@ export class MathEngine {
             if (op === 'Acosh') return `Math.acosh(${this.toJS(node[1], paramName, dependentVar)})`;
             if (op === 'Atanh') return `Math.atanh(${this.toJS(node[1], paramName, dependentVar)})`;
             if (op === 'Nthroot') return `funcs.realPow(${this.toJS(node[1], paramName, dependentVar)}, 1 / (${this.toJS(node[2], paramName, dependentVar)}))`;
-            if (op === 'Log') return `Math.log(${this.toJS(node[1], paramName, dependentVar)})`;
+            if (op === 'Ln') return `Math.log(${this.toJS(node[1], paramName, dependentVar)})`;
+            if (op === 'Log') {
+                if (node.length > 2) {
+                    return `(Math.log(${this.toJS(node[2], paramName, dependentVar)}) / Math.log(${this.toJS(node[1], paramName, dependentVar)}))`;
+                }
+                return `Math.log10(${this.toJS(node[1], paramName, dependentVar)})`;
+            }
             if (op === 'Abs') return `Math.abs(${this.toJS(node[1], paramName, dependentVar)})`;
             if (op === 'Exp') return `Math.exp(${this.toJS(node[1], paramName, dependentVar)})`;
             if (op === 'Sqrt') return `Math.sqrt(${this.toJS(node[1], paramName, dependentVar)})`;
@@ -764,6 +780,12 @@ export class MathEngine {
         if (MathEngine.compileCache[cacheKey]) {
             return MathEngine.compileCache[cacheKey] as any;
         }
+        if (Object.keys(MathEngine.compileCache).length > 500) {
+            MathEngine.compileCache = {};
+        }
+        if (Object.keys(MathEngine.compileCache).length > 500) {
+            MathEngine.compileCache = {};
+        }
 
         const jsCode = MathEngine.toJS(ast, paramName, dependentVar);
         const rawFunc = new Function('x', 'y', 'scope', 'funcs', `return ${jsCode};`);
@@ -814,7 +836,7 @@ export class MathEngine {
                 if (clean === 'pi' || clean === '\\pi' || clean === 'π') return 'Math.PI';
                 const pIdx = paramNames.indexOf(clean);
                 if (pIdx !== -1) return `(args[${pIdx}] !== undefined ? args[${pIdx}] : 0)`;
-                return `(scope[${JSON.stringify(clean)}] !== undefined ? scope[${JSON.stringify(clean)}] : 0)`;
+                return `(typeof scope !== 'undefined' && scope && scope[${JSON.stringify(clean)}] !== undefined ? scope[${JSON.stringify(clean)}] : 0)`;
             }
             if (Array.isArray(node)) {
                 const op = node[0];
@@ -833,9 +855,9 @@ export class MathEngine {
                 if (op === 'Asin') return `funcs.fromRad(Math.asin(${toJS(node[1])}))`;
                 if (op === 'Acos') return `funcs.fromRad(Math.acos(${toJS(node[1])}))`;
                 if (op === 'Atan') return `funcs.fromRad(Math.atan(${toJS(node[1])}))`;
-                if (op === 'Asec') return `Math.acos(1 / (${toJS(node[1])}))`;
-                if (op === 'Acsc') return `Math.asin(1 / (${toJS(node[1])}))`;
-                if (op === 'Acot') return `Math.atan(1 / (${toJS(node[1])}))`;
+                if (op === 'Asec') return `funcs.fromRad(Math.acos(1 / (${toJS(node[1])})))`;
+                if (op === 'Acsc') return `funcs.fromRad(Math.asin(1 / (${toJS(node[1])})))`;
+                if (op === 'Acot') return `funcs.fromRad(Math.atan(1 / (${toJS(node[1])})))`;
                 if (op === 'Sinh') return `Math.sinh(${toJS(node[1])})`;
                 if (op === 'Cosh') return `Math.cosh(${toJS(node[1])})`;
                 if (op === 'Tanh') return `Math.tanh(${toJS(node[1])})`;
@@ -847,7 +869,13 @@ export class MathEngine {
                 if (op === 'Nthroot') return `funcs.realPow(${toJS(node[1])}, 1 / (${toJS(node[2])}))`;
                 if (op === 'Abs') return `Math.abs(${toJS(node[1])})`;
                 if (op === 'Exp') return `Math.exp(${toJS(node[1])})`;
-                if (op === 'Log') return `Math.log(${toJS(node[1])})`;
+                if (op === 'Ln') return `Math.log(${toJS(node[1])})`;
+                if (op === 'Log') {
+                    if (node.length > 2) {
+                        return `(Math.log(${toJS(node[2])}) / Math.log(${toJS(node[1])}))`;
+                    }
+                    return `Math.log10(${toJS(node[1])})`;
+                }
                 
                 if (op === 'Integrate' && node.length > 3) {
                     const integrandJson = JSON.stringify(node[1]);
@@ -932,17 +960,34 @@ export class MathEngine {
         return ast;
     }
 
-    static createDerivativeFunction(ast: any, derivVar: string): (x: number, y: number, scope: Record<string, number>) => number {
+    static createDerivativeFunction(ast: any, derivVar: string, order: number = 1): (x: number, y: number, scope: Record<string, number>) => number {
         const baseFunc = this.compile(ast, derivVar);
-        const h = 1e-5; // numeric differentiation step
+        const h1 = 1e-5;
+        const h2 = 1e-4;
+        const h3 = 1e-3;
+        const h4 = 0.005;
         return (x: number, y: number, scope: Record<string, number>) => {
-            // using central difference
             if (derivVar === 'x') {
-                return (baseFunc(x + h, y, scope) - baseFunc(x - h, y, scope)) / (2 * h);
+                if (order === 1) return (baseFunc(x + h1, y, scope) - baseFunc(x - h1, y, scope)) / (2 * h1);
+                if (order === 2) return (baseFunc(x + h2, y, scope) - 2 * baseFunc(x, y, scope) + baseFunc(x - h2, y, scope)) / (h2 * h2);
+                if (order === 3) return (baseFunc(x + 2*h3, y, scope) - 2*baseFunc(x + h3, y, scope) + 2*baseFunc(x - h3, y, scope) - baseFunc(x - 2*h3, y, scope)) / (2 * h3 * h3 * h3);
+                return (baseFunc(x + 2*h4, y, scope) - 4*baseFunc(x + h4, y, scope) + 6*baseFunc(x, y, scope) - 4*baseFunc(x - h4, y, scope) + baseFunc(x - 2*h4, y, scope)) / (h4 * h4 * h4 * h4);
             } else if (derivVar === 'y') {
-                return (baseFunc(x, y + h, scope) - baseFunc(x, y - h, scope)) / (2 * h);
+                if (order === 1) return (baseFunc(x, y + h1, scope) - baseFunc(x, y - h1, scope)) / (2 * h1);
+                if (order === 2) return (baseFunc(x, y + h2, scope) - 2 * baseFunc(x, y, scope) + baseFunc(x, y - h2, scope)) / (h2 * h2);
+                if (order === 3) return (baseFunc(x, y + 2*h3, scope) - 2*baseFunc(x, y + h3, scope) + 2*baseFunc(x, y - h3, scope) - baseFunc(x, y - 2*h3, scope)) / (2 * h3 * h3 * h3);
+                return (baseFunc(x, y + 2*h4, scope) - 4*baseFunc(x, y + h4, scope) + 6*baseFunc(x, y, scope) - 4*baseFunc(x, y - h4, scope) + baseFunc(x, y - 2*h4, scope)) / (h4 * h4 * h4 * h4);
+            } else {
+                const curVal = (scope && scope[derivVar] !== undefined && x === 0) ? scope[derivVar] : x;
+                const evalAt = (v: number) => {
+                    const localScope = Object.assign({}, scope, { [derivVar]: v });
+                    return baseFunc(v, y, localScope);
+                };
+                if (order === 1) return (evalAt(curVal + h1) - evalAt(curVal - h1)) / (2 * h1);
+                if (order === 2) return (evalAt(curVal + h2) - 2 * evalAt(curVal) + evalAt(curVal - h2)) / (h2 * h2);
+                if (order === 3) return (evalAt(curVal + 2*h3) - 2*evalAt(curVal + h3) + 2*evalAt(curVal - h3) - evalAt(curVal - 2*h3)) / (2 * h3 * h3 * h3);
+                return (evalAt(curVal + 2*h4) - 4*evalAt(curVal + h4) + 6*evalAt(curVal) - 4*evalAt(curVal - h4) + evalAt(curVal - 2*h4)) / (h4 * h4 * h4 * h4);
             }
-            return 0;
         };
     }
 
@@ -972,6 +1017,8 @@ export class MathEngine {
                 if (op === 'Cos') return `funcs.intCos(${L})`;
                 if (op === 'Tan') return `funcs.intDiv(funcs.intSin(${L}), funcs.intCos(${L}))`;
                 if (op === 'Sqrt') return `funcs.intSqrt(${L})`;
+                if (op === 'Ln') return `funcs.intLn(${L})`;
+                if (op === 'Ln') return `funcs.intLn(${L})`;
                 if (op === 'Log') return `funcs.intLog(${L})`;
                 if (op === 'Atan') return `funcs.intAtan(${L})`;
                 if (op === 'Asin') return `funcs.intAsin(${L})`;
@@ -1030,45 +1077,64 @@ export class MathEngine {
             return { min: Math.min(...valid), max: Math.max(...valid) };
         },
         intSin: (a: any) => {
-            if (a.max - a.min >= 2 * Math.PI) return { min: -1, max: 1 };
-            const minV = Math.sin(a.min), maxV = Math.sin(a.max);
+            const isDeg = MathEngine.angleModeProvider ? MathEngine.angleModeProvider() === 'degrees' : false;
+            const rMin = isDeg ? a.min * (Math.PI / 180) : a.min;
+            const rMax = isDeg ? a.max * (Math.PI / 180) : a.max;
+            if (rMax - rMin >= 2 * Math.PI) return { min: -1, max: 1 };
+            const minV = Math.sin(rMin), maxV = Math.sin(rMax);
             let min = Math.min(minV, maxV), max = Math.max(minV, maxV);
-            const p1 = Math.ceil((a.min - Math.PI/2) / (2*Math.PI)) * 2*Math.PI + Math.PI/2;
-            if (p1 >= a.min && p1 <= a.max) max = 1;
-            const p2 = Math.ceil((a.min - 3*Math.PI/2) / (2*Math.PI)) * 2*Math.PI + 3*Math.PI/2;
-            if (p2 >= a.min && p2 <= a.max) min = -1;
+            const p1 = Math.ceil((rMin - Math.PI/2) / (2*Math.PI)) * 2*Math.PI + Math.PI/2;
+            if (p1 >= rMin && p1 <= rMax) max = 1;
+            const p2 = Math.ceil((rMin - 3*Math.PI/2) / (2*Math.PI)) * 2*Math.PI + 3*Math.PI/2;
+            if (p2 >= rMin && p2 <= rMax) min = -1;
             return { min, max };
         },
         intCos: (a: any) => {
-            if (a.max - a.min >= 2 * Math.PI) return { min: -1, max: 1 };
-            const minV = Math.cos(a.min), maxV = Math.cos(a.max);
+            const isDeg = MathEngine.angleModeProvider ? MathEngine.angleModeProvider() === 'degrees' : false;
+            const rMin = isDeg ? a.min * (Math.PI / 180) : a.min;
+            const rMax = isDeg ? a.max * (Math.PI / 180) : a.max;
+            if (rMax - rMin >= 2 * Math.PI) return { min: -1, max: 1 };
+            const minV = Math.cos(rMin), maxV = Math.cos(rMax);
             let min = Math.min(minV, maxV), max = Math.max(minV, maxV);
-            const p1 = Math.ceil((a.min) / (2*Math.PI)) * 2*Math.PI;
-            if (p1 >= a.min && p1 <= a.max) max = 1;
-            const p2 = Math.ceil((a.min - Math.PI) / (2*Math.PI)) * 2*Math.PI + Math.PI;
-            if (p2 >= a.min && p2 <= a.max) min = -1;
+            const p1 = Math.ceil((rMin) / (2*Math.PI)) * 2*Math.PI;
+            if (p1 >= rMin && p1 <= rMax) max = 1;
+            const p2 = Math.ceil((rMin - Math.PI) / (2*Math.PI)) * 2*Math.PI + Math.PI;
+            if (p2 >= rMin && p2 <= rMax) min = -1;
             return { min, max };
         },
         intSqrt: (a: any) => ({
             min: Math.sqrt(Math.max(0, a.min)),
             max: Math.sqrt(Math.max(0, a.max))
         }),
-        intLog: (a: any) => ({
+        intLn: (a: any) => ({
             min: a.min > 0 ? Math.log(a.min) : -Infinity,
             max: a.max > 0 ? Math.log(a.max) : -Infinity
         }),
-        intAtan: (a: any) => ({
-            min: Math.atan(a.min),
-            max: Math.atan(a.max)
+        intLog: (a: any) => ({
+            min: a.min > 0 ? Math.log10(a.min) : -Infinity,
+            max: a.max > 0 ? Math.log10(a.max) : -Infinity
         }),
-        intAsin: (a: any) => ({
-            min: Math.asin(Math.max(-1, Math.min(1, a.min))),
-            max: Math.asin(Math.max(-1, Math.min(1, a.max)))
-        }),
-        intAcos: (a: any) => ({
-            min: Math.acos(Math.max(-1, Math.min(1, a.max))),
-            max: Math.acos(Math.max(-1, Math.min(1, a.min)))
-        }),
+        intAtan: (a: any) => {
+            const isDeg = MathEngine.angleModeProvider ? MathEngine.angleModeProvider() === 'degrees' : false;
+            const f = isDeg ? (180 / Math.PI) : 1;
+            return { min: Math.atan(a.min) * f, max: Math.atan(a.max) * f };
+        },
+        intAsin: (a: any) => {
+            const isDeg = MathEngine.angleModeProvider ? MathEngine.angleModeProvider() === 'degrees' : false;
+            const f = isDeg ? (180 / Math.PI) : 1;
+            return {
+                min: Math.asin(Math.max(-1, Math.min(1, a.min))) * f,
+                max: Math.asin(Math.max(-1, Math.min(1, a.max))) * f
+            };
+        },
+        intAcos: (a: any) => {
+            const isDeg = MathEngine.angleModeProvider ? MathEngine.angleModeProvider() === 'degrees' : false;
+            const f = isDeg ? (180 / Math.PI) : 1;
+            return {
+                min: Math.acos(Math.max(-1, Math.min(1, a.max))) * f,
+                max: Math.acos(Math.max(-1, Math.min(1, a.min))) * f
+            };
+        },
         intAbs: (a: any) => ({ 
             min: (a.min <= 0 && a.max >= 0) ? 0 : Math.min(Math.abs(a.min), Math.abs(a.max)), 
             max: Math.max(Math.abs(a.min), Math.abs(a.max)) 
@@ -1093,9 +1159,9 @@ export class MathEngine {
             const x = xMin + i * dx;
             let y = f(x);
             
-            // Prevenir Inifity que estraga o WebGL/Canvas
-            if (y > 1e6) y = 1e6;
-            if (y < -1e6) y = -1e6;
+            if (!isFinite(y)) {
+                y = NaN;
+            }
 
             if (!isNaN(y) && !isNaN(prevY)) {
                 if (Math.abs(y - prevY) > asymptoteThreshold && (y * prevY < 0)) {
@@ -1142,6 +1208,8 @@ export class MathEngine {
     }
 
     static initCompiledFuncs() {
+        this.compiledFuncs['toRad'] = (x: number) => MathEngine.toRad(x);
+        this.compiledFuncs['fromRad'] = (x: number) => MathEngine.fromRad(x);
         this.compiledFuncs['add'] = this.add;
         this.compiledFuncs['sub'] = this.sub;
         this.compiledFuncs['mul'] = this.mul;

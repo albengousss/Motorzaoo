@@ -13,6 +13,8 @@ import { createIcons, icons } from 'lucide';
 };
 
 let validEquations: {id: string, ast?: any, isImplicit: boolean, operator: string, isEdo: boolean, isDerivative: boolean, derivVar?: string, isIvp?: boolean, isPoint?: boolean, pointX?: number, pointY?: number, pointLabel?: string, isParametric?: boolean, astX?: any, astY?: any, astZ?: any, isExplicitZ?: boolean, tMin?: number, tMax?: number, paramVar?: string, depVar?: string, indepVar?: string, condition?: (x: number, y: number, scope: any, t?: number) => boolean, name?: string, x0?: number, y0?: number, isHidden?: boolean, variable?: string, color?: string, lineStyle?: 'solid' | 'dashed' | 'dotted', lineWidth?: number, isTable?: boolean, tablePoints?: { x: number, y: number, rowIndex: number, tableBlockId: string }[], connectLines?: boolean, isPolygon?: boolean, isPointsList?: boolean, points?: { x: number, y: number }[]}[] = [];
+let cachedNotablePointsKey = '';
+let cachedNotablePointsList: NotablePointData[] = [];
 let dragDistance = 0;
 import { MathEngine } from './core/mathEngine';
 import { ListEngine } from './core/listEngine';
@@ -414,7 +416,14 @@ function compileAllExpressions() {
                     MathEngine.userFunctions[funcName] = { params: paramNames, expr: rightSide, ast, blockId: item.id };
                     StateManager.userFunctions[funcName] = { params: paramNames, expr: rightSide, ast, blockId: item.id };
                     if (paramNames.length === 1) {
-                        MathEngine.compiledFuncs[funcName] = MathEngine.compile(ast, paramNames[0]);
+                        const p0 = paramNames[0];
+                        MathEngine.compiledFuncs[funcName] = MathEngine.compile(ast, p0);
+                        const d1 = MathEngine.createDerivativeFunction(ast, p0, 1);
+                        const d2 = MathEngine.createDerivativeFunction(ast, p0, 2);
+                        const d3 = MathEngine.createDerivativeFunction(ast, p0, 3);
+                        MathEngine.compiledFuncs[`${funcName}'`] = (x: number, scope: any) => d1(x, 0, scope);
+                        MathEngine.compiledFuncs[`${funcName}''`] = (x: number, scope: any) => d2(x, 0, scope);
+                        MathEngine.compiledFuncs[`${funcName}'''`] = (x: number, scope: any) => d3(x, 0, scope);
                     } else if (paramNames.length > 1) {
                         MathEngine.compiledFuncs[funcName] = MathEngine.compileMultivariable(ast, paramNames);
                     }
@@ -2324,7 +2333,7 @@ function drawFrame() {
             // Usa amostragem adaptativa em vez de um loop fixo de 300 pontos
             const derivAst = item.ast;
             const derivVar = item.derivVar || 'x';
-            const pontos = MathEngine.generatePointsAdaptive(derivAst, Camera.xMin, Camera.xMax, StateManager.values, derivVar, canvasEl.width)
+            const pontos = MathEngine.generatePointsAdaptive(derivAst, Camera.xMin, Camera.xMax, StateManager.values, derivVar, canvasEl.clientWidth || Camera.width)
                 .map(p => ({ x: p.x, y: f(p.x) }));
 
             renderer.drawCurve(pontos, color, item.lineStyle, item.lineWidth);
@@ -2333,8 +2342,8 @@ function drawFrame() {
 
         } else if (item.isImplicit) {
             glRenderer.drawImplicit(item.ast, item.operator, StateManager.values, color);
-            // Marching Squares para popular renderMemory_segments quando for igualdade '=' (hover e snapping de pontos)
-            if (item.operator === '=') {
+            // Marching Squares para popular renderMemory_segments quando for igualdade '=' (apenas quando não estiver arrastando a tela)
+            if (item.operator === '=' && !isDragging) {
                 const marchRes = ImplicitEngine.generateImplicit(item.id, item.ast, item.operator, StateManager.values, Camera.xMin, Camera.xMax, Camera.yMin, Camera.yMax);
                 if (marchRes && marchRes.segments) {
                     for (const seg of marchRes.segments) {
@@ -2363,7 +2372,7 @@ function drawFrame() {
                 if (item.condition && !item.condition(x, 0, StateManager.values)) return NaN;
                 return fastF(x, 0, StateManager.values);
             };
-            const pontos = MathEngine.generatePointsAdaptive(item.ast, Camera.xMin, Camera.xMax, StateManager.values, item.variable || 'x', canvasEl.width)
+            const pontos = MathEngine.generatePointsAdaptive(item.ast, Camera.xMin, Camera.xMax, StateManager.values, item.variable || 'x', canvasEl.clientWidth || Camera.width)
                 .map(p => ({ x: p.x, y: f(p.x) }));
             
             renderer.drawCurve(pontos, color, item.lineStyle, item.lineWidth);
@@ -2372,35 +2381,46 @@ function drawFrame() {
         }
     });
 
-    // --- ANÁLISE DE PONTOS NOTÁVEIS (DESMOS STYLE) ---
-    for (let i = 0; i < explicitCurves.length; i++) {
-        const curve = explicitCurves[i];
-        const points = MathAnalyzer.getNotablePoints(curve.f, Camera.xMin, Camera.xMax);
-        
-        points.forEach(p => {
-            const h = 1e-5;
-            const dfVal = (curve.f(p.x + h) - curve.f(p.x - h)) / (2 * h);
-            renderMemory_points.push({ 
-                mathX: p.x, 
-                mathY: p.y, 
-                type: p.type, 
-                color: curve.color, 
-                curveF: curve.f, 
-                slope: isFinite(dfVal) ? dfVal : undefined 
+    // --- ANÁLISE DE PONTOS NOTÁVEIS (DESMOS STYLE COM CACHE) ---
+    const currentNotableKey = `${Camera.xMin.toFixed(4)}_${Camera.xMax.toFixed(4)}_${StateManager.varVersions['__global__'] || 0}_${explicitCurves.length}_${isDragging}`;
+    if (currentNotableKey === cachedNotablePointsKey) {
+        renderMemory_points.push(...cachedNotablePointsList);
+    } else {
+        const computedPoints: typeof renderMemory_points = [];
+        for (let i = 0; i < explicitCurves.length; i++) {
+            const curve = explicitCurves[i];
+            const points = MathAnalyzer.getNotablePoints(curve.f, Camera.xMin, Camera.xMax);
+            
+            points.forEach(p => {
+                const h = 1e-5;
+                const dfVal = (curve.f(p.x + h) - curve.f(p.x - h)) / (2 * h);
+                computedPoints.push({ 
+                    mathX: p.x, 
+                    mathY: p.y, 
+                    type: p.type, 
+                    color: curve.color, 
+                    curveF: curve.f, 
+                    slope: isFinite(dfVal) ? dfVal : undefined 
+                });
             });
-        });
 
-        for (let j = i + 1; j < explicitCurves.length; j++) {
-            const other = explicitCurves[j];
-            const intersects = MathAnalyzer.getIntersections(curve.f, other.f, Camera.xMin, Camera.xMax);
-            intersects.forEach(p => renderMemory_points.push({ 
-                mathX: p.x, 
-                mathY: p.y, 
-                type: 'intersect', 
-                color: '#64748b', 
-                curveF: curve.f 
-            }));
+            if (!isDragging) {
+                for (let j = i + 1; j < explicitCurves.length; j++) {
+                    const other = explicitCurves[j];
+                    const intersects = MathAnalyzer.getIntersections(curve.f, other.f, Camera.xMin, Camera.xMax);
+                    intersects.forEach(p => computedPoints.push({ 
+                        mathX: p.x, 
+                        mathY: p.y, 
+                        type: 'intersect', 
+                        color: '#64748b', 
+                        curveF: curve.f 
+                    }));
+                }
+            }
         }
+        cachedNotablePointsKey = currentNotableKey;
+        cachedNotablePointsList = computedPoints;
+        renderMemory_points.push(...computedPoints);
     }
 
     // Renderiza os pontos notáveis com o método dedicado de snapping
@@ -2719,15 +2739,10 @@ function initSettingsPopoverListeners() {
     const list = document.getElementById('expressions-list');
     if (list) list.innerHTML = '';
     ExpressionManager.blockCounter = 0;
-    StateManager.values = {};
-    StateManager.asts = {};
-    StateManager.odeSolutions = {};
-    StateManager.casSolutions = {};
-    StateManager.pendingOdes = {};
-    StateManager.pendingCas = {};
-    StateManager.giacDefinitions = {};
-    StateManager.dependents = {};
+    StateManager.clearAll();
+    MathEngine.userFunctions = {};
     MathEngine.initCompiledFuncs();
+    ImplicitEngine.clearCache();
     pinnedPoints = [];
     (window as any)._pinnedPoints = pinnedPoints;
     hoveredNotablePoint = null;

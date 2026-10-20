@@ -8,6 +8,7 @@ export class ImplicitEngine {
     ];
 
     private static cache: Record<string, { geometry: any, versions: Record<string, number>, bounds: string }> = {};
+    static clearCache() { this.cache = {}; }
 
     static generateImplicit(id: string, ast: any, operator: string, scope: any, xMin: number, xMax: number, yMin: number, yMax: number) {
         const deps = StateManager.extractVariables(ast);

@@ -199,15 +199,22 @@ export class LatexNormalizer {
             return `${p1}[${p2}]`;
         }).replace(/²/g, '^2').replace(/³/g, '^3');
 
-        // Normalização universal de plicas (derivadas): suporta apóstrofo ('), unicode prime (′), acento agudo (´), etc.
+        // Normalização universal de plicas (derivadas): suporta ordem arbitrária (f', f'', f''', etc.)
+        const countPrimesInStr = (m: string) => {
+            let cnt = 0;
+            if (m.includes('triple') || m.includes('‴')) cnt += 3;
+            else if (m.includes('double') || m.includes('″')) cnt += 2;
+            const singleMatches = m.match(/\\prime|['´`’′]/g);
+            if (singleMatches) cnt += singleMatches.length;
+            return cnt > 0 ? "'".repeat(cnt) : "'";
+        };
+
         s = s
-            .replace(/\^\s*\{\s*(?:\\prime|['´`’′]|\\doubleprime|″)+\s*\}/g, m => m.includes('double') || m.includes('″') || (m.match(/['´`’′]/g) || []).length > 1 ? "''" : "'")
-            .replace(/\^\s*\(\s*(?:\\prime|['´`’′]|\\doubleprime|″)+\s*\)/g, m => m.includes('double') || m.includes('″') || (m.match(/['´`’′]/g) || []).length > 1 ? "''" : "'")
-            .replace(/\^\s*(?:\\doubleprime|″)/g, "''")
-            .replace(/\^\s*(?:\\prime|['´`’′])/g, "'")
-            .replace(/\\doubleprime/g, "''")
+            .replace(/\^\s*\{\s*(?:\\(?:triple|double)?prime|['´`’′″‴])+\s*\}/g, m => countPrimesInStr(m))
+            .replace(/\^\s*\(\s*(?:\\(?:triple|double)?prime|['´`’′″‴])+\s*\)/g, m => countPrimesInStr(m))
+            .replace(/\\tripleprime|‴/g, "'''")
+            .replace(/\\doubleprime|″/g, "''")
             .replace(/\\prime/g, "'")
-            .replace(/″/g, "''")
             .replace(/[´`’′]/g, "'")
             .replace(/\^'+/g, m => m.replace(/\^/g, ''));
 

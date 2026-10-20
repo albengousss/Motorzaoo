@@ -5,6 +5,7 @@
 
 export class ListEngine {
     public static readonly MAX_ELEMENTS = 10000;
+    public static angleModeProvider?: () => 'radians' | 'degrees';
 
     /**
      * Gera sequências sintéticas [a...b] ou [a, c...b]
@@ -128,25 +129,30 @@ export class ListEngine {
         if (op === 'Abs') return Math.abs(a);
         if (op === 'Sqrt') return Math.sqrt(a);
         if (op === 'Cbrt') return Math.cbrt(a);
-        if (op === 'Sin') return Math.sin(a);
-        if (op === 'Cos') return Math.cos(a);
-        if (op === 'Tan') return Math.tan(a);
-        if (op === 'Sec') return 1 / Math.cos(a);
-        if (op === 'Csc') return 1 / Math.sin(a);
-        if (op === 'Cot') return 1 / Math.tan(a);
+        const isDeg = ListEngine.angleModeProvider ? ListEngine.angleModeProvider() === 'degrees' : false;
+        const toRad = (x: number) => isDeg ? x * (Math.PI / 180) : x;
+        const fromRad = (x: number) => isDeg ? x * (180 / Math.PI) : x;
+
+        if (op === 'Sin') return Math.sin(toRad(a));
+        if (op === 'Cos') return Math.cos(toRad(a));
+        if (op === 'Tan') return Math.tan(toRad(a));
+        if (op === 'Sec') return 1 / Math.cos(toRad(a));
+        if (op === 'Csc') return 1 / Math.sin(toRad(a));
+        if (op === 'Cot') return 1 / Math.tan(toRad(a));
         if (op === 'Sinh') return Math.sinh(a);
         if (op === 'Cosh') return Math.cosh(a);
         if (op === 'Tanh') return Math.tanh(a);
         if (op === 'Asinh') return Math.asinh(a);
         if (op === 'Acosh') return Math.acosh(a);
         if (op === 'Atanh') return Math.atanh(a);
-        if (op === 'Asin') return Math.asin(a);
-        if (op === 'Acos') return Math.acos(a);
-        if (op === 'Atan') return Math.atan(a);
-        if (op === 'Asec') return Math.acos(1 / a);
-        if (op === 'Acsc') return Math.asin(1 / a);
-        if (op === 'Acot') return Math.atan(1 / a);
-        if (op === 'Log' || op === 'Ln') return Math.log(a);
+        if (op === 'Asin') return fromRad(Math.asin(a));
+        if (op === 'Acos') return fromRad(Math.acos(a));
+        if (op === 'Atan') return fromRad(Math.atan(a));
+        if (op === 'Asec') return fromRad(Math.acos(1 / a));
+        if (op === 'Acsc') return fromRad(Math.asin(1 / a));
+        if (op === 'Acot') return fromRad(Math.atan(1 / a));
+        if (op === 'Ln') return Math.log(a);
+        if (op === 'Log') return Math.log10(a);
         if (op === 'Exp') return Math.exp(a);
         return NaN;
     }

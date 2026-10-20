@@ -1,4 +1,5 @@
 import { Camera } from './camera';
+import { StateManager } from '../core/stateManager';
 
 export class GLRenderer {
     private canvas: HTMLCanvasElement;
@@ -119,29 +120,34 @@ export class GLRenderer {
                 }
                 return `motor_pow(${L}, ${R})`;
             }
-            if (op === 'Sin') return `sin(${L})`;
-            if (op === 'Cos') return `cos(${L})`;
-            if (op === 'Tan') return `tan(${L})`;
+            const isDeg = typeof StateManager !== 'undefined' && StateManager.angleMode === 'degrees';
+            const toRadGLSL = (val: string) => isDeg ? `((${val}) * 0.017453292519943295)` : val;
+            const fromRadGLSL = (val: string) => isDeg ? `((${val}) * 57.29577951308232)` : val;
+
+            if (op === 'Sin') return `sin(${toRadGLSL(L)})`;
+            if (op === 'Cos') return `cos(${toRadGLSL(L)})`;
+            if (op === 'Tan') return `tan(${toRadGLSL(L)})`;
             if (op === 'Sinh') return `(0.5 * (exp(${L}) - exp(-(${L}))))`;
             if (op === 'Cosh') return `(0.5 * (exp(${L}) + exp(-(${L}))))`;
             if (op === 'Tanh') return `((exp(2.0 * (${L})) - 1.0) / (exp(2.0 * (${L})) + 1.0))`;
             if (op === 'Asinh') return `log((${L}) + sqrt((${L}) * (${L}) + 1.0))`;
             if (op === 'Acosh') return `log(max(1.0, ${L}) + sqrt(max(0.0, (${L}) * (${L}) - 1.0)))`;
             if (op === 'Atanh') return `(0.5 * log((1.0 + clamp(${L}, -0.999999, 0.999999)) / (1.0 - clamp(${L}, -0.999999, 0.999999))))`;
-            if (op === 'Asin') return `asin(clamp(${L}, -1.0, 1.0))`;
-            if (op === 'Acos') return `acos(clamp(${L}, -1.0, 1.0))`;
-            if (op === 'Atan') return node.length > 2 ? `atan(${L}, ${R})` : `atan(${L})`;
-            if (op === 'Asec') return `acos(clamp(1.0 / (${L}), -1.0, 1.0))`;
-            if (op === 'Acsc') return `asin(clamp(1.0 / (${L}), -1.0, 1.0))`;
-            if (op === 'Acot') return `atan(1.0, ${L})`;
-            if (op === 'Sec') return `(1.0 / cos(${L}))`;
-            if (op === 'Csc') return `(1.0 / sin(${L}))`;
-            if (op === 'Cot') return `(1.0 / tan(${L}))`;
+            if (op === 'Asin') return fromRadGLSL(`asin(clamp(${L}, -1.0, 1.0))`);
+            if (op === 'Acos') return fromRadGLSL(`acos(clamp(${L}, -1.0, 1.0))`);
+            if (op === 'Atan') return fromRadGLSL(node.length > 2 ? `atan(${L}, ${R})` : `atan(${L})`);
+            if (op === 'Asec') return fromRadGLSL(`acos(clamp(1.0 / (${L}), -1.0, 1.0))`);
+            if (op === 'Acsc') return fromRadGLSL(`asin(clamp(1.0 / (${L}), -1.0, 1.0))`);
+            if (op === 'Acot') return fromRadGLSL(`atan(1.0, ${L})`);
+            if (op === 'Sec') return `(1.0 / cos(${toRadGLSL(L)}))`;
+            if (op === 'Csc') return `(1.0 / sin(${toRadGLSL(L)}))`;
+            if (op === 'Cot') return `(1.0 / tan(${toRadGLSL(L)}))`;
             if (op === 'Cbrt') return `(pow(abs(${L}) + 1e-9, 1.0 / 3.0) * (${L} < 0.0 ? -1.0 : 1.0))`;
             if (op === 'Nthroot') return `motor_pow(${L}, 1.0 / (${R}))`;
             if (op === 'Sqrt') return `sqrt(max(0.0, ${L}))`;
             if (op === 'Exp') return `exp(${L})`;
-            if (op === 'Log') return `log(max(1e-8, ${L}))`;
+            if (op === 'Ln') return `log(max(1e-8, ${L}))`;
+            if (op === 'Log') return `(log(max(1e-8, ${L})) * 0.4342944819032518)`;
             if (op === 'Abs') return `abs(${L})`;
             if (op === 'Negate') return `(-(${L}))`;
         }
@@ -153,7 +159,16 @@ export class GLRenderer {
 
         const usedUniforms = new Set<string>();
         const exprGLSL = GLRenderer.astToGLSL(ast, scope, usedUniforms);
-        const cacheKey = `${exprGLSL}::${operator}`;
+        const angleMode = typeof StateManager !== 'undefined' ? StateManager.angleMode : 'radians';
+        const cacheKey = `${exprGLSL}::${operator}::${angleMode}`;
+        const keys = Object.keys(this.programCache);
+        if (keys.length > 50) {
+            const oldKey = keys[0];
+            const oldProg = this.programCache[oldKey];
+            if (oldProg && this.gl) this.gl.deleteProgram(oldProg);
+            delete this.programCache[oldKey];
+            delete this.programUniforms[oldKey];
+        }
 
         if (this.programCache[cacheKey]) {
             return this.programCache[cacheKey];
@@ -274,8 +289,16 @@ export class GLRenderer {
         gl.linkProgram(program);
         if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
             console.error('[GLRenderer] Erro ao linkar programa:', gl.getProgramInfoLog(program));
+            gl.deleteShader(vs);
+            gl.deleteShader(fs);
+            gl.deleteProgram(program);
             return null;
         }
+
+        gl.detachShader(program, vs);
+        gl.detachShader(program, fs);
+        gl.deleteShader(vs);
+        gl.deleteShader(fs);
 
         return program;
     }
