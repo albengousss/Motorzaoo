@@ -337,10 +337,14 @@ export class GLRenderer {
         // Define valores dinâmicos dos sliders (uniform float u_var_<name>)
         const uniforms: string[] = (program as any)._uniformNames || [];
         for (const vName of uniforms) {
-            const val = scope[vName] !== undefined ? scope[vName] : (scope[vName.toLowerCase()] !== undefined ? scope[vName.toLowerCase()] : 0.0);
+            const rawVal = scope[vName] !== undefined ? scope[vName] : scope[vName.toLowerCase()];
+            if (rawVal === undefined || typeof rawVal !== 'number' || !isFinite(rawVal)) {
+                // Aborta se uma variável necessária pelo shader não estiver definida no escopo (não inventa 0.0)
+                return;
+            }
             const safe = vName.replace(/[^a-zA-Z0-9_]/g, '_');
             const loc = gl.getUniformLocation(program, `u_var_${safe}`);
-            if (loc) gl.uniform1f(loc, val);
+            if (loc) gl.uniform1f(loc, rawVal);
         }
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);

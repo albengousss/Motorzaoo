@@ -128,4 +128,24 @@ describe('Regression Suite: 2D z-sliders, GLSL uniforms, ABNT2 deadkeys, KaTeX f
         expect(checkForbidden('2 * y', false)).toBe(true);
         expect(checkForbidden('z + 1', true)).toBe(true); // in 3D, z is a coordinate
     });
+
+    it('requires sliders to be defined before plotting curves (Desmos parity for x^2 + y^2 + z^2 = 2)', () => {
+        StateManager.viewMode = '2d';
+        StateManager.values = {};
+        const cleanStr = 'x^2 + y^2 + z^2 = 2';
+        const boundForSliders = ['x', 'y', 't', 'pi', 'e'];
+        
+        // Before slider is created:
+        const freeBefore = FaultTolerantParser.detectFreeVariables(cleanStr, boundForSliders, true);
+        const missingBefore = freeBefore.filter(v => StateManager.values[v] === undefined);
+        expect(missingBefore).toEqual(['z']);
+        // Because missingBefore.length > 0, the curve MUST NOT be pushed to validEquations!
+
+        // User clicks to create slider z:
+        StateManager.values['z'] = 1;
+        const freeAfter = FaultTolerantParser.detectFreeVariables(cleanStr, [...boundForSliders, ...Object.keys(StateManager.values)], true);
+        const missingAfter = freeAfter.filter(v => StateManager.values[v] === undefined);
+        expect(missingAfter).toEqual([]);
+        // Now missingAfter is empty, so the curve IS plotted with z = 1!
+    });
 });

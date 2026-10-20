@@ -1371,20 +1371,24 @@ function compileAllExpressions() {
                                 }
                             } else {
                                 MathEngine.compiledFuncs[funcName] = MathEngine.compile(ast, paramName);
-                                // Empurra para plotar no gráfico!
-                                validEquations.push({ color: item.color, id: item.id, ast, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
                                 
                                 // Verifica se depende de variáveis adicionais (sliders)
-                                const freeVars = getFreeVariables(ast, [paramName]);
-                                if (freeVars.length > 0) {
-                                    const unbound = freeVars.filter(v => StateManager.values[v] === undefined && MathEngine.compiledFuncs[v] === undefined);
-                                    if (unbound.length > 0) {
-                                        ExpressionManager.setResult(item.id, `Defina o slider para: ${unbound.join(', ')}`);
-                                    } else {
-                                        ExpressionManager.setResult(item.id, '');
-                                    }
-                                } else {
+                                const freeVars = getFreeVariables(ast, [paramName, 'pi', 'e']);
+                                const unbound = freeVars.filter(v => StateManager.values[v] === undefined && MathEngine.compiledFuncs[v] === undefined && !definedMatrixNames.has(v));
+                                if (unbound.length > 0) {
+                                    ExpressionManager.setSliderSuggestions(item.id, unbound, (varName) => {
+                                        ExpressionManager.addExpression(`${varName} = 1`, false, undefined, item.id);
+                                        scheduleFrame();
+                                    });
+                                    ExpressionManager.setError(item.id, `Muitas variáveis. Tente definir: ${unbound.join(', ')}`);
                                     ExpressionManager.setResult(item.id, '');
+                                    return;
+                                } else {
+                                    ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                                    ExpressionManager.setError(item.id, null);
+                                    ExpressionManager.setResult(item.id, '');
+                                    // Empurra para plotar no gráfico somente quando todas as variáveis estiverem definidas!
+                                    validEquations.push({ color: item.color, id: item.id, ast, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
                                 }
                                 
                                 // Envia para o Giac para poder ser integrada/derivada simbolicamente!
@@ -1419,6 +1423,21 @@ function compileAllExpressions() {
 
                 const tMin = explicitTBounds?.tMin ?? 0;
                 const tMax = explicitTBounds?.tMax ?? (2 * Math.PI);
+
+                const freePolar = getFreeVariables(astR, [thetaVar, 'pi', 'e']);
+                const unboundPolar = freePolar.filter(v => StateManager.values[v] === undefined && !MathEngine.compiledFuncs[v] && !definedMatrixNames.has(v));
+                if (unboundPolar.length > 0) {
+                    ExpressionManager.setSliderSuggestions(item.id, unboundPolar, (varName) => {
+                        ExpressionManager.addExpression(`${varName} = 1`, false, undefined, item.id);
+                        scheduleFrame();
+                    });
+                    ExpressionManager.setError(item.id, `Muitas variáveis. Tente definir: ${unboundPolar.join(', ')}`);
+                    ExpressionManager.setResult(item.id, '');
+                    return;
+                } else {
+                    ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                    ExpressionManager.setError(item.id, null);
+                }
 
                 validEquations.push({
                     color: item.color,
@@ -1714,6 +1733,21 @@ function compileAllExpressions() {
                     if (tMin === -Infinity) tMin = -100;
                     if (tMax === Infinity) tMax = 100;
 
+                    // Sugestões de sliders para variáveis livres (ex: a, b em (a*cos(t), b*sin(t)))
+                    const freeParams = getFreeVariables(ast, [paramVar, 'x', 'y', 'z', 'd', 'pi', 'e']);
+                    const unboundParams = freeParams.filter(v => StateManager.values[v] === undefined && !MathEngine.compiledFuncs[v] && !definedMatrixNames.has(v));
+                    if (unboundParams.length > 0) {
+                        ExpressionManager.setSliderSuggestions(item.id, unboundParams, (varName) => {
+                            ExpressionManager.addExpression(`${varName} = 1`, false, undefined, item.id);
+                            scheduleFrame();
+                        });
+                        ExpressionManager.setError(item.id, `Muitas variáveis. Tente definir: ${unboundParams.join(', ')}`);
+                        return;
+                    } else {
+                        ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                        ExpressionManager.setError(item.id, null);
+                    }
+
                     validEquations.push({
                         color: item.color,
                         id: item.id,
@@ -1735,17 +1769,6 @@ function compileAllExpressions() {
                     const dispMin = rawTMin === -Infinity ? '-∞' : parseFloat(tMin.toFixed(2));
                     const dispMax = rawTMax === Infinity ? '∞' : parseFloat(tMax.toFixed(2));
                     ExpressionManager.setResult(item.id, `Curva Paramétrica ${is3D ? '3D ' : ''}(${paramVar} ∈ [${dispMin}, ${dispMax}])`);
-
-                    // Sugestões de sliders para variáveis livres (ex: a, b em (a*cos(t), b*sin(t)))
-                    const freeParams = getFreeVariables(ast, [paramVar, 'x', 'y', 'z', 'd', 'pi', 'e']);
-                    if (freeParams.length > 0) {
-                        ExpressionManager.setSliderSuggestions(item.id, freeParams, (varName) => {
-                            ExpressionManager.addExpression(`${varName} = 1`, false, undefined, item.id);
-                            scheduleFrame();
-                        });
-                    } else {
-                        ExpressionManager.setSliderSuggestions(item.id, [], () => {});
-                    }
                     return;
                 } else {
                     const evalX = MathEngine.compile(ast[1])(0, 0, StateManager.values);
@@ -1979,24 +2002,8 @@ function compileAllExpressions() {
                 ExpressionManager.setResult(item.id, '');
             }
 
-            validEquations.push({ 
-                color: item.color, 
-                id: item.id, 
-                ast, 
-                isImplicit, 
-                operator, 
-                isEdo: false, 
-                isDerivative: isDerivativePlot, 
-                derivVar: derivVarTarget, 
-                condition: conditionFn, 
-                isHidden: !item.visible, 
-                isExplicitZ,
-                lineStyle: item.lineStyle,
-                lineWidth: item.lineWidth
-            });
-            ExpressionManager.setError(item.id, null);
-
             // Detecção de parâmetros livres para sugestão de sliders (Estilo Desmos)
+            let missingSliders: string[] = [];
             try {
                 if (ast && !isEdo) {
                     let boundForSliders = [
@@ -2014,7 +2021,7 @@ function compileAllExpressions() {
                         boundForSliders.push(...params, funcDeclMatch[1]);
                     }
                     const free = FaultTolerantParser.detectFreeVariables(cleanStr, boundForSliders, StateManager.viewMode !== '3d');
-                    const missingSliders = free.filter(v => 
+                    missingSliders = free.filter(v => 
                         StateManager.values[v] === undefined && 
                         !MathEngine.compiledFuncs[v] &&
                         !StateManager.giacDefinitions[v] &&
@@ -2022,20 +2029,39 @@ function compileAllExpressions() {
                         !definedUserFunctionNames.has(v) &&
                         !MathEngine.userFunctions[v]
                     );
-                    if (missingSliders.length > 0) {
-                        ExpressionManager.setSliderSuggestions(item.id, missingSliders, (varName) => {
-                            ExpressionManager.addExpression(`${varName} = 1`, false, undefined, item.id);
-                            scheduleFrame();
-                        });
-                    } else {
-                        ExpressionManager.setSliderSuggestions(item.id, [], () => {});
-                    }
-                } else {
-                    ExpressionManager.setSliderSuggestions(item.id, [], () => {});
                 }
             } catch(e) {
-                ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                missingSliders = [];
             }
+
+            if (missingSliders.length > 0) {
+                ExpressionManager.setSliderSuggestions(item.id, missingSliders, (varName) => {
+                    ExpressionManager.addExpression(`${varName} = 1`, false, undefined, item.id);
+                    scheduleFrame();
+                });
+                const varsList = missingSliders.join(', ');
+                ExpressionManager.setError(item.id, `Muitas variáveis. Tente definir: ${varsList}`);
+                return;
+            } else {
+                ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                ExpressionManager.setError(item.id, null);
+            }
+
+            validEquations.push({ 
+                color: item.color, 
+                id: item.id, 
+                ast, 
+                isImplicit, 
+                operator, 
+                isEdo: false, 
+                isDerivative: isDerivativePlot, 
+                derivVar: derivVarTarget, 
+                condition: conditionFn, 
+                isHidden: !item.visible, 
+                isExplicitZ,
+                lineStyle: item.lineStyle,
+                lineWidth: item.lineWidth
+            });
         } catch (e: any) {
             // Em vez de engolir o erro com tarjas feias na tela, limpa o result display e sinaliza na margem esquerda (Estilo Desmos)
             ExpressionManager.setResult(item.id, '');
