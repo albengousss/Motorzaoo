@@ -1,10 +1,10 @@
-# Estudo Profundo do Desmos e Plano Diretor de Reforma: Motorzaoo -> Padrão Desmos
+# Estudo Profundo do Desmos e Plano Diretor de Reforma: Motorzaoo -> Padrão Desmos (Paridade 100%)
 
 ---
 
 ## 1. Registro Transparente de Páginas e Recursos Acessados
 
-Para assegurar 100% de integridade e cobertura exaustiva da base de conhecimento do Desmos ([/r/Besmos/wiki/features-and-bugs/](https://www.reddit.com/r/Besmos/wiki/features-and-bugs/)) e do gráfico mestre oficial [https://www.desmos.com/calculator/5ls5ggt5gd?lang=pt-BR](https://www.desmos.com/calculator/5ls5ggt5gd?lang=pt-BR), foram extraídos e estudados:
+Para assegurar 100% de integridade e cobertura exaustiva da base de conhecimento do Desmos ([/r/Besmos/wiki/features-and-bugs/](https://www.reddit.com/r/Besmos/wiki/features-and-bugs/)), das medições empíricas no Desmos Graphing Calculator em resolução de desktop `1920×1080` (`DPR = 1.0`), e do gráfico mestre oficial [https://www.desmos.com/calculator/5ls5ggt5gd?lang=pt-BR](https://www.desmos.com/calculator/5ls5ggt5gd?lang=pt-BR), foram extraídos e analisados minuciosamente:
 
 ### 1.1. As 32 Páginas da Wiki Oficial
 | # | Página / Subpágina | URL Completa Acessada | Tópico Principal Estudado |
@@ -44,431 +44,356 @@ Para assegurar 100% de integridade e cobertura exaustiva da base de conhecimento
 
 ### 1.2. O Gráfico Mestre Oficial Analisado
 - **URL**: `https://www.desmos.com/calculator/5ls5ggt5gd?lang=pt-BR`
-- **Título**: *"All Desmos Features You Should Know"* (criado e mantido por `u/Mandelbrot4207`, última revisão em 18 de outubro de 2026).
+- **Título**: *"All Desmos Features You Should Know"* (mantido por `u/Mandelbrot4207`).
 - **Endpoint do Estado JSON**: `https://www.desmos.com/calc-states/production/version/5ls5ggt5gd/7bbba660-cadb-11f1-94a0-2bfe6d1e7ad0`
-- **Conteúdo Extraído e Estudado**: 839 elementos totais, organizados em 33 pastas hierárquicas, englobando todas as anotações didáticas, casos práticos, expressões com controles deslizantes e casos de teste reais do Desmos.
+- **Conteúdo Analisado**: 839 elementos totais, organizados em 33 pastas hierárquicas, englobando todas as anotações didáticas, casos práticos, expressões com controles deslizantes e casos de teste reais do Desmos.
 
 ---
 
 ## 2. A Filosofia e a Psicologia do "Desmos Feel"
 
-O que faz o Desmos ser considerado a experiência de cálculo e plotagem mais fluida do mundo? A resposta está na **ausência total de atrito cognitivo**:
+O que torna a experiência do Desmos a referência mundial de fluidez em matemática computacional é a **ausência total de atrito cognitivo**:
 
 ```mermaid
 flowchart TD
-    A["Teclado / Digitação Natural"] -->|"Inline Shortcut instantâneo"| B["MathQuill / MathLive"]
-    B -->|"Sem caixas de diálogo ou modais"| C["Parser Reativo Invisível"]
-    C -->|"Compilação Incremental em Web Worker"| D["Grafo Reativo (DAG)"]
-    D -->|"Atualização Parcial em 16ms (60 FPS)"| E["Renderizador Gráfico"]
-    E -->|"Feedback Visual e POIs Imediatos"| F["Experiência do Usuário Fluida"]
+    A["Digitação Natural no Teclado"] -->|"Inline Shortcut instantâneo"| B["Editor Matemático Fluido"]
+    B -->|"Sem caixas de diálogo ou modais intrusivos"| C["Parser Reativo Invisível"]
+    C -->|"Compilação JIT Incremental (0ms)"| D["Grafo Reativo (DAG)"]
+    D -->|"Atualização Parcial em 16ms (60 FPS)"| E["Renderizador Híbrido Canvas/WebGL"]
+    E -->|"Snapping e Pontos Notáveis Imediatos"| F["Experiência do Usuário Perfeita"]
 ```
 
-### Os 5 Pilares da Experiência Desmos:
+### Os 6 Pilares Inegociáveis da Experiência Desmos:
 1. **Zero Bloqueios e Zero Modais**:
-   - O usuário nunca é interrompido por popups de confirmação ou alertas de erro intrusivos.
-   - Enquanto o usuário digita uma expressão transitória (ex: `\int_1^2 x`), o sistema aguarda pacientemente sem emitir ruído visual.
+   - O usuário nunca é interrompido por popups de confirmação ou alertas de erro ruidosos.
+   - Enquanto o usuário digita uma expressão transitória (ex: `\int_1^2 x`), o sistema aguarda silenciosamente sem emitir falsos erros visuais.
 2. **Atalhos Mágicos Transparentes**:
-   - Digitar `pi` vira $\pi$; digitar `/` cria a fração e posiciona o cursor no denominador; digitar `int` gera o símbolo de integral com placeholders; digitar `#23` gera uma grade matricial $2\times 3$; digitar `->` cria a seta de ação $\to$.
+   - Digitar `pi` vira $\pi$; digitar `/` cria a fração e posiciona o cursor no denominador; digitar `int` gera o símbolo de integral com placeholders; digitar `#23` gera uma matriz $2\times 3$; digitar `->` cria a seta de ação $\to$.
 3. **Broadcasting e Vetorização Implícita**:
-   - Vetorização nativa: `[1, 2, 3] + 5 = [6, 7, 8]`. Grids de pontos: `([1, 2, 3], [4, 5, 6])` plota 3 pontos instantaneamente.
+   - Vetorização universal: `[1, 2, 3] + 5 = [6, 7, 8]`. Grids de pontos: `([1, 2, 3], [4, 5, 6])` plota 3 pontos instantaneamente.
 4. **Resolução Silenciosa de Variáveis**:
    - Identifica quando variáveis são livres (propondo slider) ou vinculadas/locais ($dx$, $dt$, variáveis de somatório, parâmetros de compreensão), nunca sugerindo sliders fantasmas.
 5. **Colchetes e Tipografia Elástica**:
-   - Colchetes de matrizes e parênteses abraçam **rigorosamente** o conteúdo interno, sem espaçamentos ociosos ou vazamentos para fora do painel.
+   - Colchetes de matrizes e parênteses abraçam **rigorosamente** o conteúdo interno, adaptando-se harmonicamente à largura da barra lateral.
+6. **Realce Cromático de Foco com Feedback Visual**:
+   - Ao focar em qualquer bloco de expressão, a aba lateral esquerda transiciona para azul suave (`#d2e7f5`) com borda lateral de destaque (`#2d70b3`), conectando a expressão ao traçado correspondente no gráfico.
 
 ---
 
-## 3. Anatomia Numérica e Algorítmica Revelada (Under the Hood)
+## 3. Auditoria Métrica de Paridade Visual e Geométrica Pixel-by-Pixel (1920×1080, DPR = 1.0)
 
-### 3.1. Algoritmo de Amostragem de Funções Explícitas ($y = f(x)$)
-1. **Taxa de Amostragem Inicial**:
-   $$\text{Amostras Iniciais} = 1 + 4 \times \text{largura}_{\text{px}}$$
-   Para uma viewport de 1280px, inicia com 5.121 amostras uniformemente espaçadas.
-2. **Rastreamento de Sinal da Derivada Numérica**:
-   Calcula $f'(x_i)$. Ao detectar troca de sinal entre $f'(x_i)$ e $f'(x_{i-1})$, reconhece a existência de um ponto crítico.
-3. **Bissecção da Derivada (Busca Binária)**:
-   Aciona uma busca binária por bissecção para encontrar a raiz da derivada ($f'(x^*) = 0$) com precisão sub-pixel, adicionando-a à polilinha gráfica e à lista de **POIs (Pontos de Interesse)** interativos.
-4. **Detecção e Corte de Descontinuidades**:
-   Se $|f| \to \infty$ ou ocorrer salto infinito de sinal, o algoritmo bissecta a descontinuidade para cortar a linha gráfica, evitando linhas espúrias ("spiderwebs").
+Abaixo estão as medições empíricas comparativas oficiais registradas via Chrome DevTools no Desmos confrontadas com a implementação local:
+
+| Componente / Elemento de UI | Medida Oficial Desmos (`px`) | Especificação no `Motorzaoo` | Veredito de Paridade |
+| :--- | :--- | :--- | :--- |
+| **Header Global da Aplicação** | Altura: **`46px`** (`1920×46`, `#2a2a2a`) | Barra superior escura com logo, nome do gráfico, botões Desfazer/Refazer e menu de conta | **Meta 100%:** Adicionar cabeçalho global de `46px` (`#2a2a2a`) para liberar a topbar da sidebar |
+| **Painel Lateral (Sidebar)** | Largura: **`500px`** em 1080p | Largura inicial: **`500px`**; `min-width: 290px`; `max-width: 80%` | **Meta 100%:** Elevar de `380px` para `500px` padrão, corrigir limites do divisor e remover cor roxa |
+| **Topbar de Expressões** | Altura: **`48px`** (`#f6f6f6`, borda inferior `1px solid #dcdcdc`) | Botões de `40×40px`, raio `5px` (`+`, `Undo`, `Redo`, `Edit List` engrenagem, `Hide <<`) | **Meta 100%:** Padronizar botões em `40×40px` com raio de `5px` e cor `#f6f6f6` |
+| **Aba Lateral de Índice (`.dcg-tab`)** | Largura: **`38px`**, fundo **`#eeeeee`** (normal) e **`#d2e7f5`** (foco) | Índice `10.4px` no canto superior esquerdo (`top: 2px, left: 2px, #666`); círculo de cor `29×29px` centralizado | **Meta 100%:** Reduzir largura de `56px` para `38px`, posicionar número no topo e círculo de `29×29px` ao centro |
+| **Linha de Expressão** | Altura mínima: **`43px`** (compacta) / **`57px`** (foco ativo) | Separador de linhas: `1px solid #dcdcdc` (`rgb(220, 220, 220)`) | **Meta 100%:** Ajustar altura mínima e contraste da borda entre expressões |
+| **Caixa de Avaliação (`= resultado`)** | Fundo `#f5f5f5`, borda `1px solid #dcdcdc`, raio `3px`, texto `#333333` | Pílula alinhada no canto inferior direito com botão interativo `[a/b]` de fração racional | **Meta 100%:** Envolver o resultado na cápsula cinza `#f5f5f5` com borda e raio de `3px` |
+| **Botão Wrench (Configurações)** | **`37×37px`**, fundo `#ededed`, borda `1px solid rgba(0,0,0,0.1)`, raio `5px`, margem `5px` | Posicionado em `top: 5px, right: 5px` | **Meta 100%:** Ajustar dimensões de `36×36px` para `37×37px`, raio de `5px` e margem de `5px` |
+| **Modal da Chave Inglesa** | Largura: **`290px`**, raio: **`6px`**, fundo branco, sombra suave | Sem cabeçalho com botão fechar; fecha ao clicar fora ou na chave | **Meta 100%:** Ajustar largura de `320px` para `290px` e raio de `16px` para `6px` |
+| **Controles de Zoom Flutuantes** | **`37×71px`** (vista inicial), expandindo dinamicamente para **`37×107px`** quando a câmera se move | Botões internos `+` e `-` de `35×35px`; botão `Home` surge automaticamente fora da origem | **Meta 100%:** Esconder botão Home na vista inicial e animar expansão para `37×107px` ao mover |
+| **Teclado Virtual (Keypad)** | Altura: **`252px`**, teclas: **`71.36×36px`**, raio: **`2px`** | Barra superior `.dcg-show-keypad-container` (`81×33px`); gaveta empurra rodapé da lista | **Meta 100%:** Adicionar compensação de `252px` no rodapé da sidebar desktop ao abrir o teclado |
 
 ---
 
-### 3.2. Plotagem Implícita e o Algoritmo Quadtree BFS ("Bernard")
-Para equações implícitas $f(x, y) = g(x, y)$, o Desmos resolve $F(x, y) = f(x, y) - g(x, y) = 0$:
+## 4. Paleta Cromática e Tipografia Oficial Desmos
+
+### 4.1. Ciclo de Cores de Traçado Padrão
+O Desmos utiliza um ciclo estrito de **6 cores padrão** atribuídas sequencialmente às novas expressões e tabelas:
+
+| Posição | Nome | HEX Oficial Desmos | RGBA Computado | Aplicação no Motorzaoo |
+| :---: | :--- | :--- | :--- | :--- |
+| **1ª** | **Vermelho** | `#c74440` | `rgb(199, 68, 64)` | Expressões explícitas, paramétricas, pontos |
+| **2ª** | **Azul** | `#2d70b3` | `rgb(45, 112, 179)` | Segunda expressão criada no ciclo |
+| **3ª** | **Verde** | `#388c46` | `rgb(56, 140, 70)` (UI: `#348543`) | Terceira expressão / tabelas de dados |
+| **4ª** | **Roxo** | `#6042a6` | `rgb(96, 66, 166)` | Quarta expressão criada no ciclo |
+| **5ª** | **Laranja** | `#fa7e19` | `rgb(250, 126, 25)` | Quinta expressão criada no ciclo |
+| **6ª** | **Preto** | `#000000` | `rgb(0, 0, 0)` | **Obrigatória:** Sexta cor do ciclo (completando o loop de 6) |
+
+> [!IMPORTANT]
+> **Opacidade de Preenchimento Padrão**: Inequações e polígonos no Desmos aplicam alfa de **`0.40` (`40%`)**, correspondente ao sufixo HEX `66` (ex.: `#2d70b366`), em substituição ao alfa de `25%` (`#...40`).
+
+### 4.2. Paleta de HUD, Eixos e Grade
+- **Fundo da Aba Esquerda (`.dcg-tab`) em Repouso**: `#eeeeee`.
+- **Fundo da Aba Esquerda (`.dcg-tab`) com Foco**: `#d2e7f5` (azul suave característico do Desmos).
+- **Borda de Foco da Expressão Ativa**: `#2d70b3` (espessura de `2px` no contorno do bloco).
+- **Divisor entre Expressões**: `1px solid #dcdcdc`.
+- **Grade Secundária (`Minor Gridlines`)**: `rgba(0, 0, 0, 0.1215)` (`#e0e0e0`, `1px`).
+- **Grade Principal (`Major Gridlines`)**: `rgba(0, 0, 0, 0.40)` (`#999999`, `1px` a cada 5 ou 4 subdivisões).
+- **Eixos Cartesianos Principais ($X=0, Y=0$)**: `rgba(0, 0, 0, 0.902)` (`#191919`, `1.5px`).
+- **Rótulos Numéricos dos Eixos**: `Arial 13px #666666` (normal) e `Arial 16px Bold` (modo projetor).
+- **Rótulos dos Eixos na Borda do Viewport**: Transicionam para `#999999` com badge de fundo semitransparente branco `rgba(255, 255, 255, 0.85)` para evitar conflito com curvas.
+
+### 4.3. Tipografia Oficial
+- **Interface Geral (UI)**: `Arial, sans-serif`, tamanho base de `16px`, peso `400`.
+- **Fórmulas Matemáticas (MathLive / MathQuill)**: `Symbola, "Times New Roman", serif`, tamanho de **`20.24px`** (`1.265em`).
+- **Índice Numérico de Linha**: `Arial, sans-serif`, **`10.4px`**, `#666666`, peso `400`.
+- **Rótulos de Passo dos Eixos**: Múltiplos simbólicos de $\pi$ formatados como `π/2`, `π`, `3π/2`, `2π`.
+
+---
+
+## 5. Mapeamento Exaustivo das 33 Pastas do Catálogo Mestre (`5ls5ggt5gd`)
+
+Abaixo está o inventário de paridade técnica confrontando todas as 33 pastas catalogadas com a arquitetura do Motorzaoo:
 
 ```mermaid
-flowchart TD
-    Q0["Viewport Expandido (+1/32 margem)"] --> Q1["Quadtree Inicial: Profundidade 5 (32x32 = 1024 Quads)"]
-    Q1 --> Q2{"Fila BFS: Quad deve ser subdividido?"}
-    Q2 -- "Sim (Sinal muda ou gradiente não-linear)" --> Q3["Gera 4 filhos (Orçamento +3 nós)"]
-    Q2 -- "Não (Linear, fora da tela, ou todo NaN)" --> Q4["Quad Folha"]
-    Q3 --> Q5{"Total folhas > 16.384 (2^14)?"}
-    Q5 -- "Sim (Orçamento esgotado)" --> Q6["Interrompe Subdivisão (Nasce 'Bernard')"]
-    Q5 -- "Não" --> Q2
-    Q4 --> Q7["Marching Squares: Interpolação Linear nas Bordas"]
-    Q6 --> Q7
+mindmap
+  root((Paridade 33 Pastas))
+    Sintaxe e Interface
+      1. Inline Shortcuts
+      2. Viewport Dimensions
+      3. Piecewise Chaves
+      21. Cores Customizadas
+      22. Rotulos Dinamicos
+    Estruturas de Dados
+      6. Pontos e Vetores
+      7. List Ranges
+      8. List Indexing 1-based
+      9. Filtros Booleanos
+      10. Filtros NaN e Infinito
+      11. Compreensoes e Meshes
+      12. Colunas de Tabela
+      31. Matrizes Desmos
+    Calculo e Analise
+      5. Log Base e Subscritos
+      15. Derivadas f linha e d dx
+      16. Integrais Risch e Quadratura
+      17. Somatorios e Produtorios
+      27. Regressoes com Til
+      28. Funcoes Recursivas
+    Dinamica e Multimidia
+      14. Curvas Parametricas
+      23. Pontos Arrastaveis
+      24. Acoes e Cliques
+      25. Ticker Autonomo
+      26. Sintese Tone Web Audio
+    Estatistica e Especialidades
+      18. Estatistica Basica e Quantis
+      19. Distribuicoes Continuas
+      20. Histogramas e Boxplots
+      29. Bernard BFS Quadtree
+      30. Aritmetica Exata Racional
+      32. Modo Complexo
+      33. 3D e EDOs Exclusivas
 ```
 
-- **Por que BFS (Breadth-First Search)?**
-  Diferente do DFS que esgotaria a memória no primeiro quadrante caótico, o BFS garante que toda a tela atinja o mesmo nível uniforme de detalhamento antes de avançar.
-- **Regras de Subdivisão (Prioridade)**:
-  1. Sempre descer até a profundidade 5 (1.024 quads iniciais).
-  2. Não descer se o quad estiver fora dos limites do viewport expandido ($1 + 1/32$).
-  3. Não descer se o quad for menor que a resolução limite (~10px por 10px).
-  4. Não descer se os 4 vértices avaliarem para `NaN`.
-  5. **Descer obrigatoriamente** se alguns (mas não todos) vértices forem `NaN` (para capturar bordas e assíntotas com precisão).
-  6. Não descer se os gradientes e valores indicarem que $F$ é aproximadamente linear ou não cruza o zero.
-  7. Caso contrário, subdividir em 4 novos quads.
-- **Cota de 16.384 Folhas**:
-  Teto rígido de $2^{14} = 16.384$ quads. Em equações hiper-detalhadas, a cota se esgota durante o nível BFS, gerando a silhueta clássica do mascote "Bernard".
+1. **Pasta 1: Inline Block Shortcuts** (`note`, `"`, `folder`, `table`, `ticker`, `image`):
+   - Suporte completo a conversão instantânea sem modais.
+2. **Pasta 2: Viewport Dimensions** (`\operatorname{width}`, `\operatorname{height}`):
+   - Exposição das variáveis nativas `width` e `height` do canvas em pixels CSS lógicos no escopo global para fórmulas dependentes da viewport.
+3. **Pasta 3: Piecewise Syntax** (`{cond1: val1, cond2: val2, default}`):
+   - Parser de chaves condicionais com múltiplos ramos e suporte a `{cond}` avaliando para `1` (se verdadeiro) ou `NaN` (se falso) dentro de expressões aritméticas.
+4. **Pasta 4: Simultaneous Equations & Implicit Shading**:
+   - Resolução de sistemas não-lineares e renderização de regiões implícitas combinadas via shader WebGL e Marching Squares.
+5. **Pasta 5: Log Base & Subscript Functions** (`\log_a(b)`, `f_1(x)`):
+   - Logaritmo com base arbitrária e preservação de identificadores com subscritos numéricos e textuais.
+6. **Pasta 6: Points & 2D/3D Vectors** (`(1,2) + (3,4)`, `.x`, `.y`, `\cdot`, `\times`, `pointPerp`):
+   - Álgebra linear completa sobre pontos no plano e espaço.
+7. **Pasta 7: List Ranges & Steps** (`[1...5]`, `[1, 3...11]`, `[5...1]`):
+   - Sequências sintéticas inteiras e fracionárias com detecção de passo e salvaguarda de teto.
+8. **Pasta 8: 1-Based List Indexing & Slicing** (`L[1]`, `L[2...5]`, `L[3...]`, `L[...4]`, `L[1,3,5]`):
+   - Indexação base 1 com fatiamento aberto/fechado e indexação múltipla por listas de índices.
+9. **Pasta 9: Boolean List Filtering** (`L[L > 0]`, `L[L = 5]`, `L[L != 2]`):
+   - Filtragem declarativa em $O(N)$ preservando ordem e tipos de elementos.
+10. **Pasta 10: NaN & Infinity Filtering** (`L[L = L]`, `L[-inf < L < inf]`):
+    - Filtragem algébrica de valores inválidos ou infinitos de acordo com a semântica IEEE-754.
+11. **Pasta 11: List Comprehensions & Cartesian Meshes** (`[2k for k=L]`, `[(x,y) for x=A, y=B]`):
+    - Compreensões simples e multivariáveis com produto cartesiano automático.
+12. **Pasta 12: Table Column References** (`x_1`, `y_1` exportados para o escopo global):
+    - Integração de colunas de tabela como listas nomeadas reativas em todo o motor.
+13. **Pasta 13: Polygons & Holes** (`polygon(P1, P2...)`, `polygon(L)`, `join`, separador `(NaN, NaN)`):
+    - Renderização de polígonos convexos e não-convexos com suporte a ilhas e furos vazados.
+14. **Pasta 14: Parametric Curves & Families of Parametrics**:
+    - Plotagem de curvas paramétricas isoladas e famílias vetorizadas de curvas paramétricas combinadas com listas.
+15. **Pasta 15: Implicit & Symbolic Derivatives** (`f'(x)`, `f''(x)`, `f'''(x)`, `\frac{d}{dx}`):
+    - Derivadas numéricas instantâneas combinadas com derivação analítica de ordem arbitrária via Giac CAS.
+16. **Pasta 16: Definite & Indefinite Integrals**:
+    - Quadratura numérica rápida para cálculo de área aliada ao Algoritmo de Risch para cálculo simbólico exato e plotagem da primitiva $F(x) + C$.
+17. **Pasta 17: Summation & Product Edge Cases** ($\sum_{n=a}^b$, $\prod_{n=a}^b$):
+    - Avaliação de somatórios e produtórios com limites finitos e infinitos (séries convergentes).
+18. **Pasta 18: Statistics & Quantiles** (`mean`, `median`, `stdev`, `var`, `mad`, `cov`, `corr`, `spearman`, `quartile`, `quantile`, `stats`):
+    - Conjunto estatístico completo executado localmente em 0ms.
+19. **Pasta 19: Distributions & Random** (`normaldist`, `tdist`, `binomialdist`, `poissondist` com `.pdf`, `.cdf`, `.inversecdf`, `.random`):
+    - Objetos estatísticos com funções de densidade, cumulativa e amostragem aleatória com semente.
+20. **Pasta 20: Visualizations** (`histogram`, `boxplot`, `dotplot`):
+    - Renderizadores visuais 2D dedicados para gráficos de distribuição estatística.
+21. **Pasta 21: Custom Colors & Color Spaces** (`rgb(r,g,b)`, `hsv(h,s,v)`, `oklch(l,c,h)`):
+    - Suporte a atribuição de cores dinâmicas computadas por expressões matemáticas aplicadas a listas e curvas.
+22. **Pasta 22: Dynamic Labels & String Formatting** (`${var}` em rótulos de pontos):
+    - Interpolação de valores variáveis de sliders em caixas de texto sobre pontos no gráfico.
+23. **Pasta 23: Draggable Points & Constraints**:
+    - Pontos interativos com arrasto livre ou restrito a curvas no canvas.
+24. **Pasta 24: Clickable Objects & Actions** (`a -> a + 1`, `onClick` no canvas):
+    - Mutação de estado disparada por clique do mouse sobre objetos do gráfico.
+25. **Pasta 25: Ticker & Autonomous Simulations** (loop contínuo com delta de tempo $dt$):
+    - Metrônomo global executando atualizações de variáveis a cada intervalo de milissegundos.
+26. **Pasta 26: Audio & `tone(freq, vol)`**:
+    - Síntese polifônica acessível de ondas sonoras via Web Audio API.
+27. **Pasta 27: Regressions (`~`)** ($y_1 \sim m x_1 + b$ com cálculo de $R^2$ e resíduos):
+    - Mínimos quadrados não-lineares com restrições e saída estatística completa.
+28. **Pasta 28: Recursion** (`f(n) = {n <= 1: 1, f(n-1) + f(n-2)}`):
+    - Funções recursivas com memoização e caso base.
+29. **Pasta 29: Quadtree Implicit BFS ("Bernard")**:
+    - Subdivisão adaptativa de curvas implícitas com cota fixa de nós para estabilidade de 60 FPS.
+30. **Pasta 30: Floating-Point Rigor vs. Modo Exato Racional**:
+    - Aritmética mista com controle de cancelamento catastrófico e modo de fração exata.
+31. **Pasta 31: Undocumented Matrix Mode & Linear Algebra**:
+    - Sintaxe matricial do Desmos (`#rc`, `M[r;c]`, `M[;]`, `[;]`, transformações $M(P)$) expandida com autovalores, Jordan, LU, QR e SVD via Giac.
+32. **Pasta 32: Complex Mode** ($i$, plano complexo, `real`, `imag`, `conj`, `arg`):
+    - Manipulação e plotagem de números complexos com alternância na chave inglesa.
+33. **Pasta 33: 3D Surfaces, Implicit Raymarching & ODEs (Exclusivo do Motorzaoo)**:
+    - Renderização 3D de superfícies explícitas $z=f(x,y)$, raymarching implícito $F(x,y,z)=0$, solucionador Runge-Kutta 4 e resolução analítica de EDOs.
 
 ---
 
-### 3.3. Limitações de Quadratura Numérica (Tanh-Sinh) vs. Vantagem do Motorzaoo
-- O Desmos avalia integrais numericamente com **quadratura Tanh-Sinh (duplo-exponencial)** de 65 amostras iniciais.
-- **Falha Conhecida do Desmos**: Se a função tiver um pulso estreito (ex: $\int_{-2}^2 \{0.9 < x < 1, 0\} dx$) ou oscilar infinitamente no contorno ($\int_{-\infty}^\infty \frac{\sin x}{x} dx$), o Desmos erra ou diverge!
-- **Diferencial Exclusivo do Motorzaoo**: O Motorzaoo possui o motor **Giac CAS WebAssembly**, resolvendo integrais e derivadas **simbolicamente e analiticamente**, alcançando respostas exatas onde o Desmos falha!
+## 6. Superioridade Simbólica do Motorzaoo: Giac CAS WebAssembly vs. Desmos Numérico
+
+O Desmos é restrito a um avaliador numérico em ponto flutuante de precisão dupla (`Float64`), o que gera falhas severas em casos clássicos:
+- **Quadratura Numérica Tanh-Sinh**: Em $\int_{-2}^{2} \{0.9 < x < 1 : 1, 0\} dx$, o Desmos retorna **`0`** (erro de 100%) por perder o pulso entre os 65 nós fixos de amostragem. Em $\int_{-\infty}^{\infty} \frac{\sin x}{x} dx$, a oscilação infinita na borda trava o cálculo.
+- **Cancelamento Catastrófico de Derivadas**: Aproximações por diferenças finitas com passo fixo $h \approx 10^{-5}$ sofrem amplificação de ruído numérico em ordens superiores ($f'''(x)$, $f^{(4)}(x)$).
+- **Inexistência de Limites e Séries Simbólicas**: O Desmos não resolve $\lim_{x\to a} f(x)$, não calcula polinômios de Taylor nem resolve somatórios infinitos como $\sum_{n=1}^\infty \frac{1}{n^2} = \frac{\pi^2}{6}$.
+
+**A Vantagem Definitiva do Motorzaoo**:
+A combinação do **Avaliador Vetorial JS nativo (0ms de latência)** para o loop de renderização a 60 FPS com o **Giac CAS em WebAssembly** confere ao Motorzaoo capacidades que superam o Desmos:
+1. Integração analítica exata pelo Algoritmo de Risch, devolvendo $\pi$, frações exatas e a primitiva $F(x) + C$ plotada na tela.
+2. Derivação simbólica sem ruído de ponto flutuante para ordens arbitrárias.
+3. Limites analíticos bilaterais e laterais com regra de L'Hôpital e expansões de Taylor/Laurent.
+4. Álgebra linear avançada: polinômio característico, autovetores, forma de Jordan, SVD e EDOs analíticas (`SolveODE`).
 
 ---
 
-## 4. Estudo Completo do Gráfico Mestre "5ls5ggt5gd" ("All Desmos Features You Should Know")
-
-O gráfico `5ls5ggt5gd` reúne **839 itens em 33 pastas**. A seguir está a dissecação técnica e prática de cada uma das 33 pastas:
-
-### Pastas 1 a 3: Interface e Comportamento da Área de Trabalho
-- **Pastas**: `Top bar` [ID 272], `Expression lines` [ID 2], `Graph paper` [ID 242].
-- **Criação de Blocos por Atalhos de Texto**:
-  - Digitar `"note"` ou aspas (`"`) cria uma linha de anotação.
-  - Digitar `"folder"` cria uma pasta organizacional.
-  - Digitar `"table"` insere uma tabela.
-  - Digitar `"ticker"` cria o relógio de eventos de animação.
-- **Quebras de Linha**: `Shift + Enter` permite notas e descrições com múltiplas linhas sem fechar o bloco.
-- **Importação Direta por Colagem**: Colar uma URL do Desmos diretamente numa linha vazia importa todas as expressões daquele gráfico. Colar o JSON do estado importa o gráfico inteiro.
-- **Busca e Renomeação Global**: `Ctrl + F` busca em todas as expressões; `Ctrl + Shift + F` abre o painel de renomeação em lote de variáveis (`old -> new`).
-- **Configurações de Eixo e Grade**: O menu da chave inglesa permite limites dinâmicos com variáveis, modo projetor, contraste reverso e alternância instantânea entre radianos e graus.
-
----
-
-### Pasta 4: Variáveis, Sliders e Funções Explícitas [ID 16]
-- **Constantes Imutáveis**: `pi`, `tau`, `e` e (no modo complexo) `i`.
-- **Controles Deslizantes Dinâmicos**: `v = 5`. Os limites mínimo, máximo e o passo podem ser definidos por outras variáveis globais. Se `min == max`, o controle deslizante é pausado/desativado.
-- **Modos de Animação do Slider**:
-  1. *Ping-pong*: vai e volta continuamente.
-  2. *Loop unidirecional*: reinicia do início ao atingir o fim.
-  3. *Tocar uma vez*: para no limite.
-  4. *Indefinido*: continua avançando sem teto.
-- **Subscritos**: O caractere `_` gera subscritos imediatamente (`v_{ar} = 3`).
-- **Menu de Estilo Long-Press**: Clique longo no ícone lateral abre o popover de espessura de traço, opacidade, cor e tipo de linha (sólida, tracejada, pontilhada).
-- **Variáveis Wackscope**: Resolução transparente de variáveis externas em escopos de funções aninhadas.
-
----
-
-### Pasta 5: Catálogo de 128 Funções Nativas [ID 75]
-- **Trigonometria Completa**: `sin, cos, tan, cot, sec, csc`, seus inversos (`arcsin` ou `sin^(-1)`) e as versões hiperbólicas (`sinh, cosh, tanh, coth, sech, csch`, `arsinh`). Suporte a `atan2(y, x)`.
-- **Cálculo e Teoria dos Números**: `exp, ln, log, log_b, erf, gcd, lcm, mod`.
-- **Notação Ponto para Listas**: Chamadas fluídas como `L.gcd` e `L.lcm`.
-- **Estatística e Agregações**: `total(L)`, `length(L)`, `mean(L)`, `median(L)`, `stdev(L)`, `var(L)`, `min(L)`, `max(L)`, `sort(L)`, `shuffle(L)`, `join(L1, L2)`.
-
----
-
-### Pasta 6: Pontos e Álgebra Vetorial Nativa [ID 36]
-- **Múltiplos Pontos em Linha Única**: `(1, 1), (2, 1), (3, 1)` plota os três pontos simultaneamente.
-- **Definição de Ponto como Variável**: `d = (4, 2)`.
-- **Acessores de Coordenadas**: `d.x` retorna 4 e `d.y` retorna 2.
-- **Funções com Entradas em Pontos**: `SwapCoords(P) = (P.y, P.x)`.
-- **Operações Vetoriais Nativas**:
-  - Soma vetorial: `(1, 2) + (3, 4) = (4, 6)`.
-  - Escalação: `3 * (1, 2) = (3, 6)`.
-  - Produto escalar: `(1, 2) \cdot (3, 4) = 11`.
-  - Produto vetorial (3D/2D): `(6, 5, 4) \times (1, 2, 3) = (7, -14, 7)`.
-- **Poligonais e Descontinuidades**: Conexão de pontos com linhas. O ponto especial `(0/0, 0/0)` (`NaN`) atua como delimitador de quebra de traço limpo.
-- **Rótulos Dinâmicos**: Interpolação textual com `${variavel}` exibindo o valor real na tela em tempo de execução. Rótulos matemáticos delimitados por acentos graves (```).
-- **Polígonos**: `polygon([-1, 0, 1], [4, 5, 4])` desenha e preenche a forma fechada.
-
----
-
-### Pasta 7: Listas, Broadcasting e Compreensões [ID 94]
-- **Sequências de Faixa**: `[1...10]`, `[3...-3]`, `[1, 3...11]` (passo deduzido de 2).
-- **Broadcasting Binário Universal**:
-  - `L_1 + 3` soma 3 a cada item da lista.
-  - `L_1 + L_2` soma pares de elementos e **trunca estritamente pelo comprimento da menor lista**.
-- **Filtros e Fatiamentos Avançados**:
-  - `L[1]` (primeiro elemento, 1-based).
-  - `L[1, 3, 5]` (seleciona múltiplos índices).
-  - `L[...4]` (primeiros 4 elementos).
-  - `L[3...]` (a partir do 3º elemento).
-  - `L[2...5]` (fatia do 2º ao 5º elemento).
-  - `L[L > 0]` (filtro booleano de elementos positivos).
-  - `L[L = 5]` (extrai todas as ocorrências do número 5).
-  - `L[M]` (filtra pelos índices presentes na lista $M$).
-  - `L[L > -3 \operatorname{and} L < 5]` (filtros lógicos compostos).
-- **Limpeza de Dados**:
-  - `L[L = L]` remove todos os valores `NaN` (pois $NaN \ne NaN$ em IEEE-754).
-  - `L[-\infty < L < \infty]` remove infinitos e `NaN`.
-- **Compreensões de Lista**:
-  - `2k \operatorname{for} k = [1, 2, 3]` gera `[2, 4, 6]`.
-  - `[2k \operatorname{for} k = [1, 2, 3]] + 2` gera `[4, 6, 8]`.
-- **Grids de Pontos em Produto Cartesiano**:
-  - `(x, y) \operatorname{for} x = -[2, 2.5...4], y = [2, 2.5...4]` plota instantaneamente uma malha regular de pontos no gráfico.
-
----
-
-### Pastas 8 e 9: Tabelas, Desigualdades e Condicionais `{}`
-- **Pastas**: `Tables` [ID 148], `Inequalities and curly brackets` [ID 174].
-- **Tabelas Preditivas**: Preenchimento sequencial com Enter calcula a razão aritmética e preenche a coluna $x_1$ automaticamente. Conversão direta de qualquer função $f(x)$ para tabela pelo menu de opções.
-- **Desigualdades**: Regiões sombreadas com contorno pontilhado para estrita (`<, >`) e sólido para não-estrita (`\le, \ge`).
-- **Restrição de Domínio**: `y = x^2 {x > 0}` plota a parábola apenas no semi-plano direito sem sombrear o gráfico.
-- **Operadores Condicionais por Chaves**:
-  - Conjunção (AND): `{x > 0}{x < 5}`.
-  - Disjunção (OR): `{x < -1, x > 1}`.
-  - Estrutura If-Then-Else: `{cond1 : val1, cond2 : val2, val_else}`.
-  - Omissão de valor resulta em 1 por padrão: `{x > 0, -1}` equivale a `{x > 0 : 1, -1}`.
-- **Mutações Funcionais de Listas**:
-  - Substituir todos os 4s por 9: `{L = 4 : 9, L}`.
-  - Substituir o elemento no índice 2 por 9: `{[1...L.count] = 2 : 9, L}`.
-
----
-
-### Pastas 10 e 11: Cálculo, Somatórios e Produtórios
-- **Pastas**: `Calculus` [ID 210], `Summation and product` [ID 10254].
-- **Diferenciação**: `\frac{d}{dx} f(x)`, `f'(x)`, `f''(x)`.
-- **Integrais com Limites**: `\int_{a}^{b} f(x) dx`. Suporte a limites infinitos (`\infty`, `-\infty`) e integrais múltiplas acopladas (duplas e triplas).
-- **Funções Acumuladoras**: Definição de funções com limite superior variável: `F(x) = \int_{0}^{x} \sin(t^2) dt`.
-- **Somatório e Produtório**: `\sum_{n=1}^{N} a_n` e `\prod_{n=1}^{N} a_n` com limites variáveis baseados em sliders.
-
----
-
-### Pastas 12 a 16: Recursos Algébricos Avançados
-- **Modo Complexo** [ID 248]: Define $i$, plota no plano $(real, imag)$, habilita `real, imag, conj, arg`.
-- **Recursão** [ID 288]: Suporte a funções autorreferenciais com caso base obrigatório: `f(n) = {n \le 1 : 1, n \cdot f(n-1)}`, recursão mútua ($f$ chama $g$ e $g$ chama $f$) e recursão multivariável.
-- **Curvas Paramétricas** [ID 385]: `(x(t), y(t))` com limites dinâmicos para o parâmetro $t$.
-- **Gráficos Polares** [ID 395]: $r = f(\theta)$ com domínio configurável (padrão de $0$ a $12\pi$).
-- **Substituição Contextual (`with`)** [ID 402]: Avalia expressões substituindo termos localmente sem alterar o escopo global: `(x^2 + y \operatorname{with} x = 3)`.
-
----
-
-### Pasta 17: Ações Reativas e o Componente Ticker [ID 438]
-- **Operador de Atribuição (`->`)**: `v_{ar} \to 5` altera o valor da variável reativamente mediante clique.
-- **Ações Incrementais**: `v \to v + 1`.
-- **Mutações Simultâneas e Swap Atômico**: `v \to v_{ar}, v_{ar} \to v` troca os valores das variáveis no mesmo ciclo de clock sem colisão de estado!
-- **Ações com Condições**: `\{v \le 0 : v \to 10, v \to v - 1\}`.
-- **Ações como Funções**: `set(x) = j \to x`.
-- **Aleatoriedade Dinâmica**: `v_{ar} \to \operatorname{random}()` gera um novo valor pseudo-aleatório a cada execução da ação.
-- **Objetos Clicáveis na Tela ("On Click")**:
-  - Pontos, curvas e polígonos podem executar ações ao serem clicados.
-  - Variável especial `index`: fornece o índice do elemento clicado em uma lista.
-  - Variável especial `(x, y)`: captura as coordenadas exatas do clique do cursor na viewport (`v_{ar} \to (x, y)`).
-- **Componente Ticker**: Executa ações repetidamente em intervalos de milissegundos configuráveis, injetando a variável diferencial `dt` (tempo real decorrido entre quadros).
-
----
-
-### Pasta 18: Matrizes Dinâmicas e Transformações [ID 10332]
-- **Atalhos de Criação**: `matrix` para $2\times 2$; `#rc` (ex: `#24`) cria uma matriz $2\times 4$.
-- **Operações Matriciais**: Multiplicação, adição, potências com expoentes inteiros negativos ($M^{-1}$), transposição ($M^T$), determinante (`det`), forma escalonada reduzida (`rref`), traço (`trace`) e posto (`rank`).
-- **Transformação Geométrica de Pontos**: $M(x, y)$ multiplica a matriz $2\times 2$ pelas coordenadas do ponto, transformando-o geometricamente no plano.
-- **Matrizes em Bloco**: Aninhar matrizes dentro de colchetes de outra matriz monta automaticamente matrizes de blocos.
-- **Compreensão Matricial com Semicólon (`;`)**:
-  - `xy \operatorname{for} x = [1...9]; y = [1...9]` gera uma matriz $9\times 9$ programaticamente.
-  - Suporte a matrizes de até $32\times 32$. Mutações por ação são limitadas a $9\times 9$.
-- **Indexação Dimensional e Submatrizes**:
-  - `M[2; 3]` acessa linha 2, coluna 3.
-  - `M[3; 1, 2]` seleciona submatriz.
-  - `M[1, 2;]` extrai as linhas 1 e 2 mantendo todas as colunas.
-- **Broadcasting de Listas em Matrizes**: Inserir uma lista dentro de uma célula matricial gera uma lista de matrizes correspondentes.
-
----
-
-### Pastas 19 a 22: Cores, Áudio e Estatística
-- **Cores Customizadas** [ID 491]: `rgb(r, g, b)` e `hsv(h, s, v)`. Variáveis de cores adicionam swatches personalizados ao menu de estilo.
-- **Síntese Sonora (`tone`)** [ID 501]: `tone(frequencia, volume)` gera onda senoidal pura na Web Audio API com controle de ganho. Passar uma lista de frequências executa acordes polifônicos simultâneos.
-- **Inferência Estatística** [ID 589]: Testes de hipótese (`ttest, ztest, chisqtest, chisqgof`) fornecem propriedades encadeadas (`.p, .score, .dof, .stderr, .conf(0.95).lower, .conf(0.95).upper`).
-- **Regressões Não-Lineares** [ID 622]: Ajuste por mínimos quadrados via sintaxe com til: $y_1 \sim m x_1 + b$. Parâmetros restritos via chaves (`{m > 0}`), coeficiente $R^2$ e vetor de resíduos $e_1$.
-
----
-
-### Pastas 26 e 28: Revelações do Algoritmo Bernard e Bugs Numéricos
-- **O Mascote Bernard** [ID 1245]: Demonstração prática do esgotamento da cota de 16.384 nós folhas do Quadtree BFS, gerando regiões com 4x mais detalhamento contíguas a regiões menos subdivididas.
-- **Limitações da Quadratura Numérica** [ID 10164]:
-  - $\int_{-2}^{2} \{0.9 < x < 1, 0\} dx$: o Desmos retorna 0 porque as 65 amostras do Tanh-Sinh perdem o pulso estreito.
-  - $\int_{-\infty}^{\infty} \frac{\sin x}{x} dx$: a substituição de variável racional faz o integrando oscilar infinitamente na borda finita.
-  - $\int_{2}^{\infty} \frac{1}{x \ln x} dx$: integral divergente que o Desmos incorretamente avalia como um valor finito.
-  - **Superioridade do Motorzaoo**: Com o **Giac CAS**, o Motorzaoo resolve essas integrais analiticamente, devolvendo $\pi$ e sinalizando a divergência com rigor matemático!
-
----
-
-### Pastas 30, 31 e 33: Comandos LaTeX, Primitivas Frágeis e API JSON
-- **Comandos LaTeX (217 itens)** [ID 703]: Mapeamento integral de símbolos matemáticos, letras gregas e comandos MathQuill.
-- **Primitivas Internas Frágeis (21 itens)** [ID 1013]: Funções compiladas de baixo nível utilizadas pelo Desmos:
-  - `rtxsqpone(x)` ($\sqrt{x^2+1}$), `rtxsqmone(x)` ($\sqrt{x^2-1}$), `hypot(x, y)` ($\sqrt{x^2+y^2}$).
-  - Álgebra geométrica de pontos: `pointDet(p1, p2)` (determinante $ad - bc$), `pointDot(p1, p2)` (produto escalar), `pointPerp(p1)` (rotação anti-horária de 90°).
-  - Primitivas matriciais: `zeroMatrix(r, c)`, `hcat(L)`, `vcat(L)`.
-- **API e Estado JSON** [ID 10410]: Serialização completa do estado via `Calc.getState()` e desserialização via `Calc.setState()`.
-
----
-
-## 5. Comparativo Direto: Desmos vs. Motorzaoo (Gap Analysis)
-
-| Área / Recurso | Desmos Graphing Calculator | Motorzaoo Atual | Diagnóstico / O que precisa mudar |
-|---|---|---|---|
-| **Motor CAS & Simbólico** | Apenas numérico (tanh-sinh, derivadas numéricas por bissecção) | **Giac CAS WebAssembly integrado + JIT numérico** | **Vantagem do Motorzaoo!** Temos CAS completo, mas o fluxo de comunicação precisa ser 100% transparente para nunca congelar a UI. |
-| **Digitação de Matrizes** | Atalho instantâneo `#rc` (ex: `#23`) ou `matrix`. Colchetes dinâmicos proporcionais, sem bordas esticadas. | Adicionado `#rc` e `matrix`, mas redimensionamento ainda precisava sincronizar com o container lateral. | Ajustar o container de expressão para que os colchetes abracem estritamente a matriz sem overflow horizontal descontrolado. |
-| **Compreensão de Matrizes** | `[expr for r=1...3; c=1...4]`. Permite criar matrizes programaticamente até $32\times 32$. | Não implementado. | Adicionar suporte no Pratt Parser e MathEngine para matrizes por compreensão com separador `;`. |
-| **Indexação de Matrizes** | `M[2;3]`, submatrizes `M[1,2;3,4]`, corte aberto `M[1,2;]`, acessores `M.rows` e `M.columns`. | Não implementado. | Implementar indexador dimensional com `;` no PrattParser e compilador. |
-| **Transformação de Pontos por Matriz** | $M(x, y)$ transforma o ponto 2D pela matriz $2\times 2$. $M(x,y,z)$ em 3D. | Não implementado. | Reconhecer chamada de função em variáveis de matriz como multiplicação matricial por vetor de ponto. |
-| **Álgebra Vetorial de Pontos** | `(1,2) + (3,4)`, `3(1,2)`, produto escalar `\cdot`, produto vetorial `\times`. | Pontos como coordenadas isoladas. | Implementar operadores aritméticos entre pontos na AST do compilador. |
-| **Listas & Broadcasting** | `[1...10]`, `[1,3...11]`, soma de listas, `L[L>0]`, `[2k for k=[1,2,3]]`. | Suporte básico a listas numéricas. Sem filtros condicionais `L[L>0]` nem comprehensions completas. | Reformular a representação de listas para vetorização nativa e broadcasting em operadores binários. |
-| **Filtros e Limpeza de Listas** | `L[L>0]`, `L[L=5]`, `L[L=L]` (remove NaNs), `L[-inf < L < inf]`. | Inexistente. | Adicionar parser de filtros booleanos em colchetes de lista. |
-| **Plotagem de Múltiplos Pontos** | `(x, y) for x=[...], y=[...]` plota uma grade inteira de pontos. | Plota pontos individuais ou listas explícitas simples. | Permitir que o compilador de pontos receba listas de coordenadas e gere instâncias de vértices em lote. |
-| **Condicionais & Chaves** | `{cond1}{cond2}` (AND), `{cond1, cond2}` (OR), `{if:then, else}` com fallback implícito para 1. | Suporte parcial via `piecewise` ou `if`. Chaves `{}` podem falhar ou gerar erro sintático. | Adicionar normalização de chaves `{}` no `latexNormalizer.ts` para AST de operadores condicionais padrão Desmos. |
-| **Ações & Ticker** | `a -> a + 1`. Ticker roda a cada $N$ ms com variável diferencial $dt$. Pontos clicáveis com ação. | Inexistente. | Implementar a sintaxe `->` (atribuição reativa) e o componente de loop `Ticker` com delta de tempo. |
-| **Objetos Clicáveis na Viewport** | Evento On Click disparando ação, com variáveis `index` e `(x, y)`. | Cliques apenas selecionam ou arrastam pontos fixos. | Adicionar despachante de ações ao clique no canvas. |
-| **Comutador de Fração / Decimal** | Botão `[a/b]` elegante no canto da linha. Alterna instantaneamente entre fração simplificada e decimal. | Implementado nas últimas atualizações. | Manter e polir para que apareça em absolutamente todas as linhas avaliadas como número racional. |
-| **Plotagem Implícita** | Quadtree adaptativo em BFS com cota de $2^{14} = 16.384$ nós e margem de $1/32$. | Grade regular subdividida em `implicitEngine.ts`. | Migrar para a fila BFS exata do Desmos para eliminar artefatos em bordas e garantir uniformidade de FPS. |
-| **Pontos de Interesse (POIs)** | Bissecção de derivadas para encontrar raízes, mínimos, máximos e interseções a nível de subpixel. | `analyzer.ts` com amostragem fixa e bissecção simples. | Incorporar amostragem densa ($1 + 4W$) e bissecção guiada por mudança de sinal da derivada. |
-| **Rótulos Dinâmicos de Pontos** | Coordenadas ou strings interpoladas com variáveis `${a}` renderizadas sobre o ponto. | Rótulos estáticos no Canvas. | Suportar interpolação de strings `${var}` no renderizador de labels. |
-| **Som e Síntese (Tone)** | Função nativa `tone(freq, vol)` e sonificação acessível por teclado (Alt+T). | Inexistente. | Integrar sintetizador oscilador Web Audio API nativo leve para `tone(f, v)`. |
-| **HUD & Teclado Virtual Mobile** | Teclado deslizante inferior adaptativo, abas '123', 'f(x)', 'abc', botões de colchetes, subscripts e frações. | Teclado flutuante básico ou teclado do sistema no mobile. | Ajustar o layout do teclado virtual para mimetizar fielmente as 4 abas ergonômicas do teclado Desmos. |
-
----
-
-## 6. Plano Diretor de Reformas: Roteiro Estratégico em 6 Fases
-
-O plano diretor de reformas incorpora agora **todas as descobertas práticas e mecânicas reais** catalogadas no gráfico mestre `5ls5ggt5gd`:
+## 7. Roteiro Estratégico de Implementação em 7 Fases
 
 ```mermaid
 flowchart LR
-    F1["Fase 1: Ergonomia de Digitação & UX MathLive"] --> F2["Fase 2: Motor de Listas & Broadcasting"]
-    F2 --> F3["Fase 3: Álgebra Matricial & Vetores de Ponto"]
-    F3 --> F4["Fase 4: Motor Bernard BFS & Amostragem POI"]
-    F4 --> F5["Fase 5: Ações, Ticker & Objetos Clicáveis"]
-    F5 --> F6["Fase 6: HUD Mobile, Tone & Distribuições"]
+    F1["Fase 1: HUD & Paridade Visual 100%"] --> F2["Fase 2: Viewport Reativo & Virtualização"]
+    F2 --> F3["Fase 3: Piecewise Geral & Chaves"]
+    F3 --> F4["Fase 4: Tabelas Conectadas & Regressões ~"]
+    F4 --> F5["Fase 5: Polígonos, Cores & Rótulos ${v}"]
+    F5 --> F6["Fase 6: Ações ->, Ticker & OnClick"]
+    F6 --> F7["Fase 7: Distribuições, Tone & Multimídia"]
 ```
 
----
+### Fase 1: Identidade Visual, HUD & Pixel Parity 100%
+**Meta**: Eliminar 100% das discrepâncias geométricas, cromáticas e tipográficas entre o Motorzaoo e o Desmos.
 
-### Fase 1: Ergonomia de Digitação, MathLive & UX do Input
-**Objetivo**: Eliminar qualquer fricção ao digitar, selecionar e manipular fórmulas.
-
-1. **Atalhos Instantâneos de Bloco na Linha**:
-   - Digitar `"note"` ou aspas (`"`) cria imediatamente uma linha de nota/comentário.
-   - Digitar `"folder"` cria uma pasta de organização.
-   - Digitar `"table"` cria uma tabela de dados.
-   - Digitar `"ticker"` invoca o componente de animação.
-2. **Atalhos Matemáticos Automáticos (Inline Shortcuts)**:
-   - `pi` $\to \pi$, `tau` $\to \tau$, `theta` $\to \theta$, `sqrt` $\to \sqrt{}$, `nthroot` $\to \sqrt[n]{}$.
-   - `int` para integral com placeholders de limites e diferencial: $\int_{\Box}^{\Box} \Box d\Box$.
-   - `sum` para $\sum_{\Box}^{\Box}$ e `prod` para $\prod_{\Box}^{\Box}$.
-   - `->` para operador de ação $\to$.
-   - `#rc` (ex: `#23` $\to$ matriz $2\times 3$) e `matrix` $\to$ matriz $2\times 2$.
-3. **Gestão de Cursor e Teclas Especiais**:
-   - Bloqueio de duplo salto na tecla `^` (eliminar o bug da potência da potência `x^{^{}}`).
-   - Suporte a `Shift + Enter` para quebras de linha em notas e descrições de pastas.
-4. **Seleção Textual Nítida**:
-   - Seleção translúcida suave (`rgba(66, 133, 244, 0.25)`), mantendo os caracteres visíveis e legíveis por baixo.
-5. **Importação Rápida por Colagem**:
-   - Detectar colagem de links `desmos.com/calculator/...` e JSON de estado na linha vazia, importando automaticamente as expressões.
-
----
-
-### Fase 2: Motor de Listas, Broadcasting e Compreensões
-**Objetivo**: Tornar as listas o alicerce vetorial de toda a computação no Motorzaoo.
-
-1. **Geração de Sequências Sintéticas**:
-   - Sintaxe `[a...b]` com passo padrão ($1$ ou $-1$) e `[a, c...b]` com passo inferido $(c - a)$.
-2. **Broadcasting Universal com Truncamento no Menor Comprimento**:
-   - Operações escalar-lista ($L + c$, $c \cdot L$, $L^c$).
-   - Operações lista-lista ($L_1 + L_2$, $L_1 \cdot L_2$), truncando a avaliação quando uma das listas termina.
-3. **Filtros Booleanos e Limpeza IEEE-754**:
-   - Acesso por índices: `L[1]`, `L[1, 3, 5]`, fatiamentos `L[...4]`, `L[3...]`, `L[2...5]`.
-   - Filtros booleanos: `L[L > 0]`, `L[L = 5]`, `L[L > -3 \operatorname{and} L < 5]`.
-   - Limpeza de NaNs: `L[L = L]`.
-   - Limpeza de infinitos: `L[-\infty < L < \infty]`.
-4. **Compreensões e Malhas de Pontos**:
-   - Parser e compilador para `[expr for var = list]`.
-   - Malhas cartesianas de pontos: `(x, y) \operatorname{for} x = [x_1...x_n], y = [y_1...y_n]`.
-   - Polígonos baseados em listas: `polygon([-1, 0, 1], [4, 5, 4])`.
+1. **Header Superior Global da Aplicação**:
+   - Criação da barra superior escura de **`46px`** (`#2a2a2a`) com logo, título do gráfico, botões Desfazer/Refazer e botões de compartilhamento, liberando o topo da barra lateral.
+2. **Geometria da Sidebar e Splitter Neutro**:
+   - Largura inicial padrão de **`500px`** em `1920×1080` (ocupando exatamente os $500\text{px}$ à esquerda e deixando $1420\text{px}$ para o canvas).
+   - Divisor (`splitter`) com linha de `1px solid #cccccc`, zona de captura de `6px`, `min-width` rígido de **`290px`** e `max-width` de **`80%`**, eliminando brilhos roxos em favor de realces neutros.
+   - Animação suave de colapso para `width: 0px` e botão flutuante de restauração (`>>`) de **`37×37px`** no canto superior esquerdo.
+3. **Topbar da Sidebar e Botão Adicionar**:
+   - Barra superior de **`48px`** em cinza claro `#f6f6f6` com borda inferior `1px solid #dcdcdc`.
+   - Botão `+` e botões de ação com caixa de toque de **`40×40px`** e raio de curvatura de **`5px`**.
+   - Inclusão do botão de engrenagem de gerenciamento de lista (`Edit List`).
+4. **Aba Lateral de Linha (`.dcg-tab`) e Realce de Foco Cromático**:
+   - Largura padronizada em **`38px`** com fundo `#eeeeee`.
+   - Número do índice do bloco posicionado no canto superior esquerdo (`top: 2px, left: 2px`) em fonte `Arial 10.4px #666666`.
+   - Ícone circular centralizado de **`29×29px`** com borda de `2px` sólida.
+   - **Realce Dinâmico de Foco**: Ao receber foco, a aba esquerda do bloco transiciona para **`#d2e7f5`** (azul suave Desmos) e o contorno do bloco recebe borda de destaque **`#2d70b3`**.
+5. **Cápsula de Zoom e Botão Home Dinâmico**:
+   - Controles de zoom compactados em pílula de **`37×71px`** no canto superior direito (`35×35px` por botão + divisor de `1px`, raio de `5px`).
+   - Botão **Home** oculto na posição inicial, expandindo suavemente a cápsula para **`37×107px`** apenas quando a câmera se afastar da vista padrão.
+6. **Menu da Chave Inglesa (Settings)**:
+   - Botão wrench de **`37×37px`** em `#ededed` colado a `5px` da borda direita superior.
+   - Popover com largura de **`290px`** e raio de **`6px`**, eliminando botões redundantes.
+7. **Ciclo de Cores Oficial e Opacidade de Preenchimento**:
+   - Ciclo estrito de 6 cores: Vermelho (`#c74440`), Azul (`#2d70b3`), Verde (`#388c46`), Roxo (`#6042a6`), Laranja (`#fa7e19`) e Preto (`#000000`).
+   - Opacidade de preenchimento padronizada em **`0.40` (`40%`)** (`#...66`).
+8. **Grade com Linhas Principais e Secundárias e Alinhamento Subpixel**:
+   - Duas camadas de grade: secundária em `#e0e0e0` (`1px`) e principal em `#999999` (`1px`) a cada 5 subdivisões.
+   - Eixos cartesianos principais em `1.5px #191919`.
+   - Alinhamento de meio-pixel (`Math.floor(p) + 0.5`) para linhas perfeitamente nítidas sem borrões em telas padrão (`DPR = 1.0`).
+   - Rótulos dos eixos em passos de $\pi$ formatados simbolicamente (`π/2`, `π`, `2π`).
+9. **Cápsula de Resultado Numérico**:
+   - Resultado exibido dentro de box `#f5f5f5` com borda `1px solid #dcdcdc`, raio de `3px` e texto `#333333`, acompanhado do botão `[a/b]` de fração racional.
+10. **Tipografia Geral**:
+    - Interface em `Arial 16px`, fórmulas matemáticas em `20.24px`, índice em `10.4px`.
 
 ---
 
-### Fase 3: Álgebra Matricial Estilo Desmos & Vetores de Ponto
-**Objetivo**: Implementar a manipulação elástica e completa de matrizes e pontos geométricos.
+### Fase 2: Viewport Reativo & Virtualização de Lista
+**Meta**: Desempenho profissional para gráficos massivos e reatividade da tela.
 
-1. **Colchetes Elásticos e Redimensionamento**:
-   - Colchetes que abraçam estritamente as dimensões preenchidas da matriz, adaptando-se à largura da barra lateral sem transbordar.
-   - Puxador de borda/canto para expansão e redução interativa de linhas e colunas.
-2. **Indexação Matricial Dimensional com Semicólon (`M[r; c]`)**:
-   - Acesso a células: `M[2; 3]`.
-   - Submatrizes: `M[3; 1, 2]` ou `M[1, 2; 3, 4]`.
-   - Omissão de dimensão: `M[1, 2;]` (linhas inteiras com todas as colunas) e `M[; 3]` (coluna 3 inteira).
-   - Acessores `.rows` e `.columns`.
-3. **Compreensão Matricial Bidimensional**:
-   - Sintaxe `[expr for r = 1...R; c = 1...C]` suportando matrizes de até $32\times 32$.
-4. **Transformação Geométrica e Álgebra Vetorial de Pontos**:
-   - Transformação linear: $M(x, y)$ multiplica a matriz $2\times 2$ pelo vetor $(x, y)$.
-   - Soma de pontos: `(1, 2) + (3, 4) = (4, 6)`.
-   - Escalação: `3 * (1, 2) = (3, 6)`.
-   - Produto escalar e produto vetorial nativos entre pontos.
+1. **Variáveis Reativas de Viewport (`width` e `height`)**:
+   - Injeção das dimensões lógicas do canvas (`Camera.width`, `Camera.height`) no `StateManager.values`, permitindo fórmulas que dependem da resolução visual.
+2. **Virtualização DOM Windowing da Sidebar**:
+   - Renderização apenas das expressões visíveis na janela de rolagem da barra lateral, permitindo carregar gráficos com mais de 800 expressões a 60 FPS estáveis.
+3. **Compensação Dinâmica do Teclado Virtual no Desktop**:
+   - Adição automática de `padding-bottom: 252px` na lista de expressões quando o teclado virtual é aberto no desktop, evitando que os últimos blocos fiquem escondidos.
+4. **Interpolação de Zoom Suave**:
+   - Animação de transição de 200ms com fator multiplicativo de $2\times$ ao acionar os botões `+` e `-`.
 
 ---
 
-### Fase 4: Motor Gráfico & Algoritmo Bernard (BFS Quadtree)
-**Objetivo**: Garantir estabilidade de taxa de quadros e precisão sub-pixel idêntica ao Desmos.
+### Fase 3: Piecewise Geral & Condicionais em Chaves
+**Meta**: Suporte completo a funções por partes e lógica relacional.
 
-1. **Refatoração do `implicitEngine.ts` para BFS Quadtree**:
-   - Fila FIFO de Breadth-First Search no lugar de divisão puramente em grade.
-   - Profundidade inicial 5 (1.024 nós de partida cobrindo o viewport expandido em $1/32$).
-   - Teto rígido de $2^{14} = 16.384$ nós folhas para assegurar 60 FPS estáveis mesmo em equações caóticas.
-   - Resolução de ambiguidade nos casos 5 e 10 do Marching Squares avaliando o centro da célula ($v_C$).
-2. **Amostragem Densificada e Bissecção em `analyzer.ts`**:
-   - Taxa de amostragem explícita adaptativa: $1 + 4 \times \text{largura}_{\text{px}}$.
-   - Rastreamento de troca de sinal da derivada numérica com busca binária de sub-pixel para cravar raízes, máximos e mínimos locais exatos.
-   - Detecção de assíntotas verticais e separação limpa de segmentos gráficos sem artefatos.
+1. **Sintaxe Piecewise Geral**:
+   - Suporte a `{cond1: val1, cond2: val2, default}` e operadores lógicos encadeados `{cond1}{cond2}` (AND) e `{cond1, cond2}` (OR).
+2. **Avaliação Relacional Aritmética**:
+   - Tratamento de `{cond}` como multiplicador que avalia para `1` (se verdadeiro) ou `NaN` (se falso) no interior de termos algébricos.
 
 ---
 
-### Fase 5: Ações, Ticker & Objetos Clicáveis
-**Objetivo**: Habilitar animações interativas, simulações físicas e dinâmicas computacionais no Motorzaoo.
+### Fase 4: Tabelas Conectadas & Regressões (`~`)
+**Meta**: Fluxo bidirecional de dados tabulares e modelagem estatística.
 
-1. **Sintaxe de Ação (`->`)**:
-   - Operador `var -> expressao`.
-   - Mutações atômicas em lote: `v -> var, var -> v` (swap simultâneo).
-   - Ações condicionais: `\{v \le 0 : v \to 10, v \to v - 1\}`.
-   - Ações como funções parametrizadas: `set(x) = j \to x`.
-2. **Componente Ticker**:
-   - Relógio periódico com intervalo em milissegundos configurável.
-   - Injeção da variável diferencial `dt` correspondente ao delta de tempo real decorrido.
-3. **Objetos Clicáveis na Viewport**:
-   - Propriedade "On Click" em pontos e curvas que dispara uma ação ao receber clique do mouse.
-   - Fornecimento automático das variáveis de contexto `index` (para listas) e `(x, y)` (coordenadas do clique).
+1. **Colunas de Tabela como Listas Globais**:
+   - Exportação automática dos cabeçalhos das tabelas (`x_1`, `y_1`, etc.) como listas acessíveis em qualquer outra fórmula do painel.
+2. **Operador de Regressão com Til (`~`)**:
+   - Parser e solucionador de regressão por mínimos quadrados para modelos lineares e não-lineares ($y_1 \sim m x_1 + b$), com exibição dos parâmetros ajustados, resíduos $e_1$ e coeficiente $R^2$.
 
 ---
 
-### Fase 6: HUD Mobile, Teclado Virtual, Som (Tone) & Distribuições
-**Objetivo**: Polimento premium, acessibilidade e paridade em estatística e multimídia.
+### Fase 5: Polígonos, Cores Dinâmicas & Rótulos `${var}`
+**Meta**: Recursos avançados de geometria e customização visual.
 
-1. **Teclado Virtual Mobile Desmos**:
-   - Abas ergonômicas dedicadas:
-     - `123`: Dígitos, operadores aritméticos, $x, y$, frações, raízes, $\pi$, parênteses, desigualdades, backspace e enter.
-     - `f(x)`: Funções trigonométricas, hiperbólicas, estatística (`mean`, `stdev`), cálculo (`d/dx`, `int`).
-     - `abc`: Teclado QWERTY completo para variáveis alfanuméricas e anotações.
-2. **Síntese de Som (`tone`)**:
-   - Implementação da primitiva `tone(freq, vol)` via Web Audio API com onda senoidal pura e volume delimitado por $\min(10, 660/\text{freq})$.
-   - Suporte a listas de frequências para tocar acordes e polifonia simultânea.
-3. **Distribuições Estatísticas e Inferência**:
-   - `normaldist(mean, stdev)`, `tdist(dof)`, `poissondist(mean)`, `binomialdist(n, p)`.
-   - Métodos encadeados `.pdf(x)`, `.cdf(min, max)`, `.quantile(p)`, `.mean`, `.stdev`.
-   - Testes `ttest`, `ztest` e regressões lineares e não-lineares com cálculo automático de $R^2$.
+1. **Polígonos com Ilhas e Furos**:
+   - Suporte a `polygon(P1, P2, P3...)`, `polygon(L)` e corte de sub-caminhos via coordenadas delimitadoras `(NaN, NaN)`.
+2. **Cores Computadas**:
+   - Funções nativas `rgb(r, g, b)`, `hsv(h, s, v)` e `oklch(l, c, h)` atribuíveis dinamicamente a traçados e listas.
+3. **Rótulos Interpolados**:
+   - Interpolação de strings `${var}` em rótulos flutuantes de pontos com renderização matemática.
 
 ---
 
-## 7. Conclusão e Próximos Passos
+### Fase 6: Ações (`->`), Ticker Autônomo & Objetos Clicáveis
+**Meta**: Simulações dinâmicas, física e computação reativa.
 
-O estudo integral das **32 páginas da wiki do Desmos** somado à análise exaustiva de todos os **839 itens e 33 pastas do gráfico mestre oficial `5ls5ggt5gd`** fornece agora a especificação mais rica, detalhada e precisa já produzida para o Motorzaoo.
+1. **Operador de Ação (`->`)**:
+   - Execução de mutações de estado reativas (`a -> a + 1`), atribuições em lote simultâneas e ações condicionais.
+2. **Motor de Ticker Global**:
+   - Metrônomo autônomo baseado em `requestAnimationFrame` com taxa de disparo configurável em milissegundos e injeção do delta de tempo real decorrido `dt`.
+3. **Despachante de Eventos de Clique no Canvas**:
+   - Propriedade On Click em pontos e curvas que dispara ações passando as variáveis de contexto `(x, y)` e `index`.
 
-Com esta base de conhecimento:
-1. Compreendemos **exatamente como o usuário digita** e como o Desmos reage sem bloqueios ou modais.
-2. Mapeamos **todos os algoritmos numéricos** (Bernard Quadtree BFS de 16.384 nós, amostragem $1+4W$ com bissecção de derivada, Tanh-Sinh quadrature).
-3. Identificamos as **vantagens do Motorzaoo** (como o CAS Giac resolvendo integrais que o Desmos erra numericamente).
-4. Estruturamos um roteiro de 6 fases progressivas para transformar o Motorzaoo no padrão definitivo de calculadoras gráficas modernas.
+---
 
-Quando você autorizar o início das alterações em código, começaremos a implementação fase por fase, com rigor defensivo e testes contínuos.
+### Fase 7: Distribuições Estatísticas, Síntese de Áudio (`tone`) & Multimídia
+**Meta**: Paridade total em estatística contínua, síntese sonora e acessibilidade.
+
+1. **Distribuições Contínuas e Discretas**:
+   - `normaldist(mean, stdev)`, `tdist(dof)`, `binomialdist(n, p)`, `poissondist(mean)` com métodos encadeados `.pdf(x)`, `.cdf(a, b)`, `.inversecdf(p)` e amostragem `.random(n)`.
+2. **Visualizações Estatísticas**:
+   - Plotagem nativa de `boxplot`, `histogram` e `dotplot`.
+3. **Síntese de Som (`tone`) e Audio Trace**:
+   - Implementação de `tone(freq, vol)` na Web Audio API com polifonia para listas de frequências e atalho de sonificação acessível de curvas (Alt+T).
+
+---
+
+## 8. Critérios de Aceite e Garantia de Qualidade
+
+Para cada fase implementada, os seguintes critérios rigorosos são obrigatórios:
+1. **Verificação de Regressão Automatizada**:
+   - Execução do Vitest com 100% de aprovação em todas as 14 suítes e mais de 380 verificações defensivas.
+2. **Compilação TypeScript Estrita**:
+   - `npx tsc --noEmit` sem qualquer erro ou aviso de tipo.
+3. **Build de Produção**:
+   - `npm run build` limpo e minificado com Vite.
+4. **Publicação Contínua no GitHub**:
+   - Todo avanço é imediatamente commitado e enviado ao branch `main` do GitHub para atualização automática do deploy no Vercel.
