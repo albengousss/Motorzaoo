@@ -5,7 +5,7 @@ export class GLRenderer {
     private canvas: HTMLCanvasElement;
     private gl: WebGLRenderingContext | null = null;
     private quadBuffer: WebGLBuffer | null = null;
-    private programCache: Record<string, WebGLProgram> = {};
+    private programCache: Record<string, WebGLProgram | null> = {};
     private hasDerivatives: boolean = false;
 
     constructor(canvasId: string = 'webglCanvas') {
@@ -76,7 +76,6 @@ export class GLRenderer {
             const clean = node.trim();
             if (clean === 'x') return 'x';
             if (clean === 'y') return 'y';
-            if (clean === 'z') return 'z';
             if (clean === 'pi' || clean === '\\pi' || clean === 'π') return '3.141592653589793';
             if (clean === 'e') return '2.718281828459045';
             
@@ -170,7 +169,7 @@ export class GLRenderer {
             delete this.programUniforms[oldKey];
         }
 
-        if (this.programCache[cacheKey]) {
+        if (this.programCache[cacheKey] !== undefined) {
             return this.programCache[cacheKey];
         }
 
@@ -259,6 +258,8 @@ export class GLRenderer {
             (program as any)._uniformNames = Array.from(usedUniforms);
             this.programCache[cacheKey] = program;
             this.programUniforms[cacheKey] = Array.from(usedUniforms);
+        } else {
+            this.programCache[cacheKey] = null;
         }
         return program;
     }

@@ -146,7 +146,7 @@ export class FaultTolerantParser {
      *          'y = a*x + b' -> ['a', 'b']
      *          'x_1' -> ['x_1'] (variável subscrita íntegra)
      */
-    static detectFreeVariables(rawStr: string, boundVariables: string[] = []): string[] {
+    static detectFreeVariables(rawStr: string, boundVariables: string[] = [], is2DMode: boolean = false): string[] {
         if (!rawStr) return [];
 
         let cleaned = rawStr.trim();
@@ -157,6 +157,9 @@ export class FaultTolerantParser {
             ...this.PROTECTED_IDENTIFIERS,
             ...boundVariables
         ]);
+        if (is2DMode) {
+            boundSet.delete('z');
+        }
 
         if (funcDecl) {
             boundSet.add(funcDecl[1]);

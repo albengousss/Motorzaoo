@@ -1,6 +1,13 @@
 import { parseStepInput, formatStepForDisplay } from './core/stepParser';
 import 'mathlive';
+import { MathfieldElement } from 'mathlive';
 import './style.css';
+
+if (typeof window !== 'undefined' && (MathfieldElement as any)) {
+    try {
+        MathfieldElement.fontsDirectory = '/assets/fonts';
+    } catch (_) {}
+}
 import { PrattParser } from './core/prattParser';
 import { FaultTolerantParser } from './core/faultTolerantParser';
 import { LatexNormalizer } from './core/latexNormalizer';
@@ -493,12 +500,13 @@ function compileAllExpressions() {
             if (inc.isIncomplete) return;
 
             const free = FaultTolerantParser.detectFreeVariables(raw, [
+                ...(StateManager.viewMode === '3d' ? ['z'] : []),
                 ...Object.keys(StateManager.values),
                 ...Object.keys(StateManager.giacDefinitions),
                 ...definedMatrixNames,
                 ...definedUserFunctionNames,
                 ...Object.keys(MathEngine.userFunctions)
-            ]);
+            ], StateManager.viewMode !== '3d');
             free.forEach(v => {
                 if (!definedMatrixNames.has(v) && !definedUserFunctionNames.has(v) && !MathEngine.userFunctions[v]) {
                     activelyNeededFreeVars.add(v);
@@ -622,8 +630,8 @@ function compileAllExpressions() {
         let assignVarName: string | null = null;
         try {
             ast = new PrattParser(cleanStr).parseExpression();
-        } catch(e) {
-            console.warn('[Main] PrattParser failed initial expression parse:', e);
+        } catch(_) {
+            // Live typing natural fallback
         }
 
         const funcDeclEarly = cleanStr.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\(([^)]+)\)\s*=/);
@@ -636,8 +644,8 @@ function compileAllExpressions() {
                         ast = rhsAst;
                         assignVarName = assignMatch[1];
                     }
-                } catch(e) {
-                    console.warn('[Main] PrattParser failed parsing assignment RHS for Giac:', e);
+                } catch(_) {
+                    // Live typing natural fallback
                 }
             }
         }
@@ -1481,6 +1489,12 @@ function compileAllExpressions() {
 
         // 4. SLIDERS GLOBAIS E DEFINIÇÃO DE MATRIZES
         const assignmentMatch = noSpaceStr.match(/^\\?([a-zA-Z_][a-zA-Z0-9_]*)=(.+)$/);
+        if (item.isMatrix && !assignmentMatch) {
+            ExpressionManager.setResult(item.id, '');
+            ExpressionManager.setError(item.id, null);
+            ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+            return;
+        }
         if (assignmentMatch) {
             const varName = assignmentMatch[1].replace(/[\\]/g, '');
             const rightSide = assignmentMatch[2];
@@ -1540,6 +1554,7 @@ function compileAllExpressions() {
                 }
 
                 ExpressionManager.setResult(item.id, '');
+                ExpressionManager.setError(item.id, null);
                 if (StateManager.giacDefinitions[varName] !== giacDef) {
                     StateManager.giacDefinitions[varName] = giacDef;
                     StateManager.casSolutions = {}; // INVALIDE CACHE SO DEPENDENTS UPDATE!
@@ -1969,7 +1984,7 @@ function compileAllExpressions() {
 
                 // 3. Detecção de Sliders Livres para Variáveis Não Definidas (ex: 'm + 1')
                 const boundForSliders = [
-                    'x', 'y', 'z', 't', 'pi', 'e',
+                    'x', 'y', ...(StateManager.viewMode === '3d' ? ['z'] : []), 't', 'pi', 'e',
                     ...Object.keys(StateManager.values),
                     ...Object.keys(StateManager.giacDefinitions),
                     ...definedMatrixNames,
@@ -1977,7 +1992,7 @@ function compileAllExpressions() {
                     ...Object.keys(MathEngine.userFunctions),
                     ...Object.keys(MathEngine.compiledFuncs)
                 ];
-                const free = FaultTolerantParser.detectFreeVariables(cleanStr, boundForSliders);
+                const free = FaultTolerantParser.detectFreeVariables(cleanStr, boundForSliders, StateManager.viewMode !== '3d');
                 const missingSliders = free.filter(v => 
                     StateManager.values[v] === undefined && 
                     !MathEngine.compiledFuncs[v] &&
@@ -2024,7 +2039,7 @@ function compileAllExpressions() {
             try {
                 if (ast && !isEdo) {
                     let boundForSliders = [
-                        'x', 'y', 'z', 't', 'pi', 'e',
+                        'x', 'y', ...(StateManager.viewMode === '3d' ? ['z'] : []), 't', 'pi', 'e',
                         ...Object.keys(StateManager.values),
                         ...Object.keys(StateManager.giacDefinitions),
                         ...definedMatrixNames,
@@ -2037,7 +2052,7 @@ function compileAllExpressions() {
                         const params = funcDeclMatch[2].split(',').map(s => s.trim());
                         boundForSliders.push(...params, funcDeclMatch[1]);
                     }
-                    const free = FaultTolerantParser.detectFreeVariables(cleanStr, boundForSliders);
+                    const free = FaultTolerantParser.detectFreeVariables(cleanStr, boundForSliders, StateManager.viewMode !== '3d');
                     const missingSliders = free.filter(v => 
                         StateManager.values[v] === undefined && 
                         !MathEngine.compiledFuncs[v] &&
@@ -2081,12 +2096,13 @@ function compileAllExpressions() {
             // Tenta detectar parâmetros livres para sugestão de sliders mesmo em estado intermediário (ex: 'sqr' ou 'a*x')
             try {
                 const free = FaultTolerantParser.detectFreeVariables(cleanStr, [
+                    ...(StateManager.viewMode === '3d' ? ['z'] : []),
                     ...Object.keys(StateManager.values),
                     ...Object.keys(StateManager.giacDefinitions),
                     ...definedMatrixNames,
                     ...definedUserFunctionNames,
                     ...Object.keys(MathEngine.userFunctions)
-                ]);
+                ], StateManager.viewMode !== '3d');
                 const missingSliders = free.filter(v => 
                     StateManager.values[v] === undefined && 
                     !MathEngine.compiledFuncs[v] &&
