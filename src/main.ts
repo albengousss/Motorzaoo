@@ -488,51 +488,8 @@ function compileAllExpressions() {
         }
     });
 
-    // Ciclo de Vida Automático de Sliders (Estilo Desmos):
-    // 1. Coleta todas as variáveis livres em uso nas expressões regulares
-    const activelyNeededFreeVars = new Set<string>();
-    rawData.forEach(item => {
-        const blockEl = document.getElementById(item.id);
-        if (blockEl && blockEl.dataset.autoSlider) return;
-        const raw = item.rawAscii || '';
-        if (raw && !item.isMatrix && !item.isTable) {
-            const inc = FaultTolerantParser.checkIncompleteStatus(item.latex || '', raw);
-            if (inc.isIncomplete) return;
-
-            const free = FaultTolerantParser.detectFreeVariables(raw, [
-                ...(StateManager.viewMode === '3d' ? ['z'] : []),
-                ...Object.keys(StateManager.values),
-                ...Object.keys(StateManager.giacDefinitions),
-                ...definedMatrixNames,
-                ...definedUserFunctionNames,
-                ...Object.keys(MathEngine.userFunctions)
-            ], StateManager.viewMode !== '3d');
-            free.forEach(v => {
-                if (!definedMatrixNames.has(v) && !definedUserFunctionNames.has(v) && !MathEngine.userFunctions[v]) {
-                    activelyNeededFreeVars.add(v);
-                }
-            });
-        }
-    });
-
-    // 2. Remove automaticamente qualquer slider auto-gerado que não seja mais referenciado por nenhuma fórmula
-    const allBlocks = Array.from(ExpressionManager.container.children) as HTMLElement[];
-    let removedAutoSlider = false;
-    allBlocks.forEach(block => {
-        const autoVar = block.dataset.autoSlider;
-        if (autoVar) {
-            if (!activelyNeededFreeVars.has(autoVar)) {
-                block.remove();
-                delete StateManager.values[autoVar];
-                delete StateManager.asts[autoVar];
-                delete StateManager.giacDefinitions[autoVar];
-                removedAutoSlider = true;
-            }
-        }
-    });
-    if (removedAutoSlider) {
-        ExpressionManager.updateBlockNumbers();
-    }
+    // Sliders adicionados pelo usuário no Desmos são expressões de primeira classe (permanentes)
+    // e nunca devem ser auto-deletados do painel de expressões ao compilar.
 
     rawData.forEach(item => {
         if (item.isTable) {
@@ -725,7 +682,7 @@ function compileAllExpressions() {
                     );
                     if (missingSliders.length > 0) {
                         ExpressionManager.setSliderSuggestions(item.id, missingSliders, (varName) => {
-                            ExpressionManager.addExpression(`${varName} = 1`, false, varName, item.id);
+                            ExpressionManager.addExpression(`${varName} = 1`, false, undefined, item.id);
                             scheduleFrame();
                         });
                     } else {
@@ -1609,7 +1566,8 @@ function compileAllExpressions() {
             }
 
             const isMultiVarProd = varName.length > 1 && !varName.includes('_') && /[xyzt]/.test(varName);
-            if (!['x', 'y', 'z', 't', 'e', 'pi'].includes(varName) && !isMultiVarProd && !genericCasMatch) {
+            const reservedAssignVars = StateManager.viewMode === '3d' ? ['x', 'y', 'z', 't', 'e', 'pi'] : ['x', 'y', 't', 'e', 'pi'];
+            if (!reservedAssignVars.includes(varName) && !isMultiVarProd && !genericCasMatch) {
                 // Suporte para declaração de ponto A = (x, y) ou A = (x, y, z)
                 let pointAst: any = null;
                 try {
@@ -1649,7 +1607,10 @@ function compileAllExpressions() {
                     }
                 }
 
-                if (!rightSide.includes('x') && !rightSide.includes('y') && !rightSide.includes('z')) {
+                const hasForbiddenCoords = StateManager.viewMode === '3d'
+                    ? (/\b[xyz]\b/.test(rightSide) || /\\mathbf\{[xyz]\}/.test(rightSide))
+                    : (/\b[xy]\b/.test(rightSide) || /\\mathbf\{[xy]\}/.test(rightSide));
+                if (!hasForbiddenCoords) {
                     activeVars.push(varName);
                     try {
                         const parser = new PrattParser(rightSideClean);
@@ -1685,7 +1646,7 @@ function compileAllExpressions() {
             let isExplicitY = false;
             let isExplicitZ = false;
             
-            const zExplicitMatch = cleanStr.match(/^\s*z\s*=\s*(.+)$/);
+            const zExplicitMatch = StateManager.viewMode === '3d' ? cleanStr.match(/^\s*z\s*=\s*(.+)$/) : null;
             const yExplicitMatch = cleanStr.match(/^\s*y\s*=\s*(.+)$/);
             if (zExplicitMatch) {
                 expressaoPlot = zExplicitMatch[1].trim();
@@ -1779,8 +1740,8 @@ function compileAllExpressions() {
                     const freeParams = getFreeVariables(ast, [paramVar, 'x', 'y', 'z', 'd', 'pi', 'e']);
                     if (freeParams.length > 0) {
                         ExpressionManager.setSliderSuggestions(item.id, freeParams, (varName) => {
-                            StateManager.updateSlider(varName, 1);
-                            markExpressionsDirty();
+                            ExpressionManager.addExpression(`${varName} = 1`, false, undefined, item.id);
+                            scheduleFrame();
                         });
                     } else {
                         ExpressionManager.setSliderSuggestions(item.id, [], () => {});
@@ -2003,7 +1964,7 @@ function compileAllExpressions() {
                 );
                 if (missingSliders.length > 0) {
                     ExpressionManager.setSliderSuggestions(item.id, missingSliders, (varName) => {
-                        ExpressionManager.addExpression(`${varName} = 1`, false, varName, item.id);
+                        ExpressionManager.addExpression(`${varName} = 1`, false, undefined, item.id);
                         scheduleFrame();
                     });
                     ExpressionManager.setError(item.id, null);
@@ -2063,7 +2024,7 @@ function compileAllExpressions() {
                     );
                     if (missingSliders.length > 0) {
                         ExpressionManager.setSliderSuggestions(item.id, missingSliders, (varName) => {
-                            ExpressionManager.addExpression(`${varName} = 1`, false, varName, item.id);
+                            ExpressionManager.addExpression(`${varName} = 1`, false, undefined, item.id);
                             scheduleFrame();
                         });
                     } else {
@@ -2113,7 +2074,7 @@ function compileAllExpressions() {
                 );
                 if (missingSliders.length > 0) {
                     ExpressionManager.setSliderSuggestions(item.id, missingSliders, (varName) => {
-                        ExpressionManager.addExpression(`${varName} = 1`, false, varName, item.id);
+                        ExpressionManager.addExpression(`${varName} = 1`, false, undefined, item.id);
                         scheduleFrame();
                     });
                 } else {
@@ -4010,6 +3971,7 @@ function switchViewMode(mode: '2d' | '3d') {
         renderer3d.resize();
     }
     resizeAll();
+    markExpressionsDirty();
     drawFrame();
 }
 

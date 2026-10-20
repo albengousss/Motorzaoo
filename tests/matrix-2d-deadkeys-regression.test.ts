@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { FaultTolerantParser } from '../src/core/faultTolerantParser';
 import { GLRenderer } from '../src/graphics/glRenderer';
 import { PrattParser } from '../src/core/prattParser';
+import { StateManager } from '../src/core/stateManager';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -86,5 +87,45 @@ describe('Regression Suite: 2D z-sliders, GLSL uniforms, ABNT2 deadkeys, KaTeX f
             .replace(/\\text\{\^\}/g, '')
             .replace(/\\hat\{\}/g, '');
         expect(fixed).toBe('x^{2} + y^{3}');
+    });
+
+    it('handles "z" as a configurable scalar slider in 2D mode, but reserves it as spatial coordinate in 3D mode', () => {
+        StateManager.viewMode = '2d';
+        const reserved2D = StateManager.viewMode === '3d' ? ['x', 'y', 'z', 't', 'e', 'pi'] : ['x', 'y', 't', 'e', 'pi'];
+        expect(reserved2D).not.toContain('z');
+
+        const isCoord2D = (varName: string) => (varName === 'x' || varName === 'y' || varName === 'e' || varName === 'pi' || (StateManager.viewMode === '3d' && varName === 'z'));
+        expect(isCoord2D('z')).toBe(false);
+        expect(isCoord2D('x')).toBe(true);
+        expect(isCoord2D('y')).toBe(true);
+
+        StateManager.viewMode = '3d';
+        const reserved3D = StateManager.viewMode === '3d' ? ['x', 'y', 'z', 't', 'e', 'pi'] : ['x', 'y', 't', 'e', 'pi'];
+        expect(reserved3D).toContain('z');
+
+        const isCoord3D = (varName: string) => (varName === 'x' || varName === 'y' || varName === 'e' || varName === 'pi' || (StateManager.viewMode === '3d' && varName === 'z'));
+        expect(isCoord3D('z')).toBe(true);
+
+        // Reset
+        StateManager.viewMode = '2d';
+    });
+
+    it('uses word-boundary regexes so math functions like max() and hypot() are not treated as forbidden coordinates', () => {
+        const checkForbidden = (rightSide: string, is3D: boolean) => {
+            return is3D
+                ? (/\b[xyz]\b/.test(rightSide) || /\\mathbf\{[xyz]\}/.test(rightSide))
+                : (/\b[xy]\b/.test(rightSide) || /\\mathbf\{[xy]\}/.test(rightSide));
+        };
+
+        // Functions containing letter 'x' or 'y' as substrings should NOT trigger coordinate prohibition
+        expect(checkForbidden('max(2, 3)', false)).toBe(false);
+        expect(checkForbidden('hypot(3, 4)', false)).toBe(false);
+        expect(checkForbidden('sqrt(16)', false)).toBe(false);
+        expect(checkForbidden('z + 1', false)).toBe(false); // z is allowed in 2D expressions
+
+        // Standalone x or y MUST be recognized as coordinates
+        expect(checkForbidden('x + 1', false)).toBe(true);
+        expect(checkForbidden('2 * y', false)).toBe(true);
+        expect(checkForbidden('z + 1', true)).toBe(true); // in 3D, z is a coordinate
     });
 });

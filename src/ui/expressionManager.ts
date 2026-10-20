@@ -590,7 +590,17 @@ export class ExpressionManager {
 
         block.appendChild(grabZone);
         block.appendChild(contentZone);
-        this.container.appendChild(block);
+        if (parentBlockId) {
+            const parentEl = document.getElementById(parentBlockId);
+            if (parentEl && parentEl.nextSibling) {
+                this.container.insertBefore(block, parentEl.nextSibling);
+            } else {
+                this.container.appendChild(block);
+            }
+        } else {
+            this.container.appendChild(block);
+        }
+        this.updateBlockNumbers();
         if ((window as any).lucide) (window as any).lucide.createIcons({ root: block });
 
         const mathField = mf as any;
@@ -2733,16 +2743,18 @@ export class ExpressionManager {
         if (assignmentMatch) {
             const varName = assignmentMatch[1];
             
-            // Prevent sliders for reserved variables and coordinates
-            if (['x', 'y', 'e', 'pi'].includes(varName)) {
+            // Prevent sliders for reserved variables and coordinates (z is only coordinate in 3D mode)
+            const isCoord = (varName === 'x' || varName === 'y' || varName === 'e' || varName === 'pi' || (StateManager.viewMode === '3d' && varName === 'z'));
+            if (isCoord) {
                 sliderRow.style.display = 'none';
                 return false;
             }
 
             const rightSide = assignmentMatch[2];
             
-            // Só inibe o slider se o lado direito contiver as variáveis independentes x ou y (como palavras isoladas)
-            if (/\b[xy]\b/.test(rightSide)) {
+            // Só inibe o slider se o lado direito contiver as variáveis independentes x ou y (ou z em 3D) como palavras isoladas
+            const hasForbiddenCoords = StateManager.viewMode === '3d' ? /\b[xyz]\b/.test(rightSide) : /\b[xy]\b/.test(rightSide);
+            if (hasForbiddenCoords) {
                 sliderRow.style.display = 'none';
                 return false;
             }
