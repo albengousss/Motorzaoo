@@ -177,6 +177,17 @@ export class MathEngine {
     static userFunctions: Record<string, { params: string[], expr: string, ast: any, blockId?: string }> = {};
     static globalValues: Record<string, any> = {};
     static globalScopeProvider: (() => Record<string, any>) | null = null;
+    static angleModeProvider: (() => 'radians' | 'degrees') | null = null;
+
+    static toRad(val: number): number {
+        const mode = this.angleModeProvider ? this.angleModeProvider() : 'radians';
+        return mode === 'degrees' ? (val * Math.PI) / 180 : val;
+    }
+
+    static fromRad(val: number): number {
+        const mode = this.angleModeProvider ? this.angleModeProvider() : 'radians';
+        return mode === 'degrees' ? (val * 180) / Math.PI : val;
+    }
 
     static evaluateAST(ast: any, scope: Record<string, any> = {}): any {
         if (ast === null || ast === undefined) return NaN;
@@ -240,23 +251,23 @@ export class MathEngine {
                 if (Array.isArray(args[0])) {
                     return ListEngine.broadcastUnary(fn.charAt(0).toUpperCase() + fn.slice(1), args[0]);
                 }
-                if (fn === 'sin') return Math.sin(args[0]);
-                if (fn === 'cos') return Math.cos(args[0]);
-                if (fn === 'tan') return Math.tan(args[0]);
-                if (fn === 'sec') return 1 / Math.cos(args[0]);
-                if (fn === 'csc') return 1 / Math.sin(args[0]);
-                if (fn === 'cot') return 1 / Math.tan(args[0]);
+                if (fn === 'sin') return Math.sin(this.toRad(args[0]));
+                if (fn === 'cos') return Math.cos(this.toRad(args[0]));
+                if (fn === 'tan') return Math.tan(this.toRad(args[0]));
+                if (fn === 'sec') return 1 / Math.cos(this.toRad(args[0]));
+                if (fn === 'csc') return 1 / Math.sin(this.toRad(args[0]));
+                if (fn === 'cot') return 1 / Math.tan(this.toRad(args[0]));
                 if (fn === 'sqrt') return Math.sqrt(args[0]);
                 if (fn === 'cbrt') return Math.cbrt(args[0]);
                 if (fn === 'abs') return Math.abs(args[0]);
                 if (fn === 'exp') return Math.exp(args[0]);
                 if (fn === 'log' || fn === 'ln') return Math.log(args[0]);
-                if (fn === 'asin') return Math.asin(args[0]);
-                if (fn === 'acos') return Math.acos(args[0]);
-                if (fn === 'atan') return args.length > 1 ? Math.atan2(args[0], args[1]) : Math.atan(args[0]);
-                if (fn === 'asec') return Math.acos(1 / args[0]);
-                if (fn === 'acsc') return Math.asin(1 / args[0]);
-                if (fn === 'acot') return Math.atan(1 / args[0]);
+                if (fn === 'asin') return this.fromRad(Math.asin(args[0]));
+                if (fn === 'acos') return this.fromRad(Math.acos(args[0]));
+                if (fn === 'atan') return this.fromRad(args.length > 1 ? Math.atan2(args[0], args[1]) : Math.atan(args[0]));
+                if (fn === 'asec') return this.fromRad(Math.acos(1 / args[0]));
+                if (fn === 'acsc') return this.fromRad(Math.asin(1 / args[0]));
+                if (fn === 'acot') return this.fromRad(Math.atan(1 / args[0]));
                 if (fn === 'sinh') return Math.sinh(args[0]);
                 if (fn === 'cosh') return Math.cosh(args[0]);
                 if (fn === 'tanh') return Math.tanh(args[0]);
@@ -572,20 +583,20 @@ export class MathEngine {
                 if (op === 'Abs') return Math.abs(arg);
                 if (op === 'Sqrt') return Math.sqrt(arg);
                 if (op === 'Cbrt') return Math.cbrt(arg);
-                if (op === 'Sin') return Math.sin(arg);
-                if (op === 'Cos') return Math.cos(arg);
-                if (op === 'Tan') return Math.tan(arg);
-                if (op === 'Sec') return 1 / Math.cos(arg);
-                if (op === 'Csc') return 1 / Math.sin(arg);
-                if (op === 'Cot') return 1 / Math.tan(arg);
+                if (op === 'Sin') return Math.sin(this.toRad(arg));
+                if (op === 'Cos') return Math.cos(this.toRad(arg));
+                if (op === 'Tan') return Math.tan(this.toRad(arg));
+                if (op === 'Sec') return 1 / Math.cos(this.toRad(arg));
+                if (op === 'Csc') return 1 / Math.sin(this.toRad(arg));
+                if (op === 'Cot') return 1 / Math.tan(this.toRad(arg));
                 if (op === 'Log' || op === 'Ln') return Math.log(arg);
                 if (op === 'Exp') return Math.exp(arg);
-                if (op === 'Asin') return Math.asin(arg);
-                if (op === 'Acos') return Math.acos(arg);
-                if (op === 'Atan') return Math.atan(arg);
-                if (op === 'Asec') return Math.acos(1 / arg);
-                if (op === 'Acsc') return Math.asin(1 / arg);
-                if (op === 'Acot') return Math.atan(1 / arg);
+                if (op === 'Asin') return this.fromRad(Math.asin(arg));
+                if (op === 'Acos') return this.fromRad(Math.acos(arg));
+                if (op === 'Atan') return this.fromRad(Math.atan(arg));
+                if (op === 'Asec') return this.fromRad(Math.acos(1 / arg));
+                if (op === 'Acsc') return this.fromRad(Math.asin(1 / arg));
+                if (op === 'Acot') return this.fromRad(Math.atan(1 / arg));
                 if (op === 'Sinh') return Math.sinh(arg);
                 if (op === 'Cosh') return Math.cosh(arg);
                 if (op === 'Tanh') return Math.tanh(arg);
@@ -679,18 +690,18 @@ export class MathEngine {
             if (op === 'Divide') return `(funcs && funcs.div ? funcs.div(${this.toJS(node[1], paramName, dependentVar)}, ${this.toJS(node[2], paramName, dependentVar)}) : (${this.toJS(node[1], paramName, dependentVar)} / ${this.toJS(node[2], paramName, dependentVar)}))`;
             if (op === 'Power') return `funcs.realPow(${this.toJS(node[1], paramName, dependentVar)}, ${this.toJS(node[2], paramName, dependentVar)})`;
             if (op === 'Cbrt') return `Math.cbrt(${this.toJS(node[1], paramName, dependentVar)})`;
-            if (op === 'Sin') return `Math.sin(${this.toJS(node[1], paramName, dependentVar)})`;
-            if (op === 'Cos') return `Math.cos(${this.toJS(node[1], paramName, dependentVar)})`;
-            if (op === 'Tan') return `Math.tan(${this.toJS(node[1], paramName, dependentVar)})`;
-            if (op === 'Sec') return `(1 / Math.cos(${this.toJS(node[1], paramName, dependentVar)}))`;
-            if (op === 'Csc') return `(1 / Math.sin(${this.toJS(node[1], paramName, dependentVar)}))`;
-            if (op === 'Cot') return `(1 / Math.tan(${this.toJS(node[1], paramName, dependentVar)}))`;
-            if (op === 'Asin') return `Math.asin(${this.toJS(node[1], paramName, dependentVar)})`;
-            if (op === 'Acos') return `Math.acos(${this.toJS(node[1], paramName, dependentVar)})`;
-            if (op === 'Atan') return `Math.atan(${this.toJS(node[1], paramName, dependentVar)})`;
-            if (op === 'Asec') return `Math.acos(1 / (${this.toJS(node[1], paramName, dependentVar)}))`;
-            if (op === 'Acsc') return `Math.asin(1 / (${this.toJS(node[1], paramName, dependentVar)}))`;
-            if (op === 'Acot') return `Math.atan(1 / (${this.toJS(node[1], paramName, dependentVar)}))`;
+            if (op === 'Sin') return `Math.sin(funcs.toRad(${this.toJS(node[1], paramName, dependentVar)}))`;
+            if (op === 'Cos') return `Math.cos(funcs.toRad(${this.toJS(node[1], paramName, dependentVar)}))`;
+            if (op === 'Tan') return `Math.tan(funcs.toRad(${this.toJS(node[1], paramName, dependentVar)}))`;
+            if (op === 'Sec') return `(1 / Math.cos(funcs.toRad(${this.toJS(node[1], paramName, dependentVar)})))`;
+            if (op === 'Csc') return `(1 / Math.sin(funcs.toRad(${this.toJS(node[1], paramName, dependentVar)})))`;
+            if (op === 'Cot') return `(1 / Math.tan(funcs.toRad(${this.toJS(node[1], paramName, dependentVar)})))`;
+            if (op === 'Asin') return `funcs.fromRad(Math.asin(${this.toJS(node[1], paramName, dependentVar)}))`;
+            if (op === 'Acos') return `funcs.fromRad(Math.acos(${this.toJS(node[1], paramName, dependentVar)}))`;
+            if (op === 'Atan') return `funcs.fromRad(Math.atan(${this.toJS(node[1], paramName, dependentVar)}))`;
+            if (op === 'Asec') return `funcs.fromRad(Math.acos(1 / (${this.toJS(node[1], paramName, dependentVar)})))`;
+            if (op === 'Acsc') return `funcs.fromRad(Math.asin(1 / (${this.toJS(node[1], paramName, dependentVar)})))`;
+            if (op === 'Acot') return `funcs.fromRad(Math.atan(1 / (${this.toJS(node[1], paramName, dependentVar)})))`;
             if (op === 'Sinh') return `Math.sinh(${this.toJS(node[1], paramName, dependentVar)})`;
             if (op === 'Cosh') return `Math.cosh(${this.toJS(node[1], paramName, dependentVar)})`;
             if (op === 'Tanh') return `Math.tanh(${this.toJS(node[1], paramName, dependentVar)})`;
@@ -758,6 +769,8 @@ export class MathEngine {
         const rawFunc = new Function('x', 'y', 'scope', 'funcs', `return ${jsCode};`);
         
         MathEngine.compiledFuncs['add'] = MathEngine.add;
+        MathEngine.compiledFuncs['toRad'] = (x: number) => MathEngine.toRad(x);
+        MathEngine.compiledFuncs['fromRad'] = (x: number) => MathEngine.fromRad(x);
         MathEngine.compiledFuncs['sub'] = MathEngine.sub;
         MathEngine.compiledFuncs['mul'] = MathEngine.mul;
         MathEngine.compiledFuncs['div'] = MathEngine.div;
@@ -811,15 +824,15 @@ export class MathEngine {
                 if (op === 'Divide') return `(${toJS(node[1])} / (${toJS(node[2])} === 0 ? 1e-9 : ${toJS(node[2])}))`;
                 if (op === 'Power') return `funcs.realPow(${toJS(node[1])}, ${toJS(node[2])})`;
                 if (op === 'Negate') return `(-(${toJS(node[1])}))`;
-                if (op === 'Sin') return `Math.sin(${toJS(node[1])})`;
-                if (op === 'Cos') return `Math.cos(${toJS(node[1])})`;
-                if (op === 'Tan') return `Math.tan(${toJS(node[1])})`;
-                if (op === 'Sec') return `(1 / Math.cos(${toJS(node[1])}))`;
-                if (op === 'Csc') return `(1 / Math.sin(${toJS(node[1])}))`;
-                if (op === 'Cot') return `(1 / Math.tan(${toJS(node[1])}))`;
-                if (op === 'Asin') return `Math.asin(${toJS(node[1])})`;
-                if (op === 'Acos') return `Math.acos(${toJS(node[1])})`;
-                if (op === 'Atan') return `Math.atan(${toJS(node[1])})`;
+                if (op === 'Sin') return `Math.sin(funcs.toRad(${toJS(node[1])}))`;
+                if (op === 'Cos') return `Math.cos(funcs.toRad(${toJS(node[1])}))`;
+                if (op === 'Tan') return `Math.tan(funcs.toRad(${toJS(node[1])}))`;
+                if (op === 'Sec') return `(1 / Math.cos(funcs.toRad(${toJS(node[1])})))`;
+                if (op === 'Csc') return `(1 / Math.sin(funcs.toRad(${toJS(node[1])})))`;
+                if (op === 'Cot') return `(1 / Math.tan(funcs.toRad(${toJS(node[1])})))`;
+                if (op === 'Asin') return `funcs.fromRad(Math.asin(${toJS(node[1])}))`;
+                if (op === 'Acos') return `funcs.fromRad(Math.acos(${toJS(node[1])}))`;
+                if (op === 'Atan') return `funcs.fromRad(Math.atan(${toJS(node[1])}))`;
                 if (op === 'Asec') return `Math.acos(1 / (${toJS(node[1])}))`;
                 if (op === 'Acsc') return `Math.asin(1 / (${toJS(node[1])}))`;
                 if (op === 'Acot') return `Math.atan(1 / (${toJS(node[1])}))`;

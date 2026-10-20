@@ -2126,6 +2126,7 @@ function drawFrame() {
     glRenderer.clear();
     renderer.clear();
     renderer.drawAxes(hoverX, hoverY);
+    syncGraphSettingsUI();
 
     renderMemory_points = [];
     renderMemory_curves = [];
@@ -2449,16 +2450,95 @@ CommandsGuideModal.init((exampleExpr) => {
 
 /** Repõe a vista para o estado padrão (zoom 1:1, centrado na origem) */
 
-// --- CONFIGURAÇÕES DO GRÁFICO ---
+// --- CONFIGURAÇÕES DO GRÁFICO (Estilo Desmos: Popover Flutuante) ---
+function syncGraphSettingsUI() {
+    const popover = document.getElementById('graph-settings-popover');
+    if (!popover || popover.classList.contains('hidden')) return;
+
+    const xminInput = document.getElementById('setting-xmin') as HTMLInputElement;
+    const xmaxInput = document.getElementById('setting-xmax') as HTMLInputElement;
+    const yminInput = document.getElementById('setting-ymin') as HTMLInputElement;
+    const ymaxInput = document.getElementById('setting-ymax') as HTMLInputElement;
+
+    if (xminInput && document.activeElement !== xminInput) xminInput.value = Camera.xMin.toFixed(2);
+    if (xmaxInput && document.activeElement !== xmaxInput) xmaxInput.value = Camera.xMax.toFixed(2);
+    if (yminInput && document.activeElement !== yminInput) yminInput.value = Camera.yMin.toFixed(2);
+    if (ymaxInput && document.activeElement !== ymaxInput) ymaxInput.value = Camera.yMax.toFixed(2);
+}
+
+function updateGridButtons() {
+    const btnCartesian = document.getElementById('grid-type-cartesian');
+    const btnPolar = document.getElementById('grid-type-polar');
+    if (!btnCartesian || !btnPolar) return;
+    if (StateManager.gridType === 'polar') {
+        btnPolar.classList.add('bg-white', 'text-blue-600', 'shadow-xs');
+        btnPolar.classList.remove('hover:text-gray-900');
+        btnCartesian.classList.remove('bg-white', 'text-blue-600', 'shadow-xs');
+        btnCartesian.classList.add('hover:text-gray-900');
+    } else {
+        btnCartesian.classList.add('bg-white', 'text-blue-600', 'shadow-xs');
+        btnCartesian.classList.remove('hover:text-gray-900');
+        btnPolar.classList.remove('bg-white', 'text-blue-600', 'shadow-xs');
+        btnPolar.classList.add('hover:text-gray-900');
+    }
+}
+
+function updateAngleButtons() {
+    const btnRad = document.getElementById('angle-mode-radians');
+    const btnDeg = document.getElementById('angle-mode-degrees');
+    if (!btnRad || !btnDeg) return;
+    if (StateManager.angleMode === 'degrees') {
+        btnDeg.classList.add('bg-white', 'text-blue-600', 'shadow-xs');
+        btnDeg.classList.remove('hover:text-gray-900');
+        btnRad.classList.remove('bg-white', 'text-blue-600', 'shadow-xs');
+        btnRad.classList.add('hover:text-gray-900');
+    } else {
+        btnRad.classList.add('bg-white', 'text-blue-600', 'shadow-xs');
+        btnRad.classList.remove('hover:text-gray-900');
+        btnDeg.classList.remove('bg-white', 'text-blue-600', 'shadow-xs');
+        btnDeg.classList.add('hover:text-gray-900');
+    }
+}
+
 (window as any)._toggleSettings = () => {
-    const modal = document.getElementById('settings-modal');
-    if (modal) {
-        if (modal.classList.contains('hidden')) {
-            modal.classList.remove('hidden');
-            modal.classList.add('flex');
+    const popover = document.getElementById('graph-settings-popover');
+    if (popover) {
+        const isHidden = popover.classList.contains('hidden');
+        if (isHidden) {
+            popover.classList.remove('hidden');
+            popover.classList.add('flex');
+            
+            const xminInput = document.getElementById('setting-xmin') as HTMLInputElement;
+            const xmaxInput = document.getElementById('setting-xmax') as HTMLInputElement;
+            const yminInput = document.getElementById('setting-ymin') as HTMLInputElement;
+            const ymaxInput = document.getElementById('setting-ymax') as HTMLInputElement;
+            const xstepInput = document.getElementById('setting-xstep') as HTMLInputElement;
+            const ystepInput = document.getElementById('setting-ystep') as HTMLInputElement;
+            const xlabelInput = document.getElementById('setting-xlabel') as HTMLInputElement;
+            const ylabelInput = document.getElementById('setting-ylabel') as HTMLInputElement;
+            const axesCb = document.getElementById('setting-axes') as HTMLInputElement;
+            const arrowsCb = document.getElementById('setting-arrows') as HTMLInputElement;
+            const gridCb = document.getElementById('setting-grid') as HTMLInputElement;
+            const projCb = document.getElementById('setting-projector') as HTMLInputElement;
+
+            if (xminInput) xminInput.value = Camera.xMin.toFixed(2);
+            if (xmaxInput) xmaxInput.value = Camera.xMax.toFixed(2);
+            if (yminInput) yminInput.value = Camera.yMin.toFixed(2);
+            if (ymaxInput) ymaxInput.value = Camera.yMax.toFixed(2);
+            if (xstepInput) xstepInput.value = StateManager.xStep ? StateManager.xStep.toString() : '';
+            if (ystepInput) ystepInput.value = StateManager.yStep ? StateManager.yStep.toString() : '';
+            if (xlabelInput) xlabelInput.value = StateManager.xLabel || '';
+            if (ylabelInput) ylabelInput.value = StateManager.yLabel || '';
+            if (axesCb) axesCb.checked = StateManager.showAxes;
+            if (arrowsCb) arrowsCb.checked = StateManager.showArrows;
+            if (gridCb) gridCb.checked = renderer.showGrid && StateManager.gridType !== 'none';
+            if (projCb) projCb.checked = StateManager.projectorMode;
+
+            updateGridButtons();
+            updateAngleButtons();
         } else {
-            modal.classList.add('hidden');
-            modal.classList.remove('flex');
+            popover.classList.add('hidden');
+            popover.classList.remove('flex');
         }
     }
 };
@@ -2468,10 +2548,132 @@ CommandsGuideModal.init((exampleExpr) => {
     const gridCb = document.getElementById('setting-grid') as HTMLInputElement;
     if (axesCb && gridCb) {
         renderer.showAxes = axesCb.checked;
+        StateManager.showAxes = axesCb.checked;
         renderer.showGrid = gridCb.checked;
+        if (!gridCb.checked) StateManager.gridType = 'none';
+        else if (StateManager.gridType === 'none') StateManager.gridType = 'cartesian';
         drawFrame();
     }
 };
+
+function initSettingsPopoverListeners() {
+    const popover = document.getElementById('graph-settings-popover');
+    const settingsBtn = document.getElementById('settings-btn');
+    if (!popover) return;
+
+    // Fechar ao clicar fora
+    document.addEventListener('pointerdown', (e) => {
+        if (!popover.classList.contains('hidden') && !popover.contains(e.target as Node) && settingsBtn && !settingsBtn.contains(e.target as Node)) {
+            popover.classList.add('hidden');
+            popover.classList.remove('flex');
+        }
+    });
+
+    const applyLimits = () => {
+        const x1 = parseFloat((document.getElementById('setting-xmin') as HTMLInputElement)?.value);
+        const x2 = parseFloat((document.getElementById('setting-xmax') as HTMLInputElement)?.value);
+        const y1 = parseFloat((document.getElementById('setting-ymin') as HTMLInputElement)?.value);
+        const y2 = parseFloat((document.getElementById('setting-ymax') as HTMLInputElement)?.value);
+        if (Number.isFinite(x1) && Number.isFinite(x2) && x2 > x1) {
+            Camera.xMin = x1;
+            Camera.xMax = x2;
+        }
+        if (Number.isFinite(y1) && Number.isFinite(y2) && y2 > y1) {
+            Camera.yMin = y1;
+            Camera.yMax = y2;
+        }
+        drawFrame();
+    };
+
+    ['setting-xmin', 'setting-xmax', 'setting-ymin', 'setting-ymax'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('change', applyLimits);
+            el.addEventListener('keydown', (e: any) => { if (e.key === 'Enter') applyLimits(); });
+        }
+    });
+
+    document.getElementById('setting-xstep')?.addEventListener('input', (e: any) => {
+        const val = parseFloat(e.target.value);
+        StateManager.xStep = (Number.isFinite(val) && val > 0) ? val : null;
+        drawFrame();
+    });
+
+    document.getElementById('setting-ystep')?.addEventListener('input', (e: any) => {
+        const val = parseFloat(e.target.value);
+        StateManager.yStep = (Number.isFinite(val) && val > 0) ? val : null;
+        drawFrame();
+    });
+
+    document.getElementById('setting-xlabel')?.addEventListener('input', (e: any) => {
+        StateManager.xLabel = e.target.value || '';
+        drawFrame();
+    });
+
+    document.getElementById('setting-ylabel')?.addEventListener('input', (e: any) => {
+        StateManager.yLabel = e.target.value || '';
+        drawFrame();
+    });
+
+    document.getElementById('setting-axes')?.addEventListener('change', (e: any) => {
+        StateManager.showAxes = e.target.checked;
+        renderer.showAxes = e.target.checked;
+        drawFrame();
+    });
+
+    document.getElementById('setting-arrows')?.addEventListener('change', (e: any) => {
+        StateManager.showArrows = e.target.checked;
+        drawFrame();
+    });
+
+    document.getElementById('setting-grid')?.addEventListener('change', (e: any) => {
+        renderer.showGrid = e.target.checked;
+        if (!e.target.checked) {
+            StateManager.gridType = 'none';
+        } else if (StateManager.gridType === 'none') {
+            StateManager.gridType = 'cartesian';
+        }
+        updateGridButtons();
+        drawFrame();
+    });
+
+    document.getElementById('setting-projector')?.addEventListener('change', (e: any) => {
+        StateManager.projectorMode = e.target.checked;
+        drawFrame();
+    });
+
+    document.getElementById('grid-type-cartesian')?.addEventListener('click', () => {
+        StateManager.gridType = 'cartesian';
+        renderer.showGrid = true;
+        const gridCb = document.getElementById('setting-grid') as HTMLInputElement;
+        if (gridCb) gridCb.checked = true;
+        updateGridButtons();
+        drawFrame();
+    });
+
+    document.getElementById('grid-type-polar')?.addEventListener('click', () => {
+        StateManager.gridType = 'polar';
+        renderer.showGrid = true;
+        const gridCb = document.getElementById('setting-grid') as HTMLInputElement;
+        if (gridCb) gridCb.checked = true;
+        updateGridButtons();
+        drawFrame();
+    });
+
+    document.getElementById('angle-mode-radians')?.addEventListener('click', () => {
+        StateManager.angleMode = 'radians';
+        updateAngleButtons();
+        compileAllExpressions();
+        drawFrame();
+    });
+
+    document.getElementById('angle-mode-degrees')?.addEventListener('click', () => {
+        StateManager.angleMode = 'degrees';
+        updateAngleButtons();
+        compileAllExpressions();
+        drawFrame();
+    });
+}
 
 (window as any)._resetView = () => {
     if (StateManager.viewMode === '3d') {
@@ -2525,6 +2727,8 @@ CommandsGuideModal.init((exampleExpr) => {
     HistoryManager.recordState(true);
     drawFrame();
 };
+
+initSettingsPopoverListeners();
 
 // Inicialização — resize inicial obrigatório antes do primeiro draw
 resizeAll();

@@ -78,62 +78,81 @@
     ══════════════════════════════════════════ -->
     <div id="sidebar" class="w-full md:w-[380px] bg-white border-t md:border-t-0 md:border-r border-gray-200 shadow-lg flex flex-col shrink-0 overflow-hidden z-10 h-[42vh] md:h-auto relative">
 
-      <div id="sidebar-header" class="bg-white px-3 py-2 border-b border-gray-100 flex justify-between items-center shadow-[0_2px_4px_rgba(0,0,0,0.02)] touch-none select-none shrink-0">
-        <div class="flex items-center justify-between w-full relative">
-            <div id="drag-handle" class="w-8 h-1 bg-gray-300 rounded-full block md:hidden shadow-inner absolute -top-1 left-1/2 -translate-x-1/2"></div>
-            <div class="flex items-center gap-1.5 mt-2 md:mt-0">
-                <span class="text-lg font-black text-blue-500 leading-none">∑</span>
-                <span class="text-sm font-semibold text-gray-800 tracking-tight">motor<span class="font-light text-gray-400">-calc</span></span>
+      <div id="sidebar-header" class="bg-white px-2.5 py-2 border-b border-gray-200 flex items-center justify-between select-none shrink-0 relative shadow-2xs">
+        <div id="drag-handle" class="w-8 h-1 bg-gray-300 rounded-full block md:hidden shadow-inner absolute -top-1 left-1/2 -translate-x-1/2"></div>
+        
+        <!-- Left Tools: Add Item (+), Undo, Redo -->
+        <div class="flex items-center gap-1">
+          <!-- Add Item Button (+) with Dropdown -->
+          <div class="relative">
+            <button id="add-item-btn" class="w-8 h-8 flex items-center justify-center rounded-lg text-gray-700 hover:text-blue-600 hover:bg-gray-100 active:bg-gray-200 transition-all cursor-pointer font-bold text-lg" title="Adicionar Item">
+              <i data-lucide="plus" class="w-5 h-5"></i>
+            </button>
+
+            <!-- Dropdown Menu -->
+            <div id="add-item-dropdown" class="absolute top-10 left-0 bg-white rounded-xl shadow-xl border border-gray-200 py-1.5 w-44 z-50 hidden flex-col divide-y divide-gray-100">
+              <button id="menu-add-expr" class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-blue-50 text-gray-700 hover:text-blue-600 text-xs font-semibold cursor-pointer transition-colors text-left">
+                <span class="w-5 text-center font-serif italic font-bold text-blue-600">f(x)</span>
+                <span>Expressão</span>
+              </button>
+              <button id="menu-add-note" class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-amber-50 text-gray-700 hover:text-amber-600 text-xs font-semibold cursor-pointer transition-colors text-left">
+                <span class="w-5 text-center font-serif text-base font-bold text-amber-500">“ ”</span>
+                <span>Nota</span>
+              </button>
+              <button id="menu-add-table" class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-indigo-50 text-gray-700 hover:text-indigo-600 text-xs font-semibold cursor-pointer transition-colors text-left">
+                <i data-lucide="table" class="w-4 h-4 text-indigo-500"></i>
+                <span>Tabela</span>
+              </button>
+              <button id="menu-add-matrix" class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-purple-50 text-gray-700 hover:text-purple-600 text-xs font-semibold cursor-pointer transition-colors text-left">
+                <span class="w-5 text-center font-mono font-bold text-purple-600 text-xs">[M]</span>
+                <span>Matriz</span>
+              </button>
+              <button id="menu-add-folder" class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-emerald-50 text-gray-700 hover:text-emerald-600 text-xs font-semibold cursor-pointer transition-colors text-left">
+                <i data-lucide="folder" class="w-4 h-4 text-emerald-500"></i>
+                <span>Pasta</span>
+              </button>
             </div>
-            
-            <!-- Ferramental Superior: Undo, Redo, Guia e Mobile/Desktop Collapse -->
-            <div class="flex items-center gap-1.5 mt-2 md:mt-0">
-                <button id="guide-sidebar-btn" title="Guia de Comandos & Ajuda" class="w-8 h-8 md:w-7 md:h-7 flex items-center justify-center text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-all cursor-pointer" onclick="if(window._toggleCommandsGuide) window._toggleCommandsGuide()">
-                    <i data-lucide="help-circle" class="w-4 h-4"></i>
-                </button>
-                <button id="undo-btn" title="Desfazer (Ctrl+Z)" class="w-8 h-8 md:w-7 md:h-7 flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed" disabled>
-                    <i data-lucide="undo-2" class="w-4 h-4"></i>
-                </button>
-                <button id="redo-btn" title="Refazer (Ctrl+Y)" class="w-8 h-8 md:w-7 md:h-7 flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed" disabled>
-                    <i data-lucide="redo-2" class="w-4 h-4"></i>
-                </button>
-                <button id="collapse-sidebar-btn" class="hidden md:flex items-center justify-center w-8 h-8 md:w-7 md:h-7 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-all cursor-pointer" title="Recolher Painel Lateral">
-                    <i data-lucide="chevrons-left" class="w-4 h-4"></i>
-                </button>
-                <button id="toggle-sidebar-mobile-btn" class="flex md:hidden items-center justify-center w-8 h-8 text-gray-500 hover:text-blue-600 rounded-md transition-colors" title="Recolher / Expandir Painel">
-                    <i data-lucide="chevron-down" id="sidebar-chevron-icon" class="w-4 h-4"></i>
-                </button>
-            </div>
+          </div>
+
+          <!-- Undo & Redo -->
+          <button id="undo-btn" title="Desfazer (Ctrl+Z)" class="w-7 h-7 flex items-center justify-center text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-md transition-all cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed" disabled>
+            <i data-lucide="undo-2" class="w-4 h-4"></i>
+          </button>
+          <button id="redo-btn" title="Refazer (Ctrl+Y)" class="w-7 h-7 flex items-center justify-center text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-md transition-all cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed" disabled>
+            <i data-lucide="redo-2" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <!-- Center: Title -->
+        <div class="flex items-center gap-1.5 opacity-80 hover:opacity-100 transition-opacity">
+          <span class="text-base font-black text-blue-600 leading-none">∑</span>
+          <span class="text-xs font-bold text-gray-700 tracking-tight">motor<span class="font-normal text-gray-400">zao</span></span>
+        </div>
+
+        <!-- Right Header Controls: Guide / Help & Collapse Chevron -->
+        <div class="flex items-center gap-1">
+          <button id="guide-sidebar-btn" title="Guia de Comandos & Ajuda (?)" class="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-all cursor-pointer" onclick="if(window._toggleCommandsGuide) window._toggleCommandsGuide()">
+            <i data-lucide="help-circle" class="w-4 h-4"></i>
+          </button>
+          <button id="collapse-sidebar-btn" class="hidden md:flex items-center justify-center w-7 h-7 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-all cursor-pointer" title="Ocultar Painel Lateral">
+            <i data-lucide="chevrons-left" class="w-4 h-4"></i>
+          </button>
+          <button id="toggle-sidebar-mobile-btn" class="flex md:hidden items-center justify-center w-7 h-7 text-gray-500 hover:text-blue-600 rounded-md transition-colors" title="Recolher / Expandir Painel">
+            <i data-lucide="chevron-down" id="sidebar-chevron-icon" class="w-4 h-4"></i>
+          </button>
         </div>
       </div>
-      
+
       <!-- LISTA DE EXPRESSÕES — scrollable -->
       <div id="expressions-list" class="flex flex-col gap-0 overflow-y-auto flex-1 overscroll-contain"></div>
       
-      <!-- Botões Adicionar (Expressão, Tabela, Matriz, Nota, Pasta) -->
-      <div class="px-2 py-2 shrink-0 border-t border-gray-100 bg-gray-50/70">
-        <div class="grid grid-cols-5 gap-1">
-          <button id="add-expr-btn" class="flex flex-col items-center justify-center py-1.5 px-0.5 bg-white hover:bg-blue-50 border border-gray-200 hover:border-blue-300 rounded-lg text-[10px] font-semibold text-gray-700 hover:text-blue-600 transition-all shadow-xs cursor-pointer active:scale-95" title="Adicionar Expressão Matemática">
-            <i data-lucide="plus" class="w-3.5 h-3.5 text-blue-500 mb-0.5"></i>
-            <span>Expressão</span>
-          </button>
-          <button id="add-table-btn" class="flex flex-col items-center justify-center py-1.5 px-0.5 bg-white hover:bg-indigo-50 border border-gray-200 hover:border-indigo-300 rounded-lg text-[10px] font-semibold text-gray-700 hover:text-indigo-600 transition-all shadow-xs cursor-pointer active:scale-95" title="Adicionar Tabela de Coordenadas (x, y)">
-            <i data-lucide="table" class="w-3.5 h-3.5 text-indigo-500 mb-0.5"></i>
-            <span>Tabela</span>
-          </button>
-          <button id="add-matrix-btn" class="flex flex-col items-center justify-center py-1.5 px-0.5 bg-white hover:bg-purple-50 border border-gray-200 hover:border-purple-300 rounded-lg text-[10px] font-semibold text-gray-700 hover:text-purple-600 transition-all shadow-xs cursor-pointer active:scale-95" title="Adicionar Editor de Matriz Interativa">
-            <i data-lucide="grid-3x3" class="w-3.5 h-3.5 text-purple-500 mb-0.5"></i>
-            <span>Matriz</span>
-          </button>
-          <button id="add-note-btn" class="flex flex-col items-center justify-center py-1.5 px-0.5 bg-white hover:bg-amber-50 border border-gray-200 hover:border-amber-300 rounded-lg text-[10px] font-semibold text-gray-700 hover:text-amber-600 transition-all shadow-xs cursor-pointer active:scale-95" title="Adicionar Bloco de Nota Explicativa">
-            <i data-lucide="file-text" class="w-3.5 h-3.5 text-amber-500 mb-0.5"></i>
-            <span>Nota</span>
-          </button>
-          <button id="add-folder-btn" class="flex flex-col items-center justify-center py-1.5 px-0.5 bg-white hover:bg-emerald-50 border border-gray-200 hover:border-emerald-300 rounded-lg text-[10px] font-semibold text-gray-700 hover:text-emerald-600 transition-all shadow-xs cursor-pointer active:scale-95" title="Adicionar Pasta Retrátil">
-            <i data-lucide="folder" class="w-3.5 h-3.5 text-emerald-500 mb-0.5"></i>
-            <span>Pasta</span>
-          </button>
-        </div>
+      <!-- Compatibilidade para testes e atalhos legacy -->
+      <div class="hidden">
+        <button id="add-expr-btn"></button>
+        <button id="add-table-btn"></button>
+        <button id="add-matrix-btn"></button>
+        <button id="add-note-btn"></button>
+        <button id="add-folder-btn"></button>
       </div>
 
       <!-- Sliders Dinâmicos -->
@@ -195,36 +214,137 @@
         <span class="hidden sm:inline font-semibold">Teclado</span>
       </button>
     </div>
-    <!-- Settings Modal -->
-    <div id="settings-modal" class="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 hidden flex-col items-center justify-center p-4">
-      <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col border border-gray-100">
-        <div class="px-5 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-          <h3 class="font-bold text-gray-800 flex items-center gap-2"><i data-lucide="wrench" class="w-4 h-4 text-gray-500"></i> Configurações do Gráfico</h3>
-          <button id="close-settings-btn" class="text-gray-400 hover:text-gray-700 transition-colors p-1" onclick="if(window._toggleSettings) window._toggleSettings()"><i data-lucide="x" class="w-5 h-5"></i></button>
+    <!-- ═══════════════════════════════════════
+         GRAPH SETTINGS POPOVER (Desmos Style)
+    ══════════════════════════════════════════ -->
+    <div id="graph-settings-popover" class="absolute top-14 right-4 z-40 hidden flex-col w-[320px] max-w-[92vw] bg-white/98 backdrop-blur-md rounded-2xl shadow-2xl border border-gray-200/90 text-gray-800 text-xs overflow-hidden transition-all duration-150 select-none">
+      
+      <!-- Popover Header -->
+      <div class="px-4 py-3 border-b border-gray-100 flex justify-between items-center bg-gray-50/70">
+        <div class="flex items-center gap-2 font-bold text-gray-800 text-sm">
+          <i data-lucide="wrench" class="w-4 h-4 text-gray-500"></i>
+          <span>Configurações do Gráfico</span>
         </div>
-        <div class="p-5 flex flex-col gap-4">
-          <div class="flex justify-between items-center">
-            <span class="text-sm font-medium text-gray-700">Mostrar Eixos</span>
-            <label class="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" id="setting-axes" class="sr-only peer" checked onchange="if(window._updateSettings) window._updateSettings()">
-              <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
-            </label>
-          </div>
-          <div class="flex justify-between items-center">
-            <span class="text-sm font-medium text-gray-700">Mostrar Grelha (Grid)</span>
-            <label class="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" id="setting-grid" class="sr-only peer" checked onchange="if(window._updateSettings) window._updateSettings()">
-              <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
-            </label>
-          </div>
-          <div class="pt-3 border-t border-gray-100 flex flex-col gap-2">
-            <button id="clear-all-btn" class="w-full py-2 px-3 flex items-center justify-center gap-2 text-xs font-semibold text-red-600 hover:text-white bg-red-50 hover:bg-red-600 border border-red-200 hover:border-red-600 rounded-lg transition-all cursor-pointer shadow-2xs" onclick="if(window._clearAll) window._clearAll()">
-              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-              <span>Limpar Todas as Expressões</span>
-            </button>
-          </div>
-        </div>
+        <button id="close-settings-btn" class="text-gray-400 hover:text-gray-700 transition-colors p-1 rounded-md hover:bg-gray-200/60 cursor-pointer" onclick="if(window._toggleSettings) window._toggleSettings()">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
       </div>
+
+      <!-- Popover Body -->
+      <div class="p-4 flex flex-col gap-3.5 max-h-[75vh] overflow-y-auto">
+        
+        <!-- 1. Modo Projetor (Projector Mode) -->
+        <div class="flex justify-between items-center py-0.5">
+          <span class="font-semibold text-gray-700">Modo Projetor</span>
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="setting-projector" class="sr-only peer">
+            <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+          </label>
+        </div>
+
+        <div class="h-px bg-gray-100"></div>
+
+        <!-- 2. Malha / Grelha -->
+        <div class="flex flex-col gap-1.5">
+          <div class="flex justify-between items-center">
+            <span class="font-semibold text-gray-700">Grelha</span>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="setting-grid" class="sr-only peer" checked>
+              <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+          <!-- Segmented Grid Control -->
+          <div id="grid-type-segmented" class="grid grid-cols-2 p-0.5 bg-gray-100 rounded-lg text-center font-medium text-gray-600 mt-1">
+            <button id="grid-type-cartesian" class="py-1 rounded-md text-xs font-semibold bg-white text-blue-600 shadow-xs cursor-pointer transition-all">Cartesiana</button>
+            <button id="grid-type-polar" class="py-1 rounded-md text-xs font-semibold hover:text-gray-900 cursor-pointer transition-all">Polar</button>
+          </div>
+        </div>
+
+        <div class="h-px bg-gray-100"></div>
+
+        <!-- 3. Eixos e Setas -->
+        <div class="flex flex-col gap-2">
+          <div class="flex justify-between items-center">
+            <span class="font-semibold text-gray-700">Mostrar Eixos</span>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="setting-axes" class="sr-only peer" checked>
+              <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-gray-600 text-xs">Setas nos Eixos</span>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="setting-arrows" class="sr-only peer">
+              <div class="w-8 h-4.5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Eixo X Config -->
+        <div class="flex flex-col gap-1.5 p-2.5 bg-gray-50/80 rounded-xl border border-gray-100">
+          <span class="font-bold text-gray-700 text-[11px] uppercase tracking-wider">Eixo X</span>
+          <div class="flex items-center gap-1.5 text-gray-600">
+            <input type="text" id="setting-xmin" class="w-16 px-1.5 py-1 text-center bg-white border border-gray-200 rounded-md font-mono text-xs focus:border-blue-500 focus:outline-none" value="-10">
+            <span class="text-gray-400 font-semibold">≤ x ≤</span>
+            <input type="text" id="setting-xmax" class="w-16 px-1.5 py-1 text-center bg-white border border-gray-200 rounded-md font-mono text-xs focus:border-blue-500 focus:outline-none" value="10">
+          </div>
+          <div class="flex items-center gap-2 mt-1">
+            <div class="flex items-center gap-1 grow">
+              <span class="text-[10px] text-gray-500">Passo:</span>
+              <input type="text" id="setting-xstep" class="w-14 px-1 py-0.5 text-center bg-white border border-gray-200 rounded text-xs focus:border-blue-500 focus:outline-none" placeholder="auto">
+            </div>
+            <div class="flex items-center gap-1 grow">
+              <span class="text-[10px] text-gray-500">Legenda:</span>
+              <input type="text" id="setting-xlabel" class="w-16 px-1 py-0.5 bg-white border border-gray-200 rounded text-xs focus:border-blue-500 focus:outline-none" placeholder="x">
+            </div>
+          </div>
+        </div>
+
+        <!-- Eixo Y Config -->
+        <div class="flex flex-col gap-1.5 p-2.5 bg-gray-50/80 rounded-xl border border-gray-100">
+          <span class="font-bold text-gray-700 text-[11px] uppercase tracking-wider">Eixo Y</span>
+          <div class="flex items-center gap-1.5 text-gray-600">
+            <input type="text" id="setting-ymin" class="w-16 px-1.5 py-1 text-center bg-white border border-gray-200 rounded-md font-mono text-xs focus:border-blue-500 focus:outline-none" value="-10">
+            <span class="text-gray-400 font-semibold">≤ y ≤</span>
+            <input type="text" id="setting-ymax" class="w-16 px-1.5 py-1 text-center bg-white border border-gray-200 rounded-md font-mono text-xs focus:border-blue-500 focus:outline-none" value="10">
+          </div>
+          <div class="flex items-center gap-2 mt-1">
+            <div class="flex items-center gap-1 grow">
+              <span class="text-[10px] text-gray-500">Passo:</span>
+              <input type="text" id="setting-ystep" class="w-14 px-1 py-0.5 text-center bg-white border border-gray-200 rounded text-xs focus:border-blue-500 focus:outline-none" placeholder="auto">
+            </div>
+            <div class="flex items-center gap-1 grow">
+              <span class="text-[10px] text-gray-500">Legenda:</span>
+              <input type="text" id="setting-ylabel" class="w-16 px-1 py-0.5 bg-white border border-gray-200 rounded text-xs focus:border-blue-500 focus:outline-none" placeholder="y">
+            </div>
+          </div>
+        </div>
+
+        <div class="h-px bg-gray-100"></div>
+
+        <!-- 4. Ângulos (Radianos vs Graus) -->
+        <div class="flex items-center justify-between">
+          <span class="font-semibold text-gray-700">Ângulos</span>
+          <div id="angle-mode-segmented" class="grid grid-cols-2 p-0.5 bg-gray-100 rounded-lg text-center font-medium text-gray-600 w-36">
+            <button id="angle-mode-radians" class="py-1 rounded-md text-xs font-semibold bg-white text-blue-600 shadow-xs cursor-pointer transition-all">Radianos</button>
+            <button id="angle-mode-degrees" class="py-1 rounded-md text-xs font-semibold hover:text-gray-900 cursor-pointer transition-all">Graus</button>
+          </div>
+        </div>
+
+        <div class="h-px bg-gray-100"></div>
+
+        <!-- 5. Limpar Tudo -->
+        <button id="clear-all-btn" class="w-full py-2 px-3 flex items-center justify-center gap-2 text-xs font-semibold text-red-600 hover:text-white bg-red-50 hover:bg-red-600 border border-red-200 hover:border-red-600 rounded-xl transition-all cursor-pointer shadow-2xs" onclick="if(window._clearAll) window._clearAll()">
+          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+          <span>Limpar Todas as Expressões</span>
+        </button>
+
+      </div>
+    </div>
+
+    <!-- Hidden compatibility div for modal reference -->
+    <div id="settings-modal" class="hidden"></div>
+
     <script>
       // Configuração global para o motor Giac WebAssembly
       window.Module = {

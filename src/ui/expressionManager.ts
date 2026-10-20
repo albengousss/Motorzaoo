@@ -182,12 +182,19 @@ export class ExpressionManager {
         const visBtn = block.querySelector('.visibility-toggle') as HTMLElement;
         const numSpan = block.querySelector('.block-number') as HTMLElement;
         if (visBtn) {
-            visBtn.style.borderColor = color;
-            const isVisible = visBtn.dataset.visible === 'true';
-            visBtn.style.background = isVisible ? `${color}20` : 'transparent';
+            const isVisible = visBtn.dataset.visible !== 'false';
+            if (isVisible) {
+                visBtn.style.backgroundColor = color;
+                visBtn.style.border = '2px solid #ffffff';
+                visBtn.style.boxShadow = '0 0 0 1px ' + color;
+            } else {
+                visBtn.style.backgroundColor = 'transparent';
+                visBtn.style.border = '2px dashed ' + color;
+                visBtn.style.boxShadow = 'none';
+            }
         }
         if (numSpan) {
-            numSpan.style.color = color;
+            numSpan.style.color = '#757575';
         }
     }
 
@@ -308,7 +315,7 @@ export class ExpressionManager {
         }
 
         const grabZone = document.createElement('div');
-        grabZone.className = 'w-12 bg-white flex flex-col items-center justify-start pt-[14px] shrink-0 select-none text-gray-500 gap-1.5';
+        grabZone.className = 'w-14 bg-white flex items-center justify-start pl-2 shrink-0 select-none gap-2';
         
         const colors = ['#c74440', '#2d70b3', '#388c46', '#6042a6', '#fa7e19'];
         const colorIndex = Array.from(this.container.children).length % colors.length;
@@ -317,18 +324,19 @@ export class ExpressionManager {
         block.dataset.lineStyle = 'solid';
         block.dataset.lineWidth = '2.5';
 
+        // Row Index Number (Desmos: número à esquerda do círculo)
+        const numberSpan = document.createElement('span');
+        numberSpan.className = 'block-number';
+        numberSpan.style.cssText = 'font-size: 13px; font-weight: 500; color: #757575; min-width: 16px; text-align: right; cursor: grab; user-select: none;';
+        numberSpan.innerText = this.blockCounter.toString();
+
+        // Desmos-style solid circle toggle
         const visibilityBtn = document.createElement('div');
         visibilityBtn.className = 'visibility-toggle';
         visibilityBtn.dataset.visible = 'true';
         visibilityBtn.title = 'Clique: ocultar/exibir | Botão direito ou segurar: estilo';
-        // Desmos-style circle
-        visibilityBtn.style.cssText = `width: 28px; height: 28px; border-radius: 50%; border: 2px solid ${blockColor}; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; background: ${blockColor}20; position: relative;`;
+        visibilityBtn.style.cssText = 'width: 22px; height: 22px; border-radius: 50%; background-color: ' + blockColor + '; border: 2px solid #ffffff; box-shadow: 0 0 0 1px ' + blockColor + '; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s ease; position: relative; flex-shrink: 0;';
         
-        const numberSpan = document.createElement('span');
-        numberSpan.className = 'block-number';
-        numberSpan.style.cssText = `font-size: 14px; font-weight: bold; color: ${blockColor}; cursor: grab;`;
-        numberSpan.innerText = this.blockCounter.toString();
-
         const warningTrigger = document.createElement('div');
         warningTrigger.className = 'block-warning-trigger hidden';
         warningTrigger.innerHTML = `
@@ -347,9 +355,6 @@ export class ExpressionManager {
                 tt.classList.toggle('force-visible');
             }
         };
-
-        visibilityBtn.appendChild(numberSpan);
-        visibilityBtn.appendChild(warningTrigger);
 
         // Long press detection para dispositivos touch e mouse
         let longPressTimer: any = null;
@@ -382,9 +387,15 @@ export class ExpressionManager {
             const isVisible = visibilityBtn.dataset.visible === 'true';
             visibilityBtn.dataset.visible = isVisible ? 'false' : 'true';
             const currentColor = block.dataset.color || blockColor;
-            visibilityBtn.style.background = isVisible ? 'transparent' : `${currentColor}20`;
-            visibilityBtn.style.borderStyle = isVisible ? 'dashed' : 'solid';
-            numberSpan.style.opacity = isVisible ? '0.3' : '1';
+            if (isVisible) {
+                visibilityBtn.style.backgroundColor = 'transparent';
+                visibilityBtn.style.border = '2px dashed ' + currentColor;
+                visibilityBtn.style.boxShadow = 'none';
+            } else {
+                visibilityBtn.style.backgroundColor = currentColor;
+                visibilityBtn.style.border = '2px solid #ffffff';
+                visibilityBtn.style.boxShadow = '0 0 0 1px ' + currentColor;
+            }
             this.onUpdateCallback();
             HistoryManager.recordState(true);
         };
@@ -394,7 +405,9 @@ export class ExpressionManager {
             this.openStylePopover(block, visibilityBtn);
         };
         
+        grabZone.appendChild(numberSpan);
         grabZone.appendChild(visibilityBtn);
+        grabZone.appendChild(warningTrigger);
 
         // --- ÁREA DE CONTEÚDO (Matemática + Slider) ---
         const contentZone = document.createElement('div');
@@ -413,7 +426,7 @@ export class ExpressionManager {
 
         const delBtn = document.createElement('button');
         delBtn.innerHTML = '<i data-lucide="x" class="w-4 h-4"></i>';
-        delBtn.className = 'bg-transparent border-none text-gray-400 cursor-pointer p-1 shrink-0 ml-auto transition-all opacity-40 hover:opacity-100 hover:text-gray-800 outline-none';
+        delBtn.className = 'bg-transparent border-none text-gray-400 cursor-pointer p-1 shrink-0 ml-auto transition-opacity opacity-0 group-hover:opacity-100 hover:text-gray-700 hover:bg-gray-100 rounded-md outline-none';
 
         mathContainer.appendChild(mf);
         topRow.appendChild(mathContainer);
@@ -2575,32 +2588,30 @@ export class ExpressionManager {
     static setError(blockId: string, errorMsg: string | null) {
         const block = document.getElementById(blockId);
         if (!block) return;
-        const numberSpan = block.querySelector('.block-number') as HTMLElement;
         const warningTrigger = block.querySelector('.block-warning-trigger') as HTMLElement;
         const visibilityBtn = block.querySelector('.visibility-toggle') as HTMLElement;
         const tooltipEl = block.querySelector('.warning-popover-tooltip') as HTMLElement;
 
         if (errorMsg) {
-            if (numberSpan) numberSpan.style.display = 'none';
             if (warningTrigger) {
                 warningTrigger.classList.remove('hidden');
                 if (tooltipEl) tooltipEl.innerText = errorMsg;
             }
             if (visibilityBtn) {
-                visibilityBtn.style.borderColor = '#d97706';
-                visibilityBtn.style.background = '#fef3c7';
+                visibilityBtn.style.display = 'none';
             }
         } else {
-            if (numberSpan) numberSpan.style.display = '';
             if (warningTrigger) {
                 warningTrigger.classList.add('hidden');
                 if (tooltipEl) tooltipEl.innerText = '';
             }
             if (visibilityBtn) {
+                visibilityBtn.style.display = 'flex';
                 const curColor = block.dataset.color || '#2d70b3';
-                const isVisible = visibilityBtn.dataset.visible === 'true';
-                visibilityBtn.style.borderColor = curColor;
-                visibilityBtn.style.background = isVisible ? `${curColor}20` : 'transparent';
+                const isVisible = visibilityBtn.dataset.visible !== 'false';
+                visibilityBtn.style.backgroundColor = isVisible ? curColor : 'transparent';
+                visibilityBtn.style.border = isVisible ? '2px solid #ffffff' : ('2px dashed ' + curColor);
+                visibilityBtn.style.boxShadow = isVisible ? ('0 0 0 1px ' + curColor) : 'none';
             }
         }
     }

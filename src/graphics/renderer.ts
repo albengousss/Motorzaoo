@@ -1,4 +1,5 @@
 import { Camera } from './camera';
+import { StateManager } from '../core/stateManager';
 
 export class Renderer {
     private ctx: CanvasRenderingContext2D;
@@ -115,17 +116,25 @@ export class Renderer {
             return step;
         };
 
-        const stepX = calcStep(rangeX);
-        const stepY = calcStep(rangeY);
+        const stepX = (StateManager.xStep && StateManager.xStep > 0) ? StateManager.xStep : calcStep(rangeX);
+        const stepY = (StateManager.yStep && StateManager.yStep > 0) ? StateManager.yStep : calcStep(rangeY);
 
-        // Usar Camera.width/height (dimensões LÓGICAS) — this.canvas.width é físico (DPR-scaled)
+        // Usar Camera.width/height (dimensões LÓGICAS)
         const W = Camera.width;
         const H = Camera.height;
 
-        this.ctx.font = '12px Arial';
-        this.ctx.fillStyle = '#666';
+        const isProjector = StateManager.projectorMode;
+        this.ctx.font = isProjector ? 'bold 14px Arial' : '12px Arial';
+        this.ctx.fillStyle = isProjector ? '#222' : '#666';
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'top';
+
+        const axisWidth = isProjector ? 3 : 2;
+        const gridColor = isProjector ? '#c8c8c8' : '#e0e0e0';
+        const gridWidth = isProjector ? 1.5 : 1;
+        const showAxes = this.showAxes && StateManager.showAxes;
+        const showGrid = this.showGrid && StateManager.gridType !== 'none';
+        const isPolar = StateManager.gridType === 'polar';
 
         let zeroY = Camera.toPixelY(0);
         if (zeroY < 20) zeroY = 20; 
@@ -135,57 +144,141 @@ export class Renderer {
         if (zeroX < 20) zeroX = 20;
         if (zeroX > W - 20) zeroX = W - 20;
 
-        // Eixo X e grades verticais
+        // 1. Grelha Polar (se ativada)
+        if (showGrid && isPolar) {
+            const centerX = Camera.toPixelX(0);
+            const centerY = Camera.toPixelY(0);
+            const maxRadiusMath = Math.hypot(
+                Math.max(Math.abs(Camera.xMin), Math.abs(Camera.xMax)),
+                Math.max(Math.abs(Camera.yMin), Math.abs(Camera.yMax))
+            );
+            this.ctx.strokeStyle = gridColor;
+            this.ctx.lineWidth = gridWidth;
+
+            // Círculos concêntricos a cada stepX
+            for (let r = stepX; r <= maxRadiusMath * 1.25; r += stepX) {
+                const pxRadius = (r / (Camera.xMax - Camera.xMin)) * W;
+                if (pxRadius <= 0) continue;
+                this.ctx.beginPath();
+                this.ctx.arc(centerX, centerY, pxRadius, 0, 2 * Math.PI);
+                this.ctx.stroke();
+
+                if (showAxes && r <= Camera.xMax) {
+                    const px = Camera.toPixelX(r);
+                    this.ctx.fillStyle = isProjector ? '#222' : '#666';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.textBaseline = 'top';
+                    this.ctx.fillText(parseFloat(r.toFixed(4)).toString(), px, zeroY + 5);
+                }
+            }
+
+            // Raios angulares a cada 15 graus
+            const rayLength = Math.hypot(W, H) * 1.5;
+            for (let deg = 0; deg < 360; deg += 15) {
+                const rad = (deg * Math.PI) / 180;
+                this.ctx.beginPath();
+                this.ctx.moveTo(centerX, centerY);
+                this.ctx.lineTo(centerX + Math.cos(rad) * rayLength, centerY - Math.sin(rad) * rayLength);
+                this.ctx.stroke();
+            }
+        }
+
+        // 2. Grelha Cartesiana e Eixo X
         const startX = Math.ceil(Camera.xMin / stepX) * stepX;
         for (let x = startX; x <= Camera.xMax; x += stepX) {
             const px = Camera.toPixelX(x);
             const isAxis = Math.abs(x) < 1e-10;
-            if ((isAxis && this.showAxes) || (!isAxis && this.showGrid)) {
+            if ((isAxis && showAxes) || (!isAxis && showGrid && !isPolar)) {
                 this.ctx.beginPath();
                 this.ctx.moveTo(px, 0);
                 this.ctx.lineTo(px, H);
                 
                 if (isAxis) {
                     this.ctx.strokeStyle = hoverY ? '#2d70b3' : '#000';
-                    this.ctx.lineWidth = hoverY ? 3 : 2;
+                    this.ctx.lineWidth = hoverY ? (axisWidth + 1) : axisWidth;
                 } else {
-                    this.ctx.strokeStyle = '#e0e0e0';
-                    this.ctx.lineWidth = 1;
+                    this.ctx.strokeStyle = gridColor;
+                    this.ctx.lineWidth = gridWidth;
                 }
                 this.ctx.stroke();
 
-                if (!isAxis && this.showAxes) {
+                if (!isAxis && showAxes) {
                     const numStr = parseFloat(x.toFixed(4)).toString();
+                    this.ctx.fillStyle = isProjector ? '#222' : '#666';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.textBaseline = 'top';
                     this.ctx.fillText(numStr, px, zeroY + 5);
                 }
             }
         }
 
-        // Eixo Y e grades horizontais
+        // 3. Grelha Cartesiana e Eixo Y
         this.ctx.textAlign = 'right';
         this.ctx.textBaseline = 'middle';
         const startY = Math.ceil(Camera.yMin / stepY) * stepY;
         for (let y = startY; y <= Camera.yMax; y += stepY) {
             const py = Camera.toPixelY(y);
             const isAxis = Math.abs(y) < 1e-10;
-            if ((isAxis && this.showAxes) || (!isAxis && this.showGrid)) {
+            if ((isAxis && showAxes) || (!isAxis && showGrid && !isPolar)) {
                 this.ctx.beginPath();
                 this.ctx.moveTo(0, py);
                 this.ctx.lineTo(W, py);
                 
                 if (isAxis) {
                     this.ctx.strokeStyle = hoverX ? '#2d70b3' : '#000';
-                    this.ctx.lineWidth = hoverX ? 3 : 2;
+                    this.ctx.lineWidth = hoverX ? (axisWidth + 1) : axisWidth;
                 } else {
-                    this.ctx.strokeStyle = '#e0e0e0';
-                    this.ctx.lineWidth = 1;
+                    this.ctx.strokeStyle = gridColor;
+                    this.ctx.lineWidth = gridWidth;
                 }
                 this.ctx.stroke();
 
-                if (!isAxis && this.showAxes) {
+                if (!isAxis && showAxes) {
                     const numStr = parseFloat(y.toFixed(4)).toString();
+                    this.ctx.fillStyle = isProjector ? '#222' : '#666';
+                    this.ctx.textAlign = 'right';
+                    this.ctx.textBaseline = 'middle';
                     this.ctx.fillText(numStr, zeroX - 5, py);
                 }
+            }
+        }
+
+        // 4. Setas nos Eixos (se ativadas)
+        if (showAxes && StateManager.showArrows) {
+            this.ctx.fillStyle = '#000';
+            // Seta no Eixo X (apontando para a direita)
+            if (zeroY >= 0 && zeroY <= H) {
+                this.ctx.beginPath();
+                this.ctx.moveTo(W - 4, zeroY);
+                this.ctx.lineTo(W - 14, zeroY - 5);
+                this.ctx.lineTo(W - 14, zeroY + 5);
+                this.ctx.closePath();
+                this.ctx.fill();
+            }
+            // Seta no Eixo Y (apontando para cima)
+            if (zeroX >= 0 && zeroX <= W) {
+                this.ctx.beginPath();
+                this.ctx.moveTo(zeroX, 4);
+                this.ctx.lineTo(zeroX - 5, 14);
+                this.ctx.lineTo(zeroX + 5, 14);
+                this.ctx.closePath();
+                this.ctx.fill();
+            }
+        }
+
+        // 5. Legendas dos Eixos X e Y
+        if (showAxes) {
+            this.ctx.fillStyle = isProjector ? '#111' : '#444';
+            this.ctx.font = isProjector ? 'bold 13px Arial' : 'italic 12px Arial';
+            if (StateManager.xLabel && StateManager.xLabel.trim()) {
+                this.ctx.textAlign = 'right';
+                this.ctx.textBaseline = 'bottom';
+                this.ctx.fillText(StateManager.xLabel, W - 18, zeroY - 6);
+            }
+            if (StateManager.yLabel && StateManager.yLabel.trim()) {
+                this.ctx.textAlign = 'left';
+                this.ctx.textBaseline = 'top';
+                this.ctx.fillText(StateManager.yLabel, zeroX + 8, 16);
             }
         }
     }
@@ -378,7 +471,8 @@ export class Renderer {
         if (points.length === 0) return;
         
         this.ctx.strokeStyle = color; 
-        this.ctx.lineWidth = lineWidth;
+        const effectiveLineWidth = StateManager.projectorMode ? (lineWidth * 1.4) : lineWidth;
+        this.ctx.lineWidth = effectiveLineWidth;
 
         if (lineStyle === 'dashed') {
             this.ctx.setLineDash([8, 6]);

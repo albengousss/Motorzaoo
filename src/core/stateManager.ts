@@ -2,6 +2,7 @@ import { MathEngine } from './mathEngine';
 
 // Conecta o armazenamento de valores do StateManager ao escopo global do MathEngine
 MathEngine.globalScopeProvider = () => StateManager.values;
+MathEngine.angleModeProvider = () => StateManager.angleMode;
 
 export class StateManager {
     // Memória rápida: Valores numéricos ou listas prontos para o motor gráfico ler
@@ -28,6 +29,17 @@ export class StateManager {
 
     // Modo Gráfico Atual: '2d' ou '3d'
     static viewMode: '2d' | '3d' = '2d';
+
+    // Configurações do Gráfico Estilo Desmos
+    static angleMode: 'radians' | 'degrees' = 'radians';
+    static projectorMode: boolean = false;
+    static gridType: 'cartesian' | 'polar' | 'none' = 'cartesian';
+    static showAxes: boolean = true;
+    static showArrows: boolean = false;
+    static xLabel: string = '';
+    static yLabel: string = '';
+    static xStep: number | null = null;
+    static yStep: number | null = null;
     
     // Gerenciamento Inteligente de Índices (reaproveitamento para ODEs e CAS)
     static getNextFuncIndex(): number {
