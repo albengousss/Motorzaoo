@@ -85,29 +85,29 @@
         <div class="flex items-center gap-1">
           <!-- Add Item Button (+) with Dropdown -->
           <div class="relative">
-            <button id="add-item-btn" class="w-8 h-8 flex items-center justify-center rounded-lg text-gray-700 hover:text-blue-600 hover:bg-gray-100 active:bg-gray-200 transition-all cursor-pointer font-bold text-lg" title="Adicionar Item">
+            <button id="add-item-btn" onclick="if(window._toggleAddItemMenu) window._toggleAddItemMenu(event)" class="w-8 h-8 flex items-center justify-center rounded-lg text-gray-700 hover:text-blue-600 hover:bg-gray-100 active:bg-gray-200 transition-all cursor-pointer font-bold text-lg" title="Adicionar Item">
               <i data-lucide="plus" class="w-5 h-5"></i>
             </button>
 
             <!-- Dropdown Menu -->
             <div id="add-item-dropdown" class="absolute top-10 left-0 bg-white rounded-xl shadow-xl border border-gray-200 py-1.5 w-44 z-50 hidden flex-col divide-y divide-gray-100">
-              <button id="menu-add-expr" class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-blue-50 text-gray-700 hover:text-blue-600 text-xs font-semibold cursor-pointer transition-colors text-left">
+              <button id="menu-add-expr" onclick="if(window._addItem) window._addItem('expression')" class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-blue-50 text-gray-700 hover:text-blue-600 text-xs font-semibold cursor-pointer transition-colors text-left">
                 <span class="w-5 text-center font-serif italic font-bold text-blue-600">f(x)</span>
                 <span>Expressão</span>
               </button>
-              <button id="menu-add-note" class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-amber-50 text-gray-700 hover:text-amber-600 text-xs font-semibold cursor-pointer transition-colors text-left">
+              <button id="menu-add-note" onclick="if(window._addItem) window._addItem('note')" class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-amber-50 text-gray-700 hover:text-amber-600 text-xs font-semibold cursor-pointer transition-colors text-left">
                 <span class="w-5 text-center font-serif text-base font-bold text-amber-500">“ ”</span>
                 <span>Nota</span>
               </button>
-              <button id="menu-add-table" class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-indigo-50 text-gray-700 hover:text-indigo-600 text-xs font-semibold cursor-pointer transition-colors text-left">
+              <button id="menu-add-table" onclick="if(window._addItem) window._addItem('table')" class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-indigo-50 text-gray-700 hover:text-indigo-600 text-xs font-semibold cursor-pointer transition-colors text-left">
                 <i data-lucide="table" class="w-4 h-4 text-indigo-500"></i>
                 <span>Tabela</span>
               </button>
-              <button id="menu-add-matrix" class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-purple-50 text-gray-700 hover:text-purple-600 text-xs font-semibold cursor-pointer transition-colors text-left">
+              <button id="menu-add-matrix" onclick="if(window._addItem) window._addItem('matrix')" class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-purple-50 text-gray-700 hover:text-purple-600 text-xs font-semibold cursor-pointer transition-colors text-left">
                 <span class="w-5 text-center font-mono font-bold text-purple-600 text-xs">[M]</span>
                 <span>Matriz</span>
               </button>
-              <button id="menu-add-folder" class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-emerald-50 text-gray-700 hover:text-emerald-600 text-xs font-semibold cursor-pointer transition-colors text-left">
+              <button id="menu-add-folder" onclick="if(window._addItem) window._addItem('folder')" class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-emerald-50 text-gray-700 hover:text-emerald-600 text-xs font-semibold cursor-pointer transition-colors text-left">
                 <i data-lucide="folder" class="w-4 h-4 text-emerald-500"></i>
                 <span>Pasta</span>
               </button>

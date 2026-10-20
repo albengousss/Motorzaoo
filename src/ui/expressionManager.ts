@@ -207,7 +207,87 @@ export class ExpressionManager {
 
         this.onUpdateCallback = onUpdate;
         
-        // Botão Adicionar Expressão
+        // Botão Principal Adicionar Item (+) do Cabeçalho
+        const addItemBtn = document.getElementById('add-item-btn');
+        const addItemDropdown = document.getElementById('add-item-dropdown');
+
+        const toggleDropdown = (e?: Event) => {
+            if (e) e.stopPropagation();
+            if (!addItemDropdown) return;
+            const isHidden = addItemDropdown.classList.contains('hidden');
+            if (isHidden) {
+                addItemDropdown.classList.remove('hidden');
+                addItemDropdown.classList.add('flex');
+            } else {
+                addItemDropdown.classList.add('hidden');
+                addItemDropdown.classList.remove('flex');
+            }
+        };
+
+        const closeDropdown = () => {
+            if (addItemDropdown) {
+                addItemDropdown.classList.add('hidden');
+                addItemDropdown.classList.remove('flex');
+            }
+        };
+
+        (window as any)._toggleAddItemMenu = toggleDropdown;
+        (window as any)._closeAddItemMenu = closeDropdown;
+
+        if (addItemBtn) {
+            addItemBtn.addEventListener('click', toggleDropdown);
+        }
+
+        document.addEventListener('pointerdown', (e) => {
+            if (addItemDropdown && !addItemDropdown.contains(e.target as Node) && addItemBtn && !addItemBtn.contains(e.target as Node)) {
+                closeDropdown();
+            }
+        });
+
+        const handleAddItem = (type: string) => {
+            closeDropdown();
+            if (type === 'expression') {
+                this.addBlock(true);
+            } else if (type === 'note') {
+                this.addNote('', true);
+            } else if (type === 'table') {
+                this.addTable(undefined, true);
+            } else if (type === 'matrix') {
+                this.addMatrix(undefined, true);
+            } else if (type === 'folder') {
+                this.addFolder('Nova Pasta', true);
+            }
+            this.updateBlockNumbers();
+            HistoryManager.recordState(true);
+        };
+
+        (window as any)._addItem = handleAddItem;
+
+        const menuAddExpr = document.getElementById('menu-add-expr');
+        if (menuAddExpr) menuAddExpr.addEventListener('click', () => handleAddItem('expression'));
+
+        const menuAddNote = document.getElementById('menu-add-note');
+        if (menuAddNote) menuAddNote.addEventListener('click', () => handleAddItem('note'));
+
+        const menuAddTable = document.getElementById('menu-add-table');
+        if (menuAddTable) menuAddTable.addEventListener('click', () => handleAddItem('table'));
+
+        const menuAddMatrix = document.getElementById('menu-add-matrix');
+        if (menuAddMatrix) menuAddMatrix.addEventListener('click', () => handleAddItem('matrix'));
+
+        const menuAddFolder = document.getElementById('menu-add-folder');
+        if (menuAddFolder) menuAddFolder.addEventListener('click', () => handleAddItem('folder'));
+
+        // Clicar em espaço vazio no #expressions-list adiciona nova expressão
+        if (this.container) {
+            this.container.addEventListener('click', (e) => {
+                if (e.target === this.container) {
+                    handleAddItem('expression');
+                }
+            });
+        }
+
+        // Botão Adicionar Expressão Legacy
         if (this.addBtn) {
             this.addBtn.addEventListener('click', () => {
                 this.addBlock();
