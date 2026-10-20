@@ -78,38 +78,38 @@
     ══════════════════════════════════════════ -->
     <div id="sidebar" class="w-full md:w-[380px] bg-white border-t md:border-t-0 md:border-r border-gray-200 shadow-lg flex flex-col shrink-0 overflow-hidden z-10 h-[42vh] md:h-auto relative">
 
-      <div id="sidebar-header" class="bg-white px-2.5 py-2 border-b border-gray-200 flex items-center justify-between select-none shrink-0 relative shadow-2xs">
+      <div id="sidebar-header" class="bg-white px-2.5 py-2 border-b border-gray-200 flex items-center justify-between select-none shrink-0 relative shadow-2xs z-30 overflow-visible">
         <div id="drag-handle" class="w-8 h-1 bg-gray-300 rounded-full block md:hidden shadow-inner absolute -top-1 left-1/2 -translate-x-1/2"></div>
         
         <!-- Left Tools: Add Item (+), Undo, Redo -->
         <div class="flex items-center gap-1">
           <!-- Add Item Button (+) with Dropdown -->
-          <div class="relative">
-            <button id="add-item-btn" onclick="if(window._toggleAddItemMenu) window._toggleAddItemMenu(event)" class="w-8 h-8 flex items-center justify-center rounded-lg text-gray-700 hover:text-blue-600 hover:bg-gray-100 active:bg-gray-200 transition-all cursor-pointer font-bold text-lg" title="Adicionar Item">
-              <i data-lucide="plus" class="w-5 h-5"></i>
+          <div class="relative overflow-visible">
+            <button id="add-item-btn" type="button" class="w-8 h-8 flex items-center justify-center rounded-lg text-gray-700 hover:text-blue-600 hover:bg-gray-100 active:bg-gray-200 transition-all cursor-pointer font-bold text-lg select-none" title="Adicionar Item">
+              <i data-lucide="plus" class="w-5 h-5 pointer-events-none"></i>
             </button>
 
             <!-- Dropdown Menu -->
-            <div id="add-item-dropdown" class="absolute top-10 left-0 bg-white rounded-xl shadow-xl border border-gray-200 py-1.5 w-44 z-50 hidden flex-col divide-y divide-gray-100">
-              <button id="menu-add-expr" onclick="if(window._addItem) window._addItem('expression')" class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-blue-50 text-gray-700 hover:text-blue-600 text-xs font-semibold cursor-pointer transition-colors text-left">
-                <span class="w-5 text-center font-serif italic font-bold text-blue-600">f(x)</span>
-                <span>Expressão</span>
+            <div id="add-item-dropdown" class="absolute top-10 left-0 bg-white rounded-xl shadow-2xl border border-gray-200 py-1.5 w-44 z-50 hidden flex-col divide-y divide-gray-100">
+              <button id="menu-add-expr" type="button" class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-blue-50 text-gray-700 hover:text-blue-600 text-xs font-semibold cursor-pointer transition-colors text-left">
+                <span class="w-5 text-center font-serif italic font-bold text-blue-600 pointer-events-none">f(x)</span>
+                <span class="pointer-events-none">Expressão</span>
               </button>
-              <button id="menu-add-note" onclick="if(window._addItem) window._addItem('note')" class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-amber-50 text-gray-700 hover:text-amber-600 text-xs font-semibold cursor-pointer transition-colors text-left">
-                <span class="w-5 text-center font-serif text-base font-bold text-amber-500">“ ”</span>
-                <span>Nota</span>
+              <button id="menu-add-note" type="button" class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-amber-50 text-gray-700 hover:text-amber-600 text-xs font-semibold cursor-pointer transition-colors text-left">
+                <span class="w-5 text-center font-serif text-base font-bold text-amber-500 pointer-events-none">“ ”</span>
+                <span class="pointer-events-none">Nota</span>
               </button>
-              <button id="menu-add-table" onclick="if(window._addItem) window._addItem('table')" class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-indigo-50 text-gray-700 hover:text-indigo-600 text-xs font-semibold cursor-pointer transition-colors text-left">
-                <i data-lucide="table" class="w-4 h-4 text-indigo-500"></i>
-                <span>Tabela</span>
+              <button id="menu-add-table" type="button" class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-indigo-50 text-gray-700 hover:text-indigo-600 text-xs font-semibold cursor-pointer transition-colors text-left">
+                <i data-lucide="table" class="w-4 h-4 text-indigo-500 pointer-events-none"></i>
+                <span class="pointer-events-none">Tabela</span>
               </button>
-              <button id="menu-add-matrix" onclick="if(window._addItem) window._addItem('matrix')" class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-purple-50 text-gray-700 hover:text-purple-600 text-xs font-semibold cursor-pointer transition-colors text-left">
-                <span class="w-5 text-center font-mono font-bold text-purple-600 text-xs">[M]</span>
-                <span>Matriz</span>
+              <button id="menu-add-matrix" type="button" class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-purple-50 text-gray-700 hover:text-purple-600 text-xs font-semibold cursor-pointer transition-colors text-left">
+                <span class="w-5 text-center font-mono font-bold text-purple-600 text-xs pointer-events-none">[M]</span>
+                <span class="pointer-events-none">Matriz</span>
               </button>
-              <button id="menu-add-folder" onclick="if(window._addItem) window._addItem('folder')" class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-emerald-50 text-gray-700 hover:text-emerald-600 text-xs font-semibold cursor-pointer transition-colors text-left">
-                <i data-lucide="folder" class="w-4 h-4 text-emerald-500"></i>
-                <span>Pasta</span>
+              <button id="menu-add-folder" type="button" class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-emerald-50 text-gray-700 hover:text-emerald-600 text-xs font-semibold cursor-pointer transition-colors text-left">
+                <i data-lucide="folder" class="w-4 h-4 text-emerald-500 pointer-events-none"></i>
+                <span class="pointer-events-none">Pasta</span>
               </button>
             </div>
           </div>

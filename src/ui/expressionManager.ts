@@ -212,7 +212,9 @@ export class ExpressionManager {
         const addItemDropdown = document.getElementById('add-item-dropdown');
 
         const toggleDropdown = (e?: Event) => {
-            if (e) e.stopPropagation();
+            if (e) {
+                e.stopPropagation();
+            }
             if (!addItemDropdown) return;
             const isHidden = addItemDropdown.classList.contains('hidden');
             if (isHidden) {
@@ -235,16 +237,25 @@ export class ExpressionManager {
         (window as any)._closeAddItemMenu = closeDropdown;
 
         if (addItemBtn) {
-            addItemBtn.addEventListener('click', toggleDropdown);
+            addItemBtn.onclick = (e) => {
+                toggleDropdown(e);
+            };
         }
 
+        // Fechar ao clicar fora
         document.addEventListener('pointerdown', (e) => {
-            if (addItemDropdown && !addItemDropdown.contains(e.target as Node) && addItemBtn && !addItemBtn.contains(e.target as Node)) {
+            if (!addItemDropdown || addItemDropdown.classList.contains('hidden')) return;
+            const target = e.target as Node;
+            if (addItemBtn && (addItemBtn === target || addItemBtn.contains(target))) {
+                return;
+            }
+            if (!addItemDropdown.contains(target)) {
                 closeDropdown();
             }
         });
 
-        const handleAddItem = (type: string) => {
+        const handleAddItem = (type: string, e?: Event) => {
+            if (e) e.stopPropagation();
             closeDropdown();
             if (type === 'expression') {
                 this.addBlock(true);
@@ -264,19 +275,19 @@ export class ExpressionManager {
         (window as any)._addItem = handleAddItem;
 
         const menuAddExpr = document.getElementById('menu-add-expr');
-        if (menuAddExpr) menuAddExpr.addEventListener('click', () => handleAddItem('expression'));
+        if (menuAddExpr) menuAddExpr.onclick = (e) => handleAddItem('expression', e);
 
         const menuAddNote = document.getElementById('menu-add-note');
-        if (menuAddNote) menuAddNote.addEventListener('click', () => handleAddItem('note'));
+        if (menuAddNote) menuAddNote.onclick = (e) => handleAddItem('note', e);
 
         const menuAddTable = document.getElementById('menu-add-table');
-        if (menuAddTable) menuAddTable.addEventListener('click', () => handleAddItem('table'));
+        if (menuAddTable) menuAddTable.onclick = (e) => handleAddItem('table', e);
 
         const menuAddMatrix = document.getElementById('menu-add-matrix');
-        if (menuAddMatrix) menuAddMatrix.addEventListener('click', () => handleAddItem('matrix'));
+        if (menuAddMatrix) menuAddMatrix.onclick = (e) => handleAddItem('matrix', e);
 
         const menuAddFolder = document.getElementById('menu-add-folder');
-        if (menuAddFolder) menuAddFolder.addEventListener('click', () => handleAddItem('folder'));
+        if (menuAddFolder) menuAddFolder.onclick = (e) => handleAddItem('folder', e);
 
         // Clicar em espaço vazio no #expressions-list adiciona nova expressão
         if (this.container) {
