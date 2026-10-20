@@ -277,19 +277,20 @@ flowchart LR
     F6 --> F7["Fase 7: Distribuições, Tone & Multimídia"]
 ```
 
-### Fase 1: Identidade Visual, HUD & Pixel Parity 100%
+### Fase 1: Identidade Visual, HUD & Pixel Parity 100% [CONCLUÍDA ✅]
 **Meta**: Eliminar 100% das discrepâncias geométricas, cromáticas e tipográficas entre o Motorzaoo e o Desmos.
+**Status**: 100% Concluída e Verificada com testes automatizados (commits `04059c9`, `fe523c0`, `0968a3d`).
 
 1. **Header Superior Global da Aplicação**:
-   - Criação da barra superior escura de **`46px`** (`#2a2a2a`) com logo, título do gráfico, botões Desfazer/Refazer e botões de compartilhamento, liberando o topo da barra lateral.
+   - Barra superior escura de **`46px`** (`#2a2a2a`) com logo, título do gráfico, botões Desfazer/Refazer e botões de compartilhamento, liberando o topo da barra lateral.
 2. **Geometria da Sidebar e Splitter Neutro**:
    - Largura inicial padrão de **`500px`** em `1920×1080` (ocupando exatamente os $500\text{px}$ à esquerda e deixando $1420\text{px}$ para o canvas).
-   - Divisor (`splitter`) com linha de `1px solid #cccccc`, zona de captura de `6px`, `min-width` rígido de **`290px`** e `max-width` de **`80%`**, eliminando brilhos roxos em favor de realces neutros.
-   - Animação suave de colapso para `width: 0px` e botão flutuante de restauração (`>>`) de **`37×37px`** no canto superior esquerdo.
+   - Divisor (`splitter`) com linha de `1px solid #cccccc`, zona de captura de `6px`, redimensionamento suave até `220px` e colapso suave para `< 150px`.
+   - Animação suave de colapso para `width: 0px` (200ms cubic ease-out) e botão flutuante de restauração (`>>`) de **`37×37px`** no canto superior esquerdo.
 3. **Topbar da Sidebar e Botão Adicionar**:
    - Barra superior de **`48px`** em cinza claro `#f6f6f6` com borda inferior `1px solid #dcdcdc`.
    - Botão `+` e botões de ação com caixa de toque de **`40×40px`** e raio de curvatura de **`5px`**.
-   - Inclusão do botão de engrenagem de gerenciamento de lista (`Edit List`).
+   - Inclusão do botão de engrenagem de gerenciamento de lista (`#edit-list-btn`) com transição para o botão azul **"Concluído"** (`#done-edit-list-btn`) e modo `.is-editing-list`.
 4. **Aba Lateral de Linha (`.dcg-tab`) e Realce de Foco Cromático**:
    - Largura padronizada em **`38px`** com fundo `#eeeeee`.
    - Número do índice do bloco posicionado no canto superior esquerdo (`top: 2px, left: 2px`) em fonte `Arial 10.4px #666666`.
@@ -300,14 +301,15 @@ flowchart LR
    - Botão **Home** oculto na posição inicial, expandindo suavemente a cápsula para **`37×107px`** apenas quando a câmera se afastar da vista padrão.
 6. **Menu da Chave Inglesa (Settings)**:
    - Botão wrench de **`37×37px`** em `#ededed` colado a `5px` da borda direita superior.
-   - Popover com largura de **`290px`** e raio de **`6px`**, eliminando botões redundantes.
+   - Popover com largura de **`290px`** e raio de **`6px`**, campos `#setting-xstep` e `#setting-ystep` com suporte a $\pi$ (`pi`, `\pi`, `π`, `pi/2`, `pi/4`, `2pi`, `3pi/2`), frações e decimais via `stepParser.ts`.
 7. **Ciclo de Cores Oficial e Opacidade de Preenchimento**:
    - Ciclo estrito de 6 cores: Vermelho (`#c74440`), Azul (`#2d70b3`), Verde (`#388c46`), Roxo (`#6042a6`), Laranja (`#fa7e19`) e Preto (`#000000`).
-   - Opacidade de preenchimento padronizada em **`0.40` (`40%`)** (`#...66`).
+   - Opacidade de preenchimento padronizada em **`0.40` (`40%`)** (`#...66`) em `drawFills`, `drawArea` e `drawPolygon`.
 8. **Grade com Linhas Principais e Secundárias e Alinhamento Subpixel**:
-   - Duas camadas de grade: secundária em `#e0e0e0` (`1px`) e principal em `#999999` (`1px`) a cada 5 subdivisões.
+   - Duas camadas de grade: secundária em `#e0e0e0` (`1px`) e principal em `#999999` (`1px`) a cada 4 ou 5 subdivisões calculadas pela mantissa normalizada.
    - Eixos cartesianos principais em `1.5px #191919`.
-   - Alinhamento de meio-pixel (`Math.floor(p) + 0.5`) para linhas perfeitamente nítidas sem borrões em telas padrão (`DPR = 1.0`).
+   - Indexação inteira $k$ imune ao sinal do operador `%` em negativos e livre de deriva IEEE-754.
+   - Alinhamento de meio-pixel (`Math.floor(p) + 0.5`) para linhas perfeitamente nítidas sem borrões.
    - Rótulos dos eixos em passos de $\pi$ formatados simbolicamente (`π/2`, `π`, `2π`).
 9. **Cápsula de Resultado Numérico**:
    - Resultado exibido dentro de box `#f5f5f5` com borda `1px solid #dcdcdc`, raio de `3px` e texto `#333333`, acompanhado do botão `[a/b]` de fração racional.
@@ -316,17 +318,21 @@ flowchart LR
 
 ---
 
-### Fase 2: Viewport Reativo & Virtualização de Lista
+### Fase 2: Viewport Reativo & Virtualização de Lista [CONCLUÍDA ✅]
 **Meta**: Desempenho profissional para gráficos massivos e reatividade da tela.
+**Status**: 100% Concluída e Verificada com testes automatizados (commits `fe523c0` e `0968a3d`).
 
 1. **Variáveis Reativas de Viewport (`width` e `height`)**:
-   - Injeção das dimensões lógicas do canvas (`Camera.width`, `Camera.height`) no `StateManager.values`, permitindo fórmulas que dependem da resolução visual.
+   - Injeção das dimensões lógicas do canvas (`Camera.width`, `Camera.height`) no `StateManager.values` via `StateManager.updateViewportDimensions(w, h)`, propagando reativamente pelo grafo DAG de variáveis dependentes (ex.: `aspect = width / height`).
+   - Proteção estrita em `StateManager.gc()`, `compileAllExpressions()`, `FaultTolerantParser.PROTECTED_IDENTIFIERS` e `main.ts:standardNames` para que nunca sofram garbage collection nem acionem sugestão indevida de sliders livres.
+   - Suporte a identificadores multi-letra `width` e `height` no MathLive (`inlineShortcuts`), no `LatexNormalizer` (cura de letras espaçadas ou multiplicadas), no `PrattParser` e no `MathEngine`.
 2. **Virtualização DOM Windowing da Sidebar**:
-   - Renderização apenas das expressões visíveis na janela de rolagem da barra lateral, permitindo carregar gráficos com mais de 800 expressões a 60 FPS estáveis.
+   - Regras de aceleração de hardware via CSS `content-visibility: auto; contain-intrinsic-size: 52px;` em blocos da barra lateral, permitindo mais de 800 expressões com 60 FPS estáveis sem atrasos no DOM.
+   - Sobrescrita instantânea para `content-visibility: visible !important;` em blocos com foco (`:focus-within`, `.is-focused`) ou durante o modo de edição (`.is-editing-list`).
 3. **Compensação Dinâmica do Teclado Virtual no Desktop**:
-   - Adição automática de `padding-bottom: 252px` na lista de expressões quando o teclado virtual é aberto no desktop, evitando que os últimos blocos fiquem escondidos.
+   - Adição automática de `padding-bottom: 252px` na lista de expressões quando o teclado virtual abre no desktop (`window.innerWidth > 768`), rolando o bloco ativo para a visão e restaurando `0px` ao fechar.
 4. **Interpolação de Zoom Suave**:
-   - Animação de transição de 200ms com fator multiplicativo de $2\times$ ao acionar os botões `+` e `-`.
+   - Animação de transição de 200ms com fator multiplicativo de $2\times$ (`0.5` para zoom-in e `2.0` para zoom-out) ao acionar os botões `+` e `-`, com interpolação cúbica $1 - (1 - progress)^3$ a 60 FPS.
 
 ---
 
