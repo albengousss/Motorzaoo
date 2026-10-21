@@ -1,5 +1,6 @@
 import { Camera } from './camera';
 import { StateManager } from '../core/stateManager';
+import { CostBudgetManager } from '../core/policy';
 
 export class GLRenderer {
     private canvas: HTMLCanvasElement;
@@ -155,6 +156,13 @@ export class GLRenderer {
 
     private getOrCreateProgram(ast: any, operator: string, scope: Record<string, number>): WebGLProgram | null {
         if (!this.gl) return null;
+
+        // Trava de custo de hardware WebGL estilo Desmos (Ht em shared_calculator_desktop.js)
+        const costCheck = CostBudgetManager.checkShaderCost(ast);
+        if (!costCheck.canCompile) {
+            console.warn('[GLRenderer] Custo de shader excedido:', costCheck.reason);
+            return null;
+        }
 
         const usedUniforms = new Set<string>();
         const exprGLSL = GLRenderer.astToGLSL(ast, scope, usedUniforms);

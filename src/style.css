@@ -73,6 +73,50 @@ math-field::part(selection),
 }
 
 /* ═════════════════════════════════════════════════════════════
+   ZEROS FANTASMAS E PARIDADE DE MATRIZES DESMOS (VY, jxe, awe)
+═════════════════════════════════════════════════════════════ */
+.ML__matrix td:empty::after,
+.ML__matrix [data-placeholder]:empty::after,
+.ML__matrix .ML__placeholder:empty::after,
+.ML__matrix .ML__empty::after,
+.dcg-mq-matrix__cell--empty::after {
+  content: "0";
+  color: rgba(0, 0, 0, 0.47) !important;
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+.ML__matrix .ML__focused::after,
+.ML__matrix .ML__caret::after,
+.ML__matrix td:focus::after {
+  content: "" !important;
+}
+
+/* Sublinhado azul na célula selecionada da matriz (Desmos awe: 2px solid #2f72dc) */
+.ML__matrix td.ML__focused,
+.ML__matrix td.ML__selected,
+.ML__matrix .ML__focused {
+  border-bottom: 2px solid #2f72dc !important;
+}
+
+/* Selo de dimensão para matrizes truncadas (Desmos dcg-mq-matrix__truncated-dimensions) */
+.matrix-dim-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 4px;
+  font-size: 10px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-weight: 600;
+  color: #4b5563;
+  background-color: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 3px;
+  line-height: 1.2;
+  user-select: none;
+}
+
+/* ═════════════════════════════════════════════════════════════
    MATRIZ INTERATIVA DESMOS COM ALÇA NO VÉRTICE (DRAG HANDLE)
 ═════════════════════════════════════════════════════════════ */
 

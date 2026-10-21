@@ -39,6 +39,7 @@ import { ExpressionManager } from './ui/expressionManager';
 import { MathAnalyzer } from './core/analyzer'; 
 import { ODESolver } from './core/odeSolver';
 import { CommandsGuideModal } from './ui/commandsGuideModal';
+import { PolicyManager } from './core/policy';
 
 const renderer = new Renderer('graphCanvas');
 const glRenderer = new GLRenderer('webglCanvas');
@@ -1587,8 +1588,8 @@ function compileAllExpressions() {
             }
 
             const isMultiVarProd = varName.length > 1 && !varName.includes('_') && /[xyzt]/.test(varName);
-            const reservedAssignVars = StateManager.viewMode === '3d' ? ['x', 'y', 'z', 't', 'e', 'pi'] : ['x', 'y', 't', 'e', 'pi'];
-            if (!reservedAssignVars.includes(varName) && !isMultiVarProd && !genericCasMatch) {
+            const policy = PolicyManager.getPolicy(StateManager.viewMode === '3d');
+            if (policy.isValidSlider(varName) && !isMultiVarProd && !genericCasMatch) {
                 // Suporte para declaração de ponto A = (x, y) ou A = (x, y, z)
                 let pointAst: any = null;
                 try {

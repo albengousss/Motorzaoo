@@ -48,6 +48,18 @@ Para assegurar 100% de integridade e cobertura exaustiva da base de conhecimento
 - **Endpoint do Estado JSON**: `https://www.desmos.com/calc-states/production/version/5ls5ggt5gd/7bbba660-cadb-11f1-94a0-2bfe6d1e7ad0`
 - **Conteúdo Analisado**: 839 elementos totais, organizados em 33 pastas hierárquicas, englobando todas as anotações didáticas, casos práticos, expressões com controles deslizantes e casos de teste reais do Desmos.
 
+### 1.3. Suite de Engenharia Reversa e Código-Fonte Oficial Analisado (`arquivosdesmos/` & `Guia Completo (1).md`)
+Além da wiki e do estado do gráfico mestre, foram inspecionados linha a linha os artefatos de engenharia reversa direta do motor do Desmos:
+- **Código-Fonte Produção (`F:\Motorzao\arquivosdesmos\source_code\`)**:
+  - `shared_calculator_desktop.js` (**`5.280.427 bytes` / `~5,28 MB`**): Bundle monolítico completo contendo o parser MathQuill customizado, o compilador AST $\to$ IR $\to$ JIT JS / GLSL WebGL2, políticas 2D/3D (`cx`/`wC`), módulo racional `Hr`, solucionador de regressões Levenberg-Marquardt, motor de matrizes (`Al`/`VY`/`jxe`/`bq`) e o `Dispatcher` MVI.
+  - `shared_calculator_desktop.css` (**`713.210 bytes` / `~713 KB`**): Folha de estilos oficial completa, incluindo todas as classes `.dcg-mq-matrix*`, `.dcg-tab`, `.dcg-evaluation-view` e tokens cromáticos.
+- **Análises Internas e Dumps Estruturados (`F:\Motorzao\arquivosdesmos\engine_analysis\` e `Guia Completo de Recursos e Erros do Desmos (1).md`)**:
+  - `01_how_desmos_renders.md`, `02_secret_commands_and_admin_flags.md`, `03_desmos_console_cheatsheet.js`, `04_bugs_and_easter_eggs.md`;
+  - `desmos_flags_full.json` (**67 Feature Flags** internas extraídas do objeto validador `Eye`);
+  - `desmos_dispatcher_actions.json` (**99 ações** do fluxo unidirecional MVI);
+  - `desmos_hotkeys.json` (**186 mapeamentos** de teclado e acessibilidade);
+  - `folder_491_custom_colors.md`, `folder_671_query_strings_and_url_parameters.md`, `folder_690_viewing_code_behind_calculator.md`, `folder_1013_fragile_functions_and_variables.md`, `folder_1245_bernard_implicit_rendering.md`, `folder_10164_bugs_and_glitches.md`, `folder_10410_javascript_console_and_graph_state.md`.
+
 ---
 
 ## 2. A Filosofia, a Psicologia do "Desmos Feel" e a Camada Visual Externa (UI/UX)
@@ -134,7 +146,7 @@ O sistema aceita os seguintes tipos de nós estruturais:
 | **Caixa de Avaliação (`= resultado`)** | Fundo `#f5f5f5`, borda `1px solid #dcdcdc`, raio `3px`, texto `#333333` | Pílula alinhada no canto inferior direito com botão interativo `[a/b]` de fração racional | Implementado na Fase 1 |
 | **Botão Wrench (Configurações)** | **`37×37px`**, fundo `#ededed`, borda `1px solid rgba(0,0,0,0.1)`, raio `5px`, margem `5px` | Posicionado em `top: 5px, right: 5px` | Implementado na Fase 1 |
 | **Modal da Chave Inglesa** | Largura: **`290px`**, raio: **`6px`**, fundo branco, sombra suave | Sem cabeçalho com botão fechar; fecha ao clicar fora ou na chave | Implementado na Fase 1 |
-| **Controles de Zoom Flutuantes** | **`37×71px`** (vista inicial), expandindo dinamicamente para **`37×107px`** quando a câmera se move | Botões internos `+` e `-` de `35×35px`; botão `Home` surge automaticamente fora da origem | **Atenção:** requer correção do cheque `isAtDefault` (Seção 9.1) |
+| **Controles de Zoom Flutuantes** | **`37×71px`** (vista inicial), expandindo dinamicamente para **`37×107px`** quando a câmera se move | Botões internos `+` e `-` de `35×35px`; botão `Home` surge automaticamente fora da origem | Implementado e validado (`Camera.hasUserInteracted`, Seção 9.1) |
 | **Teclado Virtual (Keypad)** | Altura: **`252px`**, teclas: **`71.36×36px`**, raio: **`2px`** | Barra superior `.dcg-show-keypad-container` (`81×33px`); gaveta empurra rodapé da lista (`padding-bottom: 252px`) | Implementado na Fase 2 |
 
 ### 3.2. Comportamento Mobile vs. Desktop (iPhone 16 vs. Desktop) e Regra Oficial do *Square Zoom* 1:1
@@ -315,6 +327,183 @@ O Desmos utiliza um ciclo estrito de **6 cores padrão** atribuídas sequencialm
    - `betchacant`: redireciona para um gráfico desafiador aleatório do repositório interno do Desmos.
    - `teapot`: na 3D Calculator, carrega o modelo tridimensional do *Utah Teapot* (`desmos.com/3d/6bee4296a3`).
 
+### 5.5. Engenharia Reversa Integral do Código-Fonte (`shared_calculator_desktop.js` & `.css`)
+
+A inspeção direta do bundle de produção `shared_calculator_desktop.js` (`5.280.427 bytes`) e da folha de estilos `shared_calculator_desktop.css` (`713.210 bytes`), aliada ao relatório técnico exaustivo, revela a arquitetura exata dos subsistemas internos do Desmos:
+
+#### 5.5.1. Padrão Arquitetural MVI (Model-View-Intent), `Dispatcher` (`Us`) e Isolamento em Web Worker
+- **Desacoplamento Thread UI vs. Evaluator Worker:** A interface DOM nunca executa matemática pesada diretamente na *Main Thread*. Todo o pipeline de compilação, resolução de dependências em grafo (DAG), regressões de Levenberg-Marquardt e malhas implícitas roda em um **Web Worker dedicado** (monitorável via `?timeInWorker`).
+- **Comunicação Assíncrona:** A ponte entre a *Main Thread* e o *Worker* opera exclusivamente por **Structured Clone Serialization** via `postMessage`, transferindo *TypedArrays* (`Float64Array`, `Float32Array`) de geometria pronta para o renderizador.
+- **Barramento Central `Dispatcher` (Classe `Us`):** Todas as mutações de estado seguem um fluxo estritamente unidirecional **MVI (Model-View-Intent)** com **99 ações registradas** (ex.: `set-expression-latex`, `commit-geo-objects`, `tick`, `expression-zoom-fit`, `toggle-fraction-evaluation`). A camada de visualização utiliza um framework reativo proprietário que calcula o *diff* da árvore virtual e aplica mutações cirúrgicas no DOM sem *reflow* global.
+
+#### 5.5.2. Pipeline do Compilador Matemático em 5 Estágios (MathQuill $\to$ AST $\to$ IR $\to$ Tipos $\to$ JIT JS)
+
+```mermaid
+flowchart LR
+    MQ["1. MathQuill DOM / LaTeX"] --> AST["2. AST Hierárquica (Classe base 'de')"]
+    AST --> IR["3. IR Linear SSA (36 OpCodes 'oi(e)')"]
+    IR --> TYPE["4. Validador de Tipos ('p3' / 'Oe', 10 Tipos)"]
+    TYPE --> JIT["5A. JIT JS Nativo ('Vg(e)' via new Function)"]
+    TYPE --> GLSL["5B. Transpilador GLSL ES 3.0 (WebGL2)"]
+```
+
+1. **Estágio 1 — Parsing Sintático MathQuill:** Converte a árvore de blocos visuais do editor em string LaTeX normalizada e árvore de tokens léxicos.
+2. **Estágio 2 — Construção da AST (Classe Base `de`):**
+   - `On`: literais numéricos e racionais exatos;
+   - `mr`: identificadores de variáveis e símbolos;
+   - `Tr`: chamadas de funções e operadores algébricos;
+   - `ap` (`Equation`): equações implícitas/explícitas;
+   - `Kc` / `an` (`Assignment`): atribuições de variáveis e funções;
+   - `Vi`: comparadores relacionais (`TT` para `<`, `IT` para `<=`, `PT` para `=`, `ET` para `>=`, `Jc` para `>`).
+3. **Estágio 3 — Representação Intermediária Linear (IR) e Tabela Completa dos 36 OpCodes (`oi(e)`):**
+   A AST é achatada em um fluxo de instruções lineares (estilo SSA) identificado por códigos numéricos estritos:
+
+   | OpCode | Nome Simbólico Interno | Categoria / Semântica de Execução |
+   | :---: | :--- | :--- |
+   | `0` | `Noop` | Operação nula / alinhamento de bloco |
+   | `1` | `Constant` | Carrega literal constante do pool `_C` |
+   | `2` | `LoadArg` | Carrega argumento formal de função na pilha |
+   | `3` | `SymbolicVar` | Variável simbólica livre ($x, y, z, t, \theta$) |
+   | `4` | `FunctionHeader` | Cabeçalho de sub-rotina compilada |
+   | `8` | `Add` | Adição escalar (`a + b`) |
+   | `9` | `Subtract` | Subtração escalar (`a - b`) |
+   | `10` | `Multiply` | Multiplicação escalar (`a * b`) |
+   | `11` | `Divide` | Divisão IEEE 754 (`a / b`) |
+   | `12` | `Exponent` | Potenciação com regras de contorno Desmos (`0^0 = 1`) |
+   | `13` | `RawExponent` | Potenciação nativa `Math.pow` sem guarda extra |
+   | `14` | `Negative` | Inversão de sinal unária (`-a`) |
+   | `15` | `Tuple` | Construtor de tupla / ponto $(x,y)$ ou $(x,y,z)$ |
+   | `16` | `Slot` | Slot de substituição contextual (`with`) |
+   | `19` / `20` | `BeginLoop` / `EndLoop` | Delimitadores de laço iterativo ($\sum$, $\prod$, `fold`) |
+   | `21` / `22` | `BeginIntegral` / `EndIntegral` | Escopo de integração numérica de Tanh-Sinh |
+   | `23` / `24` | `BeginBroadcast` / `EndBroadcast` | Vetorização implícita sobre listas (*broadcasting*) |
+   | `25` | `Equal` | Comparação de igualdade (`=`) |
+   | `26` / `27` | `Less` / `Greater` | Comparação estrita (`<` / `>`) |
+   | `28` / `29` | `LessEqual` / `GreaterEqual` | Comparação inclusiva (`<=` / `>=`) |
+   | `31` / `32` | `Or` / `And` | Conjunção e disjunção booleana em chaves `{}` |
+   | `33` | `Piecewise` | Ramificação condicional ternária `{cond: val, default}` |
+   | `37` | `NativeFunction` | Chamada ao dicionário matemático nativo (`Vo`) |
+   | `38` | `List` | Alocação de lista indexada em base 1 |
+   | `39` | `ListAccess` | Indexação de lista com verificação completa |
+   | `40` | `DeferredListAccess` | Indexação adiada para comprehensions |
+   | `41` | `InboundsListAccess` | Indexação rápida quando os limites já estão provados |
+   | `42` | `Distribution` | Construtor de distribuição estatística |
+   | `44` | `ExtendSeed` | Derivação determinística de semente PRNG |
+   | `47` | `BlockVar` | Variável local de bloco acumulador |
+   | `48` | `BroadcastResult` | Coleta e empacotamento do vetor pós-broadcast |
+   | `49` | `Action` | Mutação reativa de estado (`->`) |
+   | `50` / `51` | `BeginMap` / `EndMap` | Escopo de *List Comprehension* (`for`) |
+   | `53` / `54` | `BeginFunction` / `EndFunction` | Delimitadores de função definida pelo usuário |
+   | `55` | `FunctionCall` | Invocação de função de usuário (com guarda de recursão) |
+   | `56` | `Square` | Quadrado otimizado (`x * x`, evitando `Math.pow`) |
+
+4. **Estágio 4 — Sistema de Tipos Estático (`p3` / `Oe`) e Validadores (`qn`, `Cf`, `un`):**
+   Cada nó da IR recebe uma anotação estrita de tipo antes da emissão de código:
+   - `1`: `Number` (escalar real IEEE 754)
+   - `2`: `Bool` (booleano interno para predicados e piecewise)
+   - `3`: `Point` (par ordenado 2D)
+   - `4`: `Distribution` (objeto de distribuição de probabilidade)
+   - `5`: `Action` (mutação de estado `->`)
+   - `7`: `ListOfNumber` (vetor homogêneo de escalares; variantes tipadas para listas de pontos, polígonos, etc.)
+   - `16`: `Polygon` (fechamento geométrico de vértices)
+   - `38`: `Complex` (par real/imaginário $a + bi$)
+   - `42`: `Matrix` (grade bidimensional $m \times n$)
+   - `100`: `Point3D` (tripla espacial $(x, y, z)$)
+
+5. **Estágio 5A — Compilação JIT para JavaScript Nativo (`Vg(e)`) e Otimizador de Recursão (`Dw`):**
+   - O gerador `Vg(e)` transpila os OpCodes da IR diretamente em código fonte JavaScript monomórfico e o instancia em tempo de execução via:
+     ```javascript
+     new Function("BuiltIn", "ErrorMsg", "_C", "__meta", r)(Vo, Ht, e.constants, e.executionMetadata)
+     ```
+     eliminando qualquer sobrecarga de interpretação de árvore durante a plotagem a 60 FPS.
+   - **Otimização de Cauda e Recursão Linear (`Dw`, `bre`, `xre`, `Tz`):** Quando uma função é auto-referencial, o analisador estático verifica se há caso base determinístico (`missingBaseCase` / `unraveledRecursion`). Se a recursão for linear/cauda, a flag `canIterate: true` converte a chamada recursiva em um **laço `while`/`for` imperativo** sem alocar quadros na *Call Stack* do JS, permitindo até `RECURSIVE_DEPTH_LIMIT` (`uT` = $10^6$ iterações; limite de pilha padrão = `1000`).
+
+#### 5.5.3. Compilador de Shaders WebGL2 (GLSL ES 3.0) e Limites de Custo de Hardware (`Ht`)
+Na calculadora 3D e em mapas de cores densos, a mesma IR é transpilada para **GLSL ES 3.0** (executando *Raymarching* por pixel no Fragment Shader). Como GPUs não possuem preempção segura contra laços infinitos (podendo causar *TDR / Context Lost* no driver ANGLE/Metal/DirectX), o módulo `Ht` impõe travas estritas em tempo de compilação:
+- `gpuMaxListSize` (`wf`): Listas passadas para *Uniform Buffer Objects (UBOs)* na GPU são limitadas a **100 elementos** (contra `maxListSize` `Um = 10.000` na CPU).
+- `gpuLongSum` (`Y1`) e `gpuLongProduct` (`Z1`): Somatórios $\sum$ e produtórios $\prod$ compilados para GLSL sofrem *loop unrolling* estático até no máximo **1.000 iterações**; acima disso a compilação GLSL é abortada preventivamente.
+- `gpuUnsupportedRecursion` (`X1`): Como o padrão GLSL ES 3.0 proíbe recursão na pilha de shaders, funções recursivas que não puderam ser convertidas em laço iterativo (`canIterate: false`) disparam erro imediato na GPU.
+- **Orçamento de Custo de Instruções (*Shader Cost Budget*):**
+  - `canRaycastWithCost(cost)`: exige `cost <= 50` para permitir raycasting implícito 3D em tempo real;
+  - `canUseRestrictionWithCost(cost)`: exige `cost <= 10.000` (caso contrário lança `gpuRestrictionExceedsCostLimit` / `qp`);
+  - `canUseColorFunctionWithCost(cost)`: exige `cost <= 10.000` (caso contrário lança `gpuColorFunctionExceedsCostLimit` / `iO` ou `gpuInequalityExceedsCostLimit` / `hb`).
+
+#### 5.5.4. Políticas de Compilação 2D vs. 3D (`cx` vs. `wC`), Promoção de Sliders e os 46 Tipos de Plotagem (`fxe`)
+No arquivo `shared_calculator_desktop.js` (offset `961500`), o motor distingue rigorosamente o comportamento de variáveis entre o modo 2D e o modo 3D através da injeção de duas classes de política (*Policy*):
+
+| Propriedade / Regra da Policy | Modo 2D (Classe `cx`) | Modo 3D (Classe `wC`) |
+| :--- | :--- | :--- |
+| **`validImplicitVariables`** | `[]`, `["x"]`, `["y"]`, `["r"]`, `["x","y"]`, `["r","theta"]` | Subconjuntos de `["x", "y", "z"]` (`ux`) |
+| **`validExpressionVariables`** | `["x"]` | `["x", "y"]` |
+| **`validSolvedVariable`** | `"x" \| "y" \| "r"` | `"x" \| "y" \| "z"` |
+| **`validParametricVariables`** | `["t"]` (curva 1D) | `["t"\|"u"\|"v"]` (curva 1D) ou `["u","v"]` (malha 2D) |
+| **Papel da variável `z`** | **Não é coordenada espacial** $\to$ `isValidSlider("z") === true` (pede slider!) | **É a 3ª coordenada espacial reservada** $\to$ `isValidSlider("z") === false` |
+
+- **Regra de `shouldPromoteToSlider`:** Uma atribuição `Assignment` só é promovida automaticamente a Slider interativo se o seu lado direito (RHS) for uma constante numérica finita escalar (`Constant`) e `policy.isValidSlider(symbol)` retornar `true`.
+- **Catálogo dos 46 Tipos Internos de Plotagem (`fxe(e)`):** O despachante gráfico classifica cada expressão compilada em um dos 46 códigos de renderização, incluindo `1: "X"`, `2: "Y"`, `3: "IMPLICIT"`, `4: "PARABOLA"`, `5: "PARAMETRIC"`, `6: "POLAR"`, `7: "POINT"`, `130: "GRID_3D"`, `131: "RAYCAST_IMPLICIT_3D"` e `200..215` (fatias e interseções de planos 3D).
+
+#### 5.5.5. Arquitetura Interna Exata das Matrizes no MathQuill Desmos (`Al`, `VY`, `jxe`, `bq`, `awe`, `P0`, `pre`)
+A inspeção direta das classes do editor matemático em `shared_calculator_desktop.js` e das regras `.dcg-mq-matrix*` em `shared_calculator_desktop.css` esclarece todos os detalhes de engenharia das matrizes no Desmos:
+1. **Três Formas de Instanciação (`Al`, `type: "matrix"`):**
+   - Digitando `matrix` (`autoCommands` em `Nwe` $\to$ invoca `VY(r, e, {numRows: 2, numCols: 2})`, criando uma matriz $2\times 2$ e posicionando o cursor diretamente na célula $(1,1)$);
+   - Digitando `#` seguido de dois dígitos de `1` a `9` (`Gwe(r, e, t)` $\to$ ex.: `#24` invoca `VY(r, ..., {numRows: 2, numCols: 4})`);
+   - Pressionando **`Ctrl+Shift+Seta Direita/Baixo`** (ou `Cmd+Shift+Seta`) quando o cursor está dentro de colchetes simples de 1 elemento `[x]` sem vírgulas (`yq` $\to$ comando `"convert-list"` $\to$ `vke`), que converte a lista `[x]` in-place em uma matriz!
+2. **Células Vazias e "Zeros Fantasmas" (`.dcg-mq-matrix__cell--empty`):**
+   - A função `VY` inicializa as células com grupos vazios `Ht([])` (e **não** com caracteres `'0'` reais no modelo de texto).
+   - No DOM (`jxe`), toda célula cujo grupo está vazio recebe a classe CSS `.dcg-mq-matrix__cell--empty`.
+   - A folha de estilos `shared_calculator_desktop.css` injeta o zero fantasma via pseudo-elemento:
+     ```css
+     .dcg-mq-matrix__cell--empty:after {
+       content: "0";
+       color: rgba(0, 0, 0, 0.47);
+       opacity: 0.8;
+     }
+     ```
+   - Assim que o cursor entra na célula vazia, a classe `.dcg-mq-matrix__cell--empty` é removida da célula ativa (fazendo o `0` fantasma sumir instantaneamente enquanto o usuário digita). Na serialização para LaTeX (`G.EmptyCell`), células que permanecem vazias são exportadas como `0` para o compilador!
+3. **Visibilidade Estrita da Alça de Redimensionamento (`P0(r)` e `awe`):**
+   - A função `P0(r)` percorre os grupos ancestrais da posição atual do cursor (`NG(r)`).
+   - Somente quando algum ancestral possui `t.type === "matrix"`, a rotina `awe` adiciona:
+     - `.dcg-mq-matrix__cell--selected` na célula ativa (aplicando um sublinhado azul `border-bottom: 2px solid #2f72dc`);
+     - `.dcg-mq-matrix--selected` no contêiner `.dcg-mq-matrix__container`.
+   - No CSS oficial, a alça `.dcg-mq-matrix__pull-handle` possui `display: none` por padrão e **só se torna visível** via:
+     ```css
+     .dcg-mq-matrix--selected > .dcg-mq-matrix__pull-handle,
+     .dcg-mq-matrix--resizing > .dcg-mq-matrix__pull-handle {
+       display: block;
+     }
+     ```
+   - Portanto, quando o cursor sai de dentro dos colchetes da matriz (ex.: vai para `A = ` antes da matriz ou `+ 2` depois da matriz), `.dcg-mq-matrix--selected` é removido e a alça desaparece imediatamente.
+4. **Redimensionamento Não-Destrutivo (`bq` & `mutable_originalMatrix`):**
+   - Ao iniciar o arraste da alça (`withResizingStarted`), o estado original das células é salvo em `mutable_originalMatrix`.
+   - O arraste com o mouse (`lj`, `hke` usando limiares de ponto médio `mke`/`fke` e multiplicadores `1.2em`/`1.3em`) ou o redimensionamento via teclado (`Ctrl+Shift+Setas` em `pj`, ou `Tab` até focar a alça + `Setas` em `cj`) redimensiona a matriz até `maxResizingMatrixSize` (padrão `6`, ou a dimensão atual caso a matriz original já seja maior que 6).
+   - Se o usuário encolher uma matriz preenchida de $3\times 3$ para $2\times 2$ e depois expandi-la novamente para $3\times 3$, os valores da 3ª linha/coluna são **restaurados intactos** a partir de `mutable_originalMatrix`.
+5. **Avaliação e Exibição do Resultado (`pre(e, t)` em `getEvaluationRHS`):**
+   - Qualquer expressão que avalie para `valueType: Matrix` (`ra`) — seja atribuída (`A = ...`) ou anônima (ex.: multiplicação direta de duas matrizes sem nome) — é formatada por `pre(e, t)`.
+   - Se qualquer elemento da matriz for `NaN`, `pre` retorna a string `"undefined"`.
+   - Caso contrário, formata cada célula via `Kp(i, r)` (respeitando o botão de fração `displayAsFraction`!) dentro de `\begin{bmatrix} ... \end{bmatrix}` e renderiza como MathQuill estático (`yL`). Se a matriz resultante exceder `maxResizingMatrixSize` ($6\times 6$), `jxe` trunca as linhas/colunas excedentes com reticências `⋯` (`.dcg-mq-matrix-ellipsis`) e exibe o selo `.dcg-mq-matrix__truncated-dimensions` (`linhas × colunas`).
+
+#### 5.5.6. Aritmética Racional Híbrida Exata (Módulo `Hr`) e Fórmula da Quadratura de Tanh-Sinh
+1. **Módulo Racional `Hr` (`_e(e, t)`, `Sf`, `If` e Limite `Wx = 2^53 - 1`):**
+   - Para evitar que operações simples como `0.1 + 0.2` ou conversões em `[a/b]` sofram ruído binário IEEE 754, o módulo interno `Hr` representa números como frações irredutíveis `{n: numerador, d: denominador}` simplificadas pelo Máximo Divisor Comum `If(e, t)`.
+   - **Guarda de Overflow de Mantissa (`Wx`):** As operações de adição, subtração, multiplicação e divisão racional (`Sf`) verificam após cada passo se $|n| \le 2^{53} - 1$ (`Wx = 9007199254740991`) e $|d| \le 2^{53} - 1$. Enquanto ambos permanecerem dentro desse limite seguro de inteiros exatos de 53 bits, o cálculo preserva precisão racional exata; se qualquer termo ultrapassar `Wx`, o motor faz *fallback* transparente para ponto flutuante IEEE 754 (`e / t`).
+2. **Transformação Analítica da Quadratura Dupla Exponencial (Tanh-Sinh):**
+   - Para integrar $\int_a^b f(x)\,dx$, o Desmos normaliza o intervalo para $[-1, 1]$ e aplica a mudança de variável hiperbólica:
+     $$x = \tanh\left(\frac{\pi}{2}\sinh(t)\right), \qquad dx = \frac{\frac{\pi}{2}\cosh(t)}{\cosh^2\left(\frac{\pi}{2}\sinh(t)\right)}\,dt$$
+   - Como o peso decai duplamente exponencialmente nas bordas $x \to \pm 1$, singularidades integráveis nos extremos convergem rapidamente nos **65 nós de amostragem**, mas funções nulas em quase todo o domínio com um pico estreito que cai entre dois nós adjacentes produzem o falso zero documentado em `!integral`.
+
+#### 5.5.7. Renderização Híbrida 2D vs. 3D, Polígonos com Furos (`join`), Ações Determinísticas e `**dcg_geo_folder**`
+- **Canvas 2D vs. WebGL2:** Na calculadora 2D, toda a grade, curvas explícitas/implícitas, sombreamentos de inequações e rótulos são desenhados na **HTML5 2D Canvas API** (permitindo exportação vetorial SVG/PDF fiel). Na calculadora 3D, o motor instancia um pipeline **WebGL2** com malhas triangulares adaptativas e *Raymarching* em GLSL ES 3.0.
+- **Polígonos com Ilhas e Furos (`join` + `(0/0, 0/0)`):** Quando `polygon(join(P_externo, (0/0, 0/0), P_interno))` é avaliado, o elemento `(NaN, NaN)` instrui o gerador de caminhos do Canvas 2D a fechar o sub-caminho atual (`closePath()`) e iniciar um novo `moveTo()` sem traçar aresta conectora, utilizando a regra de preenchimento *winding / even-odd* para recortar furos internos.
+- **Execução Simultânea de Ações (`->`) e Ticker:** Em uma lista de ações `a -> a + 1, b -> a`, todas as expressões do lado direito (RHS) são avaliadas contra o **snapshot imutável do estado anterior** antes de aplicar qualquer mutação, garantindo determinismo total independente da ordem de declaração.
+- **Pasta Secreta da Calculadora Geométrica (`**dcg_geo_folder**`):** Ao construir objetos com as ferramentas visuais da Geometry Calculator, o Desmos cria nos bastidores uma pasta oculta com `id: "**dcg_geo_folder**"` e propriedade `secret: true`, armazenando cada ponto, reta e transformação como expressões normais contendo chamadas às *Fragile Functions* (`lineGlider`, `circleLineIntersection`, etc.).
+
+#### 5.5.8. Catálogo das 67 Feature Flags (`Eye`), 99 Ações do Dispatcher, 186 Hotkeys e Suite `DesmosAdmin`
+A extração automatizada sobre `shared_calculator_desktop.js` (arquivos em `F:\Motorzao\arquivosdesmos\engine_analysis\`) catalogou:
+- **67 Feature Flags de Configuração (`desmos_flags_full.json` / objeto `Eye`):** Incluem flags de controle de motor e UI como `actions`, `advancedStyling`, `allowComplex`, `authorFeatures`, `brailleExpressionDownload`, `complexMode`, ` Distributions`, `evaluationux`, ` folders`, `fourFunction`, `geometryCalculator`, `graphpaper`, `images`, `inference`, `invertedColors`, `keypad`, `lockViewport`, `matrices`, `notes`, `pasteGraphLink`, `plottableFunctions`, `pointsOfInterest`, `projectorMode`, `qwertyKeyboard`, ` recursion`, `restrictedFunctions`, ` rhsEvaluation`, `settingsMenu`, `sliders`, `substitutions`, `tables`, `ticker`, `tone`, `trace`, `zoomButtons`, entre outras.
+- **99 Ações do Dispatcher (`desmos_dispatcher_actions.json`):** Mapeamento completo de todas as intenções MVI aceitas por `Calc.controller.dispatch({ type: ... })`.
+- **186 Atalhos de Teclado (`desmos_hotkeys.json`):** Mapeamento integral de navegação, edição, Braille e Audio Trace.
+- **Suite de Inspeção `window.DesmosAdmin` (`03_desmos_console_cheatsheet.js`):** Utilitários de console para ativar `authorFeatures`, revelar pastas `secret: true`, inspecionar o estado de avaliação de qualquer expressão e exportar listas/matrizes em alta precisão.
+
 ---
 
 ## 6. Mapeamento Exaustivo das 33 Pastas do Catálogo Mestre (`5ls5ggt5gd`)
@@ -369,8 +558,9 @@ A combinação do **Avaliador Vetorial JS nativo (0ms de latência)** para o loo
 
 ```mermaid
 flowchart LR
-    F1["Fase 1: HUD & Paridade Visual (Implementada c/ Pendências)"] --> F2["Fase 2: Viewport Reativo & Virtualização (Implementada c/ Pendências)"]
-    F2 --> F3["Fase 3: Piecewise Geral & Chaves"]
+    F1["Fase 1: HUD & Paridade Visual (Concluída ✅)"] --> F2["Fase 2: Viewport Reativo & Virtualização (Concluída ✅)"]
+    F2 --> F25["Fase 2.5: Refinamento de Motor Base (Concluída ✅)"]
+    F25 --> F3["Fase 3: Piecewise Geral & Chaves"]
     F3 --> F4["Fase 4: Tabelas Conectadas & Regressões ~"]
     F4 --> F5["Fase 5: Polígonos, Cores & Rótulos ${v}"]
     F5 --> F6["Fase 6: Ações ->, Ticker & OnClick"]
@@ -394,6 +584,24 @@ flowchart LR
   3. Interpolação cúbica suave de 200ms nos botões de zoom `+` e `-`.
   4. No modo 2D, reconhecimento de `z` como parâmetro escalar livre (exigindo criação do slider `z` antes de plotar curvas como $x^2+y^2+z^2=2$, mapeando `u_var_z` no shader WebGL e mantendo os sliders permanentes no painel).
   5. Viewport inicial com *Square Zoom* 1:1 rigoroso com $X \in [-10, 10]$ e estabilização de layout imune a condições de corrida via `Camera.hasUserInteracted`, mantendo o botão Home oculto na inicialização.
+
+### 8.3. Fase 2.5: Refinamento de Motor Base — Aritmética Racional (Hr), Matrizes Inline (Al/VY/bq) & Políticas 2D/3D (cx/wC) [CONCLUÍDA ✅]
+- **Já implementado e validado por 207 testes automatizados:**
+  1. **Módulo Racional Híbrido (`RationalEngine` / `Hr`):**
+     - Classe `Rational` com interoperabilidade numérica JS nativa via `valueOf()` (`r + 1`, `Math.sin(r)`, etc.);
+     - Aritmética racional exata ($+$, $-$, $*$, $/$, $\text{pow}$) com simplificação via MDC euclidiano e guarda estrita de overflow de 53 bits ($W_x = 2^{53} - 1 = 9007199254740991$);
+     - Algoritmo de Frações Contínuas em `RationalEngine.fromNumber` para conversão exata de números decimais;
+     - Integração profunda com a pílula interativa `[a/b]` de fração racional no painel de resultados.
+  2. **Perfeição do Subsistema de Matrizes Inline (`Al`, `VY`, `jxe`, `bq`, `pre`):**
+     - **Zeros Fantasmas:** Células vazias exibem `0` esmaecido (`rgba(0,0,0,0.47)`) via CSS `.ML__matrix td:empty::after`, ocultando ao focar e avaliando para `0` no parser;
+     - **Sublinhado Azul:** Sublinhado de foco `2px solid #2f72dc` na célula ativa conforme `shared_calculator_desktop.css`;
+     - **3 Gatilhos de Instanciação:** `matrix` / `matriz` ($2\times 2$), `#rc` (ex.: `#24` $\to 2\times 4$, `#33` $\to 3\times 3$) e `Ctrl+Shift+Setas` dentro de `[x]` (`convert-list`);
+     - **Redimensionamento Não-Destrutivo:** Implementação de `_mutableOriginalMatrix` preservando o histórico das células ao encolher ($3\times 3 \to 2\times 2$) e re-expandir ($2\times 2 \to 3\times 3$);
+     - **Truncamento Visual Estilo Desmos:** Matrizes de resultado maiores que $6\times 6$ truncam linhas/colunas excedentes com $\cdots, \vdots, \ddots$ e exibem o selo de dimensão `.matrix-dim-badge` (`m × n`).
+  3. **Classes Formais de Política 2D (`cx`) vs. 3D (`wC`) e Travas de Custo WebGL (`Ht`):**
+     - Implementação de `Policy2D` e `Policy3D` com `PolicyManager.getPolicy()`, isolando o papel de `z` (slider em 2D vs. coordenada em 3D);
+     - `CostBudgetManager` aplicando travas no WebGL (`GPU_MAX_LIST_SIZE = 100`, complexidade de árvore e recursão) para blindar a GPU contra travamentos e TDR.
+
 
 ---
 
@@ -435,27 +643,161 @@ Abaixo está o registro técnico consolidado dos problemas identificados nas aud
 
 ---
 
-## 10. Próximas Fases do Roteiro Estratégico (Fases 3 a 7)
+## 10. Plano Diretor Estruturado para Paridade 100% com o Desmos (Roteiro de Engenharia Fase 2.5 a Fase 8)
 
-### Fase 3: Piecewise Geral & Condicionais em Chaves
-1. **Sintaxe Piecewise Geral**: Suporte a `{cond1: val1, cond2: val2, default}` e operadores lógicos encadeados `{cond1}{cond2}` (AND) e `{cond1, cond2}` (OR).
-2. **Avaliação Relacional Aritmética**: Tratamento de `{cond}` como multiplicador que avalia para `1` (se verdadeiro) ou `NaN` (se falso) no interior de termos algébricos.
+Com as Fases 1 e 2 concluídas e toda a engenharia reversa do código-fonte do Desmos (`shared_calculator_desktop.js` e `shared_calculator_desktop.css`) mapeada, este é o plano diretor estruturado por camadas arquiteturais, módulos-alvo do `Motorzaoo` e critérios de aceite para atingir **100% de paridade funcional, visual e algorítmica com o Desmos** (preservando a superioridade simbólica do Giac CAS e do motor 3D/EDO do Motorzaoo):
 
-### Fase 4: Tabelas Conectadas & Regressões (`~`)
-1. **Colunas de Tabela como Listas Globais**: Exportação automática dos cabeçalhos das tabelas (`x_1`, `y_1`, etc.) como listas acessíveis em qualquer outra fórmula do painel.
-2. **Operador de Regressão com Til (`~`)**: Parser e solucionador de regressão por mínimos quadrados para modelos lineares, não-lineares ($y_1 \sim m x_1 + b$) e sistemas ($[2a+b, a+2b] \sim [8,10]$), com exibição dos parâmetros ajustados, resíduos $e_1$, $\text{RMSE}$ e coeficiente $R^2$.
+```mermaid
+flowchart TD
+    F25["Fase 2.5: Refinamento de Motor Base (Racionais 'Hr', Matrizes 'Al/VY/bq' & Políticas 2D/3D)"] --> F3["Fase 3: Piecewise '{}', Listas Base-1, Broadcasting, Comprehensions & 'with'"]
+    F3 --> F4["Fase 4: Tabelas Conectadas ('x_1, y_1') & Motor de Regressão ('~' Levenberg-Marquardt)"]
+    F4 --> F5["Fase 5: Polígonos c/ Furos ('join/NaN'), Cores Dinâmicas ('oklch/hsv') & Rótulos '${var}'"]
+    F5 --> F6["Fase 6: Ações Reativas ('->'), Ticker ('dt'), 'onClick' & Recursão Otimizada ('Dw')"]
+    F6 --> F7["Fase 7: Estatística, Distribuições ('.pdf/.cdf'), Gráficos ('boxplot') & Áudio ('tone')"]
+    F7 --> F8["Fase 8: POIs por Bissecção, Compilador JIT ('Vg'), Web Worker & Estado JSON v11"]
+```
 
-### Fase 5: Polígonos, Cores Dinâmicas & Rótulos `${var}`
-1. **Polígonos com Ilhas e Furos**: Suporte a `polygon(P1, P2, P3...)`, `polygon(L)` e corte de sub-caminhos via coordenadas delimitadoras `(NaN, NaN)`.
-2. **Cores Computadas**: Funções nativas `rgb(r, g, b)`, `hsv(h, s, v)`, `oklab`, `oklch` e `okhsv` atribuíveis dinamicamente a traçados e listas.
-3. **Rótulos Interpolados**: Interpolação de strings `${var}` em rótulos flutuantes de pontos com renderização matemática.
+---
 
-### Fase 6: Ações (`->`), Ticker Autônomo & Objetos Clicáveis
-1. **Operador de Ação (`->`)**: Execução de mutações de estado reativas (`a -> a + 1`), atribuições em lote simultâneas e ações condicionais.
-2. **Motor de Ticker Global**: Metrônomo autônomo baseado em `requestAnimationFrame` com taxa de disparo configurável em milissegundos e injeção do delta de tempo real decorrido `dt`.
-3. **Despachante de Eventos de Clique no Canvas**: Propriedade On Click em pontos e curvas que dispara ações passando as variáveis de contexto `(x, y)` e `index`.
+### Fase 2.5: Refinamento do Motor Base — Aritmética Racional (`Hr`), Perfeição de Matrizes (`Al`/`VY`/`bq`) e Políticas 2D/3D (`cx`/`wC`)
+**Objetivo:** Alinhar os alicerces algébricos e de edição interativa do `Motorzaoo` exatamente ao comportamento interno descoberto em `shared_calculator_desktop.js`.
 
-### Fase 7: Distribuições Estatísticas, Síntese de Áudio (`tone`) & Multimídia
-1. **Distribuições Contínuas e Discretas**: `normaldist`, `tdist`, `chisqdist`, `uniformdist`, `binomialdist`, `poissondist`, `geodist`, `discretedist` com métodos encadeados `.pdf(x)`, `.cdf(a, b)`, `.inversecdf(p)` e amostragem `.random(n)`.
-2. **Visualizações Estatísticas e Inferência**: Plotagem nativa de `boxplot`, `histogram`, `dotplot` e blocos `inference`.
-3. **Síntese de Som (`tone`) e Audio Trace**: Implementação de `tone(freq, vol)` na Web Audio API com polifonia para listas de frequências e atalho de sonificação acessível de curvas (`Alt+T` / `H`).
+1. **Módulo de Aritmética Racional Híbrida (`Hr` / `_e(n, d)` com Guarda `Wx = 2^53 - 1`)**:
+   - **Arquivos-alvo:** `src/core/algebra.js`, `src/core/parser.js`, `src/ui/expression.js`.
+   - **Especificação:** Implementar representação racional exata `{n, d}` simplificada por MDC (`If(a, b)`) para operações aritméticas básicas (`+`, `-`, `*`, `/`, potências inteiras), mantendo precisão exata enquanto $|n|, |d| \le 2^{53} - 1$ (`9007199254740991`) e fazendo *fallback* transparente para `Float64` acima desse limite. Conectar diretamente à pílula `[a/b]` (`Kp(val, displayAsFraction)`).
+2. **Perfeição do Subsistema de Matrizes Inline (`Al`, `VY`, `jxe`, `bq`, `pre`)**:
+   - **Arquivos-alvo:** `src/ui/expression.js`, `src/style.css`, `src/core/parser.js`, `src/core/algebra.js`.
+   - **Especificação:**
+     - **Zeros Fantasmas (`.dcg-mq-matrix__cell--empty`):** Células vazias exibem `0` esmaecido via pseudo-elemento CSS (`rgba(0,0,0,0.47)`), que some instantaneamente quando o cursor entra na célula e avalia para `0` no parser caso permaneça vazia;
+     - **3 Gatilhos de Instanciação:** Digitação de `matrix` ($2\times 2$), atalho `#rc` (ex.: `#24` $\to 2\times 4$) e atalho `Ctrl+Shift+Setas` dentro de `[x]` (`convert-list`);
+     - **Redimensionamento Não-Destrutivo (`mutable_originalMatrix`):** Preservar valores das células ao encolher e re-expandir durante a sessão de redimensionamento (via arraste da alça ou `Ctrl+Shift+Setas` no teclado), com sublinhado azul (`2px solid #2f72dc`) na célula ativa;
+     - **Álgebra Matricial Completa na Linha de Expressão:** Suporte a matrizes anônimas (ex.: $\begin{bmatrix}1&2\\3&4\end{bmatrix}\begin{bmatrix}5\\6\end{bmatrix}$) e atribuídas ($A = \dots$), `M^T`, `M^-1`, `det(M)`, `trace(M)`, `rref(M)`, `rank(M)`, `.rows`, `.columns`, indexação 1-based `M[r; c]`, fatiamento `M[1,2;]` e aplicação de matriz como transformação linear sobre pontos $M(x, y)$;
+     - **Truncamento Visual (`⋯`):** Matrizes de resultado maiores que $6\times 6$ truncam linhas/colunas excedentes com reticências e exibem o selo de dimensão `m × n`.
+3. **Classes Formais de Política 2D (`cx`) vs. 3D (`wC`) e Travas de Custo WebGL (`Ht`)**:
+   - **Arquivos-alvo:** `src/core/parser.js`, `src/main.js`, `src/render/webgl.js`.
+   - **Especificação:** Centralizar a validação de variáveis reservadas vs. livres (`validImplicitVariables`, `validExpressionVariables`, `validParametricVariables`, `shouldPromoteToSlider`) e aplicar limites preventivos de compilação GLSL (`gpuMaxListSize = 100`, `gpuLongSum = 1000`).
+
+---
+
+### Fase 3: Piecewise Geral (`{}`), Listas Base-1, Broadcasting (`OpCodes 23/24`), Comprehensions (`for`) e Substituição (`with`)
+**Objetivo:** Implementar o coração da linguagem funcional e vetorial do Desmos.
+
+1. **Sintaxe Piecewise Geral (`OpCode 33`) e Lógica em Chaves (`OpCodes 31/32`)**:
+   - **Arquivos-alvo:** `src/core/parser.js`, `src/render/canvas2d.js`, `src/render/webgl.js`.
+   - **Especificação:**
+     - Suporte universal a `{cond1: val1, cond2: val2, default}` tanto como expressão autônoma quanto aninhada dentro de qualquer subexpressão;
+     - Conjunção `{cond1}{cond2}` (`AND`) e disjunção `{cond1, cond2}` (`OR`);
+     - Avaliação de `{cond}` sem ramo `: val` como `1` (se verdadeiro) ou `NaN` (se falso), permitindo restrição de domínio em qualquer posição da fórmula.
+2. **Motor de Listas Base-1, Ranges, Slicing e Filtros IEEE 754 (`OpCodes 38–41`)**:
+   - **Arquivos-alvo:** `src/core/parser.js`, `src/core/state.js`.
+   - **Especificação:**
+     - Geração de sequências por reticências: `[1...10]`, `[1, 3...11]`, `[10...1]`;
+     - Indexação base 1 (`L[1]`), fatiamento (`L[2...5]`, `L[3...]`, `L[...4]`) e indexação indireta por lista (`L[[1, 3, 5]]`);
+     - Filtragem por predicado booleano (`L[L > 0]`, `L[L = 5]`), expurgo de `NaN` via `L[L = L]` e expurgo de infinitos via `L[-∞ < L < ∞]`.
+3. **Broadcasting Vetorial Implícito (`OpCodes 23/24`) e *List Comprehensions* (`OpCodes 50/51`)**:
+   - **Arquivos-alvo:** `src/core/parser.js`, `src/main.js`, `src/render/canvas2d.js`.
+   - **Especificação:**
+     - Qualquer operador ou função escalar aplicada a uma lista (ex.: `sin([1, 2, 3]) + 5`, `y = [1...5]x`) expande automaticamente em uma família de resultados/curvas;
+     - Compreensão de listas e malhas cartesianas: `[2k + 1 for k = [1...5]]` e `[(x, y) for x = [1...3], y = [1...3]]` (até `maxListSize = 10.000`).
+4. **Operador Contextual `with` (`OpCode 16: Slot`)**:
+   - **Arquivos-alvo:** `src/core/parser.js`.
+   - **Especificação:** Suporte a substituições locais imutáveis `expressão with a = 2, b = [1...5]` sem alterar variáveis globais.
+
+---
+
+### Fase 4: Tabelas Conectadas (`x_1, y_1`) e Motor de Regressão Não-Linear (`~`)
+**Objetivo:** Unificar dados tabulares ao grafo reativo e implementar o solucionador de regressões e sistemas com til (`~`).
+
+1. **Tabelas de Dados Reativas e Autocompletar**:
+   - **Arquivos-alvo:** `src/ui/table.js`, `src/core/state.js`, `src/render/canvas2d.js`.
+   - **Especificação:**
+     - Exportar cada coluna de tabela (`x_1`, `y_1`, `y_2`...) como uma lista global no `StateManager.values`;
+     - Permitir cabeçalhos funcionais calculados (ex.: coluna `x_1^2` ou `f(x_1)`);
+     - Pressionar `Enter` ao final da coluna prediz e preenche automaticamente o próximo passo ($\Delta x$ constante);
+     - Opções de visualização da coluna: pontos, segmentos conectados, curvas suaves e pontos arrastáveis diretamente no canvas.
+2. **Motor de Regressão (`~`) Linear e Não-Linear (Levenberg-Marquardt)**:
+   - **Arquivos-alvo:** `src/core/parser.js`, `src/core/regression.js` (novo módulo), `src/ui/expression.js`.
+   - **Especificação:**
+     - Sintaxe `y_1 ~ f(x_1)` identificando automaticamente os parâmetros livres a otimizar;
+     - Solucionador analítico OLS para modelos lineares (com opção `Log Mode` compatível com o Desmos) e iterativo **Levenberg-Marquardt** para modelos não-lineares;
+     - Suporte a resolução de sistemas de equações e interseções via listas: `[2a + b, a + 2b] ~ [8, 10]` ou `f(a) ~ g(a)`;
+     - Card de diagnóstico inline no bloco de expressão exibindo parâmetros ajustados, $R^2$, $\text{RMSE}$ e botão para plotar os resíduos $e_1$.
+
+---
+
+### Fase 5: Polígonos com Furos (`join`/`NaN`), Espaços de Cor Dinâmicos (`oklch`/`hsv`), `\textcolor` e Rótulos `${var}`
+**Objetivo:** Atingir paridade total em geometria vetorial, arte matemática, colorização parametrizada e anotações interativas.
+
+1. **Polígonos (`Type 16`) e Recorte de Furos com `(NaN, NaN)`**:
+   - **Arquivos-alvo:** `src/core/parser.js`, `src/render/canvas2d.js`.
+   - **Especificação:** Suporte a `polygon(P1, P2, P3, ...)` e `polygon(L)`, com fechamento automático de sub-caminhos sempre que encontrar o delimitador `(0/0, 0/0)` (`(NaN, NaN)` via `join`), renderizando ilhas e furos via regra de preenchimento *even-odd / winding*.
+2. **Construtores de Cor Dinâmicos e `\textcolor`**:
+   - **Arquivos-alvo:** `src/core/parser.js`, `src/ui/expression.js`, `src/render/canvas2d.js`, `src/render/webgl.js`.
+   - **Especificação:**
+     - Funções `rgb(r, g, b)`, `hsv(h, s, v)`, `oklab(L, a, b)`, `oklch(L, C, h)` e `okhsv(h, s, v)` atribuíveis a variáveis ($C = \operatorname{hsv}(h, 1, 1)$) que aparecem no popover de estilo de qualquer expressão;
+     - Suporte a listas de cores pareadas 1-para-1 com listas de curvas/polígonos e mapas de cor contínuos $C(x, y, z)$ no shader 3D;
+     - Suporte a `\textcolor{cor}{conteúdo}` na renderização de fórmulas e notas.
+3. **Rótulos Flutuantes Interpolados (`${var}`) e Pontos Arrastáveis Restritos**:
+   - **Arquivos-alvo:** `src/ui/expression.js`, `src/render/canvas2d.js`.
+   - **Especificação:**
+     - Caixa de texto de rótulo em expressões de ponto com interpolação ao vivo de `${variável}`, tamanho, ângulo de rotação e posição cardeal configuráveis;
+     - Arraste de pontos $(a, b)$ (livres em 2D) e pontos deslizantes restritos a curvas $(a, f(a))$ atualizando o slider `a` em tempo real.
+
+---
+
+### Fase 6: Ações Reativas (`->`), Ticker Autônomo (`dt`), Eventos `onClick` e Recursão Otimizada (`Dw`)
+**Objetivo:** Transformar o `Motorzaoo` em um motor de simulação interativa e computação algorítmica idêntico ao Desmos.
+
+1. **Operador de Ação (`->`, `OpCode 49`)**:
+   - **Arquivos-alvo:** `src/core/parser.js`, `src/core/state.js`, `src/ui/expression.js`.
+   - **Especificação:**
+     - Sintaxe `a -> a + 1` e listas de ações simultâneas `a -> b, b -> a` avaliadas sobre um **snapshot imutável** do estado anterior (determinismo total);
+     - Botão de execução manual $\to$ na aba esquerda `.dcg-tab` de linhas de ação.
+2. **Motor de Ticker Global (`dt`) e Objetos Clicáveis (`onClick`, `index`)**:
+   - **Arquivos-alvo:** `src/ui/toolbar.js`, `src/main.js`, `src/render/canvas2d.js`.
+   - **Especificação:**
+     - Bloco especial `ticker` ("Run" + "every $X\text{ ms}$") acionado no loop `requestAnimationFrame` com injeção do delta real decorrido `dt` (em segundos);
+     - Propriedade `onClick` no menu de opções de pontos, curvas, polígonos e imagens, injetando a variável contextual `index` quando o elemento clicado pertence a uma lista.
+3. **Funções Recursivas e Otimizador de Cauda (`OpCode 55` & `Dw`)**:
+   - **Arquivos-alvo:** `src/core/parser.js`.
+   - **Especificação:** Suporte a funções auto-referenciais com caso base em chaves ($f(n) = \{n \le 1: 1, f(n-1) + f(n-2)\}$), memoização automática por frame e conversão de recursão linear em laço iterativo até `RECURSIVE_DEPTH_LIMIT`.
+
+---
+
+### Fase 7: Estatística Completa, Distribuições (`OpCode 42`), Gráficos Estatísticos, Inferência e Áudio (`tone`)
+**Objetivo:** Completar a suíte de ciência de dados, probabilidade e acessibilidade sonora.
+
+1. **Catálogo Estatístico e Manipulação de Listas**:
+   - **Arquivos-alvo:** `src/core/parser.js`, `src/core/statistics.js` (novo módulo).
+   - **Especificação:** `mean`, `median`, `stdev`, `stdevp`, `var`, `varp`, `mad`, `cov`, `covp`, `corr`, `spearman`, `quartile`, `quantile`, `stats`, `total`, `length`, `unique`, `sort`, `shuffle`, `join`, `argmin`, `argmax`.
+2. **Distribuições de Probabilidade e PRNG com Semente (`randomSeed`, `OpCode 44`)**:
+   - **Arquivos-alvo:** `src/core/statistics.js`, `src/render/canvas2d.js`, `src/ui/expression.js`.
+   - **Especificação:** `normaldist`, `tdist`, `chisqdist`, `uniformdist`, `binomialdist`, `poissondist`, `geodist`, `discretedist` com plotagem automática da FDP/FMP, sombreamento interativo de área em `.cdf(a, b)`, avaliação `.pdf(x)`, `.inversecdf(p)` e amostragem `.random(n)` reproduzível por semente.
+3. **Visualizações Estatísticas (`histogram`, `boxplot`, `dotplot`) e Bloco `inference`**:
+   - **Arquivos-alvo:** `src/render/canvas2d.js`, `src/ui/expression.js`.
+   - **Especificação:** Renderização nativa de histogramas, diagramas de caixa (com exclusão opcional de outliers) e dotplots, além de testes de hipóteses (`ttest`, `ztest`, `chisqtest`).
+4. **Síntese Sonora (`tone`) e Audio Trace (`Alt+T` / `H`)**:
+   - **Arquivos-alvo:** `src/core/audio.js` (novo módulo), `src/main.js`.
+   - **Especificação:** Função `tone(freq, vol)` baseada na Web Audio API (com polifonia para listas de frequências) e modo de acessibilidade *Audio Trace* (`Alt+T` $\to$ `H`) para percorrer curvas com feedback sonoro estereofônico e marcação de POIs.
+
+---
+
+### Fase 8: Arquitetura de Performance Extrema — POIs por Bissecção, Quadtree BFS, JIT (`Vg`) e Persistência JSON v11
+**Objetivo:** Garantir precisão numérica subpixel, 60 FPS constantes em gráficos gigantescos (como o catálogo de 839 expressões `5ls5ggt5gd`) e compatibilidade com estados JSON.
+
+1. **Amostragem Adaptativa $1 + 4W$ e Detector de Pontos de Interesse (POIs) por Bissecção**:
+   - **Arquivos-alvo:** `src/render/canvas2d.js`, `src/core/poi.js` (novo módulo).
+   - **Especificação:**
+     - Amostragem primária $N = 1 + 4 \times \text{width}$ combinada com **busca binária por bissecção** nos intervalos de mudança de sinal de $f(x)$, $f'(x)$ e $f(x) - g(x)$;
+     - Exibição automática de pontos cinzas clicáveis em raízes, interceptos em $Y$, mínimos/máximos locais e interseções entre duas curvas quando uma expressão está em foco, com *snapping* magnético do cursor e exibição de coordenadas exatas (ou simbólicas via Giac quando aplicável!).
+2. **Plotador Implícito Quadtree BFS com Subdivisão Adaptativa + Marcha de Quadrados**:
+   - **Arquivos-alvo:** `src/render/implicit2d.js`, `src/render/canvas2d.js`.
+   - **Especificação:** Refinar a malha implícita 2D para operar com subdivisão adaptativa de quadtree (nível inicial 5 $\to 1.024$ células, subdividindo até precisão subpixel onde há mudança de sinal ou alta curvatura) combinada com interpolação linear/secante nas bordas e sombreamento exato de desigualdades implícitas.
+3. **Compilador JIT JS (`Vg(e)` via `new Function`) e Isolamento em Web Worker**:
+   - **Arquivos-alvo:** `src/core/compiler.js` (novo módulo), `src/core/worker.js`.
+   - **Especificação:** Compilar as ASTs de expressões numéricas em funções JavaScript monomórficas puras (`new Function`) executadas sobre `Float64Array`, reduzindo o tempo de avaliação de malhas e listas de 10.000 elementos a sub-milissegundo.
+4. **Atalhos Inline de Blocos (`note`, `folder`, `table`, `ticker`, `image`) e Serialização JSON Compatível (`getState` / `setState`)**:
+   - **Arquivos-alvo:** `src/ui/expression.js`, `src/core/state.js`.
+   - **Especificação:**
+     - Digitar `note` (ou `"`), `folder`, `table`, `ticker` ou `image` em uma linha vazia converte o bloco instantaneamente;
+     - Importação e exportação do estado completo do gráfico em formato JSON compatível com o esquema `version: 11` do Desmos (`Calc.getState()` / `Calc.setState()`), permitindo carregar inclusive gráficos do Desmos diretamente no `Motorzaoo`.

@@ -493,4 +493,72 @@ export class MatrixEngine {
         const rowsStr = m.map(row => row.join(', ')).join('], [');
         return `[[${rowsStr}]]`;
     }
+
+    /**
+     * Formata matriz para LaTeX com truncamento visual elegante (⋯) estilo Desmos (jxe/pre)
+     * Quando linhas > maxRows ou colunas > maxCols, exibe reticências e selo de dimensão
+     */
+    static formatMatrixLaTeX(m: number[][], maxRows: number = 6, maxCols: number = 6): { latex: string; isTruncated: boolean; rows: number; cols: number } {
+        if (!this.isMatrix(m)) return { latex: '\\begin{bmatrix}\\end{bmatrix}', isTruncated: false, rows: 0, cols: 0 };
+        const dim = this.getDimensions(m);
+        const isTruncated = dim.rows > maxRows || dim.cols > maxCols;
+
+        if (!isTruncated) {
+            const rowStrs = m.map(row => row.join(' & ')).join(' \\\\ ');
+            return {
+                latex: `\\begin{bmatrix} ${rowStrs} \\end{bmatrix}`,
+                isTruncated: false,
+                rows: dim.rows,
+                cols: dim.cols
+            };
+        }
+
+        // Truncamento visual estilo Desmos: exibe primeiras linhas/colunas, \cdots, \vdots, \ddots e última linha/coluna
+        const visibleRows = Math.min(5, dim.rows - 1);
+        const visibleCols = Math.min(5, dim.cols - 1);
+        const truncGrid: string[][] = [];
+
+        for (let r = 0; r < visibleRows; r++) {
+            const row: string[] = [];
+            for (let c = 0; c < visibleCols; c++) {
+                row.push(m[r][c].toString());
+            }
+            if (dim.cols > maxCols) {
+                row.push('\\cdots');
+                row.push(m[r][dim.cols - 1].toString());
+            }
+            truncGrid.push(row);
+        }
+
+        if (dim.rows > maxRows) {
+            const vdotsRow: string[] = [];
+            for (let c = 0; c < visibleCols; c++) {
+                vdotsRow.push('\\vdots');
+            }
+            if (dim.cols > maxCols) {
+                vdotsRow.push('\\ddots');
+                vdotsRow.push('\\vdots');
+            }
+            truncGrid.push(vdotsRow);
+
+            // Última linha
+            const lastRow: string[] = [];
+            for (let c = 0; c < visibleCols; c++) {
+                lastRow.push(m[dim.rows - 1][c].toString());
+            }
+            if (dim.cols > maxCols) {
+                lastRow.push('\\cdots');
+                lastRow.push(m[dim.rows - 1][dim.cols - 1].toString());
+            }
+            truncGrid.push(lastRow);
+        }
+
+        const latex = `\\begin{bmatrix} ${truncGrid.map(r => r.join(' & ')).join(' \\\\ ')} \\end{bmatrix}`;
+        return {
+            latex,
+            isTruncated: true,
+            rows: dim.rows,
+            cols: dim.cols
+        };
+    }
 }

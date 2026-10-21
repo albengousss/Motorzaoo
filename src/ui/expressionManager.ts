@@ -1,5 +1,7 @@
 import { StateManager } from '../core/stateManager';
 import { MathEngine } from '../core/mathEngine';
+import { MatrixEngine } from '../core/matrixEngine';
+import { RationalEngine } from '../core/rationalEngine';
 import { PrattParser } from '../core/prattParser';
 import { HistoryManager, type BlockSnapshot } from '../core/historyManager';
 import { convertLatexToMarkup } from 'mathlive';
@@ -587,20 +589,40 @@ export class ExpressionManager {
             }
             const rows = grid.length || 1;
             const cols = Math.max(1, ...grid.map(r => r.length));
+
+            // Preserva células em _mutableOriginalMatrix (estilo Desmos mutable_originalMatrix / bq)
+            if (!(block as any)._mutableOriginalMatrix) {
+                (block as any)._mutableOriginalMatrix = [];
+            }
+            const mut = (block as any)._mutableOriginalMatrix;
+            for (let r = 0; r < grid.length; r++) {
+                if (!mut[r]) mut[r] = [];
+                for (let c = 0; c < grid[r].length; c++) {
+                    const cell = grid[r][c];
+                    if (cell !== undefined && cell.trim() !== '') {
+                        mut[r][c] = cell;
+                    }
+                }
+            }
+
             return { prefix, rows, cols, grid, suffix };
         };
 
         const buildResizedMatrixLatex = (prefix: string, newRows: number, newCols: number, existingGrid: string[][], suffix: string) => {
+            const mut: string[][] = (block as any)._mutableOriginalMatrix || [];
             const rowStrs: string[] = [];
             for (let r = 0; r < newRows; r++) {
                 const colStrs: string[] = [];
                 for (let c = 0; c < newCols; c++) {
-                    const val = existingGrid[r] && existingGrid[r][c] !== undefined && existingGrid[r][c].trim() !== ''
-                        ? existingGrid[r][c].trim()
-                        : '0';
+                    let val = '0';
+                    if (existingGrid[r] && existingGrid[r][c] !== undefined && existingGrid[r][c].trim() !== '') {
+                        val = existingGrid[r][c].trim();
+                    } else if (mut[r] && mut[r][c] !== undefined && mut[r][c].trim() !== '') {
+                        val = mut[r][c].trim();
+                    }
                     colStrs.push(val);
                 }
-                rowStrs.join && rowStrs.push(colStrs.join(' & '));
+                rowStrs.push(colStrs.join(' & '));
             }
             return `${prefix}\\begin{bmatrix} ${rowStrs.join(' \\\\ ')} \\end{bmatrix}${suffix}`;
         };
@@ -1157,6 +1179,61 @@ export class ExpressionManager {
         });
 
         mf.addEventListener('keydown', (e: KeyboardEvent) => {
+            // Atalho Desmos Ctrl+Shift+Setas (Al / yq / vke: redimensionamento matricial e convert-list)
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+                const currentLatex = (mf as any).getValue?.('latex') || '';
+                const parsed = parseMatrixFromLatex(currentLatex);
+                if (parsed) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    let newRows = parsed.rows;
+                    let newCols = parsed.cols;
+                    if (e.key === 'ArrowDown') newRows = Math.min(8, parsed.rows + 1);
+                    else if (e.key === 'ArrowUp') newRows = Math.max(1, parsed.rows - 1);
+                    else if (e.key === 'ArrowRight') newCols = Math.min(8, parsed.cols + 1);
+                    else if (e.key === 'ArrowLeft') newCols = Math.max(1, parsed.cols - 1);
+
+                    if (newRows !== parsed.rows || newCols !== parsed.cols) {
+                        const newLatex = buildResizedMatrixLatex(parsed.prefix, newRows, newCols, parsed.grid, parsed.suffix);
+                        (mf as any).setValue(newLatex, { mode: 'math' });
+                        updateHandlePosition();
+                        this.onUpdateCallback();
+                        HistoryManager.recordState(true);
+                    }
+                    return;
+                }
+
+                // Conversão de lista [x] em matriz (Desmos convert-list: [1, 2] -> matriz)
+                const listMatch = currentLatex.match(/^([a-zA-Z_][a-zA-Z0-9_]*\s*=\s*)?(?:\\left\[|\[)([\s\S]*?)(?:\\right\]|\])$/);
+                if (listMatch && (e.key === 'ArrowDown' || e.key === 'ArrowRight')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const prefix = listMatch[1] || '';
+                    const inner = listMatch[2] || '';
+                    const items = inner.split(',').map((s: string) => s.trim()).filter(Boolean);
+                    const grid: string[][] = [];
+                    if (e.key === 'ArrowRight') {
+                        // Converte lista em vetor linha (1 x N)
+                        grid.push(items.length > 0 ? items : ['0']);
+                    } else {
+                        // Converte lista em vetor coluna (N x 1)
+                        if (items.length > 0) {
+                            for (const it of items) grid.push([it]);
+                        } else {
+                            grid.push(['0']);
+                        }
+                    }
+                    const rCount = grid.length;
+                    const cCount = Math.max(1, ...grid.map(r => r.length));
+                    const matLatex = this.generateMatrixLatex(rCount, cCount, grid);
+                    (mf as any).setValue(prefix + matLatex, { mode: 'math' });
+                    updateHandlePosition();
+                    this.onUpdateCallback();
+                    HistoryManager.recordState(true);
+                    return;
+                }
+            }
+
             if (e.key === 'Enter') {
                 e.preventDefault();
                 this.addBlock();
@@ -2534,28 +2611,9 @@ export class ExpressionManager {
         return false;
     }
 
-    static toFraction(val: number, maxDen: number = 10000): { num: number, den: number } | null {
-        if (isNaN(val) || !isFinite(val)) return null;
-        const sign = val < 0 ? -1 : 1;
-        const x = Math.abs(val);
-        let h1 = 1, h0 = 0, k1 = 0, k0 = 1;
-        let b = x;
-        do {
-            const a = Math.floor(b);
-            let aux = h1; h1 = a * h1 + h0; h0 = aux;
-            aux = k1; k1 = a * k1 + k0; k0 = aux;
-            if (k1 > maxDen) break;
-            const approx = h1 / k1;
-            if (Math.abs(approx - x) < 1e-9) {
-                return { num: sign * h1, den: k1 };
-            }
-            b = 1 / (b - a);
-        } while (isFinite(b) && Math.abs(x - h1 / k1) > 1e-9);
-
-        if (k1 <= maxDen && Math.abs(h1 / k1 - x) < 1e-5) {
-            return { num: sign * h1, den: k1 };
-        }
-        return null;
+    static toFraction(val: number, maxDen: number = 100000): { num: number, den: number } | null {
+        const r = RationalEngine.fromNumber(val, maxDen);
+        return r ? { num: r.n, den: r.d } : null;
     }
 
     static parseFractionInfo(mathStr: string): { fractionLatex: string, decimalStr: string, isRational: boolean } | null {
@@ -2571,13 +2629,13 @@ export class ExpressionManager {
         if (fracMatch) {
             const num = parseInt(fracMatch[1]);
             const den = parseInt(fracMatch[2]);
-            if (den !== 0) {
-                const dec = num / den;
-                const decStr = parseFloat(dec.toFixed(8)).toString();
-                const sign = num < 0 ? '-' : '';
-                const absNum = Math.abs(num);
-                const fracLatex = den === 1 ? `${num}` : `${sign}\\frac{${absNum}}{${den}}`;
-                return { fractionLatex: fracLatex, decimalStr: decStr, isRational: den !== 1 };
+            const r = RationalEngine.create(num, den);
+            if (r) {
+                return {
+                    fractionLatex: RationalEngine.toLatex(r),
+                    decimalStr: RationalEngine.toDecimalString(r),
+                    isRational: r.d !== 1
+                };
             }
         }
 
@@ -2587,10 +2645,13 @@ export class ExpressionManager {
             const sign = latexMatch[1] === '-' ? -1 : 1;
             const num = parseInt(latexMatch[2]) * sign;
             const den = parseInt(latexMatch[3]);
-            if (den !== 0) {
-                const dec = num / den;
-                const decStr = parseFloat(dec.toFixed(8)).toString();
-                return { fractionLatex: clean, decimalStr: decStr, isRational: den !== 1 };
+            const r = RationalEngine.create(num, den);
+            if (r) {
+                return {
+                    fractionLatex: RationalEngine.toLatex(r),
+                    decimalStr: RationalEngine.toDecimalString(r),
+                    isRational: r.d !== 1
+                };
             }
         }
 
@@ -2600,12 +2661,13 @@ export class ExpressionManager {
             if (Number.isInteger(numVal)) {
                 return null;
             }
-            const rational = ExpressionManager.toFraction(numVal);
-            if (rational && rational.den > 1 && rational.den <= 10000) {
-                const sign = rational.num < 0 ? '-' : '';
-                const fracLatex = `${sign}\\frac{${Math.abs(rational.num)}}{${rational.den}}`;
-                const decStr = parseFloat(numVal.toFixed(8)).toString();
-                return { fractionLatex: fracLatex, decimalStr: decStr, isRational: true };
+            const r = RationalEngine.fromNumber(numVal);
+            if (r && r.d > 1 && r.d <= 100000) {
+                return {
+                    fractionLatex: RationalEngine.toLatex(r),
+                    decimalStr: RationalEngine.toDecimalString(r),
+                    isRational: true
+                };
             }
             return null;
         }
@@ -2654,16 +2716,43 @@ export class ExpressionManager {
                 if (matrixMatch || isExplicitBmatrix) {
                     try {
                         let katexMatrix = mathStr;
+                        let isTruncated = false;
+                        let dimRows = 0;
+                        let dimCols = 0;
+
                         if (matrixMatch) {
                             const rowStrings = mathStr.slice(1, -1).split(/\],\s*\[/);
-                            const katexRows = rowStrings.map((r: string) => {
-                                const cells = r.replace(/[\[\]]/g, '').split(',').map((c: string) => c.trim());
-                                return cells.join(' & ');
-                            }).join(' \\\\ ');
-                            katexMatrix = `\\begin{bmatrix} ${katexRows} \\end{bmatrix}`;
+                            const parsedGrid: number[][] = [];
+                            let allNumeric = true;
+                            for (const r of rowStrings) {
+                                const cells = r.replace(/[\[\]]/g, '').split(',').map((c: string) => {
+                                    const num = Number(c.trim());
+                                    if (isNaN(num)) allNumeric = false;
+                                    return num;
+                                });
+                                parsedGrid.push(cells);
+                            }
+
+                            if (allNumeric && parsedGrid.length > 0) {
+                                const fmt = MatrixEngine.formatMatrixLaTeX(parsedGrid, 6, 6);
+                                katexMatrix = fmt.latex;
+                                isTruncated = fmt.isTruncated;
+                                dimRows = fmt.rows;
+                                dimCols = fmt.cols;
+                            } else {
+                                const katexRows = rowStrings.map((r: string) => {
+                                    const cells = r.replace(/[\[\]]/g, '').split(',').map((c: string) => c.trim());
+                                    return cells.join(' & ');
+                                }).join(' \\\\ ');
+                                katexMatrix = `\\begin{bmatrix} ${katexRows} \\end{bmatrix}`;
+                            }
                         }
+
                         const html = this.renderLatexMarkup(katexMatrix);
-                        resDisplay.innerHTML = `<span class="font-semibold text-gray-800 select-text">= <span style="display:inline-block; vertical-align: middle;">${html}</span></span>`;
+                        const badgeHtml = isTruncated
+                            ? `<span class="matrix-dim-badge ml-1.5 inline-block text-[10px] font-sans font-semibold text-gray-500 bg-gray-100 border border-gray-300 rounded px-1 py-0.2 select-none">${dimRows} × ${dimCols}</span>`
+                            : '';
+                        resDisplay.innerHTML = `<span class="font-semibold text-gray-800 select-text">= <span style="display:inline-block; vertical-align: middle;">${html}</span>${badgeHtml}</span>`;
                         this.updateMatrixBlockVisual(block, true);
                         return;
                     } catch(e) {
