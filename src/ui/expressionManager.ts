@@ -607,6 +607,28 @@ export class ExpressionManager {
         const mathEl = mf as any;
         let isDraggingHandle = false;
 
+        const isCursorInsideMatrix = () => {
+            const model = (mf as any).model || (mf as any)._mathfield?.model;
+            const env = model?.parentEnvironment?.environmentName;
+            if (env && (env.includes('matrix') || env === 'array')) {
+                return true;
+            }
+            const shadow = mf.shadowRoot;
+            if (shadow) {
+                if (shadow.querySelector('.ML__matrix .ML__caret, .ML__matrix .ML__focused, .ML__matrix .ML__selected')) {
+                    return true;
+                }
+            }
+            // Fallback para ambientes de teste (ex: jsdom) onde layout visual de caret não é gerado
+            const val = (typeof mathEl.getValue === 'function' ? mathEl.getValue('latex') : mathEl.value) || '';
+            const trimmed = val.replace(/^[a-zA-Z_][a-zA-Z0-9_]*\s*=\s*/, '').trim();
+            if (trimmed.startsWith('\\begin{') && trimmed.endsWith('\\end{bmatrix}')) {
+                const isPure = !trimmed.includes('+') && !trimmed.includes('*') && !trimmed.includes('-');
+                if (isPure) return true;
+            }
+            return false;
+        };
+
         const updateHandlePosition = () => {
             const latex = typeof mathEl.getValue === 'function' ? mathEl.getValue('latex') : (mathEl.value || '');
             const hasMatrix = /\\begin\{(?:b|p|v|V)?matrix\}/.test(latex);
@@ -616,9 +638,9 @@ export class ExpressionManager {
                 return;
             }
 
-            const isHovered = block.matches(':hover');
             const isFocused = block.classList.contains('is-focused') || document.activeElement === mf || (mf.shadowRoot && mf.shadowRoot.activeElement);
-            if (!isDraggingHandle && !isFocused && !isHovered) {
+            const inMatrix = isCursorInsideMatrix();
+            if (!isDraggingHandle && (!isFocused || !inMatrix)) {
                 matrixHandle.style.display = 'none';
                 matrixTooltip.style.display = 'none';
                 return;
@@ -753,7 +775,7 @@ export class ExpressionManager {
         matrixHandle.addEventListener('pointerup', endDragHandle);
         matrixHandle.addEventListener('pointercancel', endDragHandle);
 
-        block.addEventListener('mouseenter', () => updateHandlePosition());
+        mf.addEventListener('selection-change', () => updateHandlePosition());
         block.addEventListener('mouseleave', () => {
             if (!isDraggingHandle) updateHandlePosition();
         });
@@ -862,7 +884,6 @@ export class ExpressionManager {
             'det': '\\det',
             'rref': '\\operatorname{rref}',
             'trace': '\\operatorname{trace}',
-            'tr': '\\operatorname{tr}',
             'rank': '\\operatorname{rank}',
             'transpose': '\\operatorname{transpose}',
             'inv': '\\operatorname{inv}',
@@ -870,8 +891,20 @@ export class ExpressionManager {
             '->': '\\to'
         };
         const currentBindings = mathField.keybindings || [];
-        const keysToOverride = new Set(['#', 'shift+[Digit3]', '/', '[Slash]', '[NumpadDivide]', '*']);
-        const filteredBindings = currentBindings.filter((b: any) => !keysToOverride.has(b.key));
+        const keysToOverride = new Set([
+            '#', 'shift+[Digit3]',
+            '/', '[Slash]', '[NumpadDivide]',
+            '*',
+            '\\', '[Backslash]', 'Backslash', '[IntlBackslash]', 'IntlBackslash',
+            ']', '[BracketRight]', 'BracketRight',
+            '[', '[BracketLeft]', 'BracketLeft'
+        ]);
+        const filteredBindings = currentBindings.filter((b: any) => {
+            if (keysToOverride.has(b.key)) return false;
+            const cmd = Array.isArray(b.command) ? b.command[0] : b.command;
+            if (cmd === 'switchMode') return false;
+            return true;
+        });
         mathField.keybindings = [
             { key: '#', ifMode: 'math', command: ['insert', '\\#'] },
             { key: 'shift+[Digit3]', ifMode: 'math', command: ['insert', '\\#'] },
@@ -879,6 +912,10 @@ export class ExpressionManager {
             { key: '[Slash]', ifMode: 'math', command: ['insert', '\\frac{#@}{#?}'] },
             { key: '[NumpadDivide]', ifMode: 'math', command: ['insert', '\\frac{#@}{#?}'] },
             { key: '*', ifMode: 'math', command: ['insert', '\\cdot'] },
+            { key: ']', ifMode: 'math', command: ['insert', ']'] },
+            { key: '[BracketRight]', ifMode: 'math', command: ['insert', ']'] },
+            { key: '[', ifMode: 'math', command: ['insert', '['] },
+            { key: '[BracketLeft]', ifMode: 'math', command: ['insert', '['] },
             ...filteredBindings
         ];
         mathField.style.setProperty('--contains-highlight-background', 'transparent');
@@ -1054,6 +1091,7 @@ export class ExpressionManager {
         };
 
         let lastPowerTime = 0;
+        let justMovedToSuperscript = false;
         const handlePower = (e: Event) => {
             e.preventDefault();
             e.stopPropagation();
@@ -1062,6 +1100,7 @@ export class ExpressionManager {
                 return;
             }
             lastPowerTime = now;
+            justMovedToSuperscript = true;
             (mf as any).executeCommand('moveToSuperscript');
         };
 
@@ -1144,6 +1183,12 @@ export class ExpressionManager {
                 handleFraction(e);
             } else if (isCaretKey(e)) {
                 handlePower(e);
+            } else if (e.key === ']' || e.code === 'BracketRight') {
+                e.preventDefault();
+                (mf as any).executeCommand(['insert', ']']);
+            } else if (e.key === '[' || e.code === 'BracketLeft') {
+                e.preventDefault();
+                (mf as any).executeCommand(['insert', '[']);
             }
         });
 
@@ -1151,16 +1196,27 @@ export class ExpressionManager {
             if (e.data === '/') {
                 handleFraction(e);
             } else if (e.data === '^') {
-                handlePower(e);
+                if (justMovedToSuperscript) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    justMovedToSuperscript = false;
+                } else {
+                    handlePower(e);
+                }
             } else if (typeof e.data === 'string' && e.data.startsWith('^')) {
                 // Em teclados ABNT2, a combinação da tecla morta '^' com o próximo caractere gera '^2', etc.
                 e.preventDefault();
                 e.stopPropagation();
-                (mf as any).executeCommand('moveToSuperscript');
-                const remainder = e.data.slice(1);
+                if (!justMovedToSuperscript) {
+                    (mf as any).executeCommand('moveToSuperscript');
+                }
+                justMovedToSuperscript = false;
+                const remainder = e.data.replace(/^\^+/, '');
                 if (remainder) {
                     (mf as any).executeCommand(['insert', remainder]);
                 }
+            } else {
+                justMovedToSuperscript = false;
             }
         });
 
@@ -1228,6 +1284,17 @@ export class ExpressionManager {
                 const matLatex = this.generateMatrixLatex(rCount, cCount);
                 mathEl.setValue(prefix + matLatex, { mode: 'math' });
                 mf.focus();
+                try {
+                    mathEl.executeCommand('moveToMathFieldStart');
+                    const steps = prefix ? prefix.trim().length + 1 : 1;
+                    for (let i = 0; i < steps; i++) mathEl.executeCommand('moveToNextChar');
+                    if (mf.shadowRoot) {
+                        const firstCell = mf.shadowRoot.querySelector('.ML__matrix td, .ML__matrix [data-atom-id], .ML__matrix span');
+                        if (firstCell && typeof (firstCell as HTMLElement).click === 'function') {
+                            (firstCell as HTMLElement).click();
+                        }
+                    }
+                } catch (_) {}
                 updateHandlePosition();
                 this.onUpdateCallback();
                 HistoryManager.recordState(true);
@@ -1243,6 +1310,17 @@ export class ExpressionManager {
                 const matLatex = this.generateMatrixLatex(2, 2);
                 mathEl.setValue(prefix + matLatex, { mode: 'math' });
                 mf.focus();
+                try {
+                    mathEl.executeCommand('moveToMathFieldStart');
+                    const steps = prefix ? prefix.trim().length + 1 : 1;
+                    for (let i = 0; i < steps; i++) mathEl.executeCommand('moveToNextChar');
+                    if (mf.shadowRoot) {
+                        const firstCell = mf.shadowRoot.querySelector('.ML__matrix td, .ML__matrix [data-atom-id], .ML__matrix span');
+                        if (firstCell && typeof (firstCell as HTMLElement).click === 'function') {
+                            (firstCell as HTMLElement).click();
+                        }
+                    }
+                } catch (_) {}
                 updateHandlePosition();
                 this.onUpdateCallback();
                 HistoryManager.recordState(true);
@@ -1569,8 +1647,25 @@ export class ExpressionManager {
             }
         }
 
-        if (targetBlock && typeof (targetBlock as any)._updateMatrixHandle === 'function') {
-            (targetBlock as any)._updateMatrixHandle();
+        if (targetBlock) {
+            const targetMf = targetBlock.querySelector('math-field') as any;
+            if (targetMf && autoFocus) {
+                targetMf.focus();
+                try {
+                    targetMf.executeCommand('moveToMathFieldStart');
+                    const steps = prefix ? prefix.trim().length + 1 : 1;
+                    for (let i = 0; i < steps; i++) targetMf.executeCommand('moveToNextChar');
+                    if (targetMf.shadowRoot) {
+                        const firstCell = targetMf.shadowRoot.querySelector('.ML__matrix td, .ML__matrix [data-atom-id], .ML__matrix span');
+                        if (firstCell && typeof (firstCell as HTMLElement).click === 'function') {
+                            (firstCell as HTMLElement).click();
+                        }
+                    }
+                } catch (_) {}
+            }
+            if (typeof (targetBlock as any)._updateMatrixHandle === 'function') {
+                (targetBlock as any)._updateMatrixHandle();
+            }
         }
 
         this.updateBlockNumbers();

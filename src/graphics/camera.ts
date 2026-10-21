@@ -5,15 +5,16 @@ export class Camera {
     static isInitialized = false;
 
     /** Calcula a proporção real da tela na primeira vez que abre */
+    /** Calcula a proporção real da tela na primeira vez que abre (Padrão Desmos: X fixo em [-10, 10], Y ajustado para 1:1) */
     static resize(w: number, h: number) {
         if (!this.isInitialized && w > 0 && h > 0) {
             this.width = w;
             this.height = h;
-            const ratio = w / h;
-            this.yMin = -10;
-            this.yMax = 10;
-            this.xMin = -10 * ratio;
-            this.xMax = 10 * ratio;
+            this.xMin = -10;
+            this.xMax = 10;
+            const yHalf = 10 * (h / (w || 1));
+            this.yMin = -yHalf;
+            this.yMax = yHalf;
             this.isInitialized = true;
         } else if (this.isInitialized && w > 0 && h > 0 && this.width > 0 && this.height > 0) {
             const mathWidth = this.xMax - this.xMin;

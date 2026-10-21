@@ -7,6 +7,7 @@ import { StateManager } from '../src/core/stateManager';
 import { ExpressionManager } from '../src/ui/expressionManager';
 import { MatrixEngine } from '../src/core/matrixEngine';
 import { MathEngine } from '../src/core/mathEngine';
+import { Camera } from '../src/graphics/camera';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -236,5 +237,78 @@ describe('Regression Suite: 2D z-sliders, GLSL uniforms, ABNT2 deadkeys, KaTeX f
         expect(visBtn.style.border).toMatch(/2px solid (?:#2d70b3|rgb\(45, 112, 179\))/);
         expect(visBtn.style.border).not.toContain('#ffffff');
         expect(visBtn.style.boxShadow).toBe('none');
+    });
+
+    it('Camera initialization fixes X in [-10, 10] with 1:1 square aspect ratio for Y (Desmos standard)', () => {
+        Camera.isInitialized = false;
+        Camera.resize(800, 600); // 4:3 aspect ratio
+
+        // Horizontal axis MUST be fixed to [-10, 10]
+        expect(Camera.xMin).toBe(-10);
+        expect(Camera.xMax).toBe(10);
+
+        // Vertical axis MUST be 10 * (h / w) = 10 * 0.75 = 7.5
+        expect(Camera.yMin).toBeCloseTo(-7.5, 5);
+        expect(Camera.yMax).toBeCloseTo(7.5, 5);
+
+        // Reset must restore the exact same Desmos default
+        Camera.reset();
+        expect(Camera.xMin).toBe(-10);
+        expect(Camera.xMax).toBe(10);
+        expect(Camera.yMin).toBeCloseTo(-7.5, 5);
+        expect(Camera.yMax).toBeCloseTo(7.5, 5);
+
+        // Home button isAtDefault check:
+        const expectedYHalf = 10 * (Camera.height / (Camera.width || 1));
+        const isAtDefault = (
+            Math.abs(Camera.xMin - (-10)) < 1e-3 &&
+            Math.abs(Camera.xMax - 10) < 1e-3 &&
+            Math.abs(Camera.yMin - (-expectedYHalf)) < 1e-3 &&
+            Math.abs(Camera.yMax - expectedYHalf) < 1e-3
+        );
+        expect(isAtDefault).toBe(true);
+    });
+
+    it('verifies that "tr" is removed from inlineShortcuts while "trace" and "matrix" are preserved', () => {
+        document.body.innerHTML = `
+            <div id="expressions-list"></div>
+            <button id="add-expression-btn"></button>
+            <div id="sidebar"></div>
+        `;
+        ExpressionManager.init();
+        const blockId = ExpressionManager.addBlock(false, 'x');
+        const block = document.getElementById(blockId)!;
+        const mf = block.querySelector('math-field') as any;
+
+        expect(mf.inlineShortcuts).toHaveProperty('matrix');
+        expect(mf.inlineShortcuts).toHaveProperty('matriz');
+        expect(mf.inlineShortcuts).toHaveProperty('trace');
+        expect(mf.inlineShortcuts).toHaveProperty('det');
+        // 'tr' MUST NOT be an inline shortcut because it collides with typing 'matrix'
+        expect(mf.inlineShortcuts).not.toHaveProperty('tr');
+    });
+
+    it('verifies keybindings protect closing bracket "]" from triggering LaTeX Backslash mode on ABNT2', () => {
+        document.body.innerHTML = `
+            <div id="expressions-list"></div>
+            <button id="add-expression-btn"></button>
+            <div id="sidebar"></div>
+        `;
+        ExpressionManager.init();
+        const blockId = ExpressionManager.addBlock(false, 'x');
+        const block = document.getElementById(blockId)!;
+        const mf = block.querySelector('math-field') as any;
+
+        // Ensure keybindings do NOT contain switchMode for backslash
+        const bindings = mf.keybindings || [];
+        const switchModeBindings = bindings.filter((b: any) => {
+            const cmd = Array.isArray(b.command) ? b.command[0] : b.command;
+            return cmd === 'switchMode';
+        });
+        expect(switchModeBindings).toHaveLength(0);
+
+        // Ensure keybindings have explicit mappings for brackets
+        const bracketBindings = bindings.filter((b: any) => b.key === ']' || b.key === '[');
+        expect(bracketBindings.length).toBeGreaterThanOrEqual(2);
     });
 });

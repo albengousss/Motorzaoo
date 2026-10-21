@@ -1819,6 +1819,7 @@ function compileAllExpressions() {
                             isHidden: !item.visible
                         });
                         ExpressionManager.setResult(item.id, `= ${PointEngine.formatPointDisplay(evalRes)}`);
+                        ExpressionManager.setError(item.id, null);
                         ExpressionManager.setSliderSuggestions(item.id, [], () => {});
                         return;
                     }
@@ -1830,6 +1831,7 @@ function compileAllExpressions() {
                         } else {
                             ExpressionManager.setResult(item.id, `= ${MatrixEngine.formatMatrixDisplay(evalRes)}`);
                         }
+                        ExpressionManager.setError(item.id, null);
                         ExpressionManager.setSliderSuggestions(item.id, [], () => {});
                         return;
                     }
@@ -2146,9 +2148,10 @@ function compileAllExpressions() {
 function updateZoomHomeButton() {
     const resetBtn = document.getElementById('reset-view-btn');
     if (!resetBtn) return;
+    const expectedYHalf = 10 * (Camera.height / (Camera.width || 1));
     const isAtDefault = StateManager.viewMode === '3d'
         ? (Math.abs(Camera3D.distance - 18) < 1e-2 && Math.abs(Camera3D.theta - Math.PI / 4) < 1e-2 && Math.abs(Camera3D.phi - Math.PI / 6) < 1e-2 && Math.abs(Camera3D.target[0]) < 1e-3 && Math.abs(Camera3D.target[1]) < 1e-3 && Math.abs(Camera3D.target[2]) < 1e-3)
-        : (Math.abs(Camera.xMin - (-10)) < 1e-3 && Math.abs(Camera.xMax - 10) < 1e-3 && Math.abs(Camera.yMin - (-10)) < 1e-3 && Math.abs(Camera.yMax - 10) < 1e-3);
+        : (Math.abs(Camera.xMin - (-10)) < 1e-3 && Math.abs(Camera.xMax - 10) < 1e-3 && Math.abs(Camera.yMin - (-expectedYHalf)) < 1e-3 && Math.abs(Camera.yMax - expectedYHalf) < 1e-3);
     
     if (isAtDefault) {
         resetBtn.classList.add('hidden');
