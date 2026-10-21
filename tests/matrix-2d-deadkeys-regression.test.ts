@@ -311,4 +311,116 @@ describe('Regression Suite: 2D z-sliders, GLSL uniforms, ABNT2 deadkeys, KaTeX f
         const bracketBindings = bindings.filter((b: any) => b.key === ']' || b.key === '[');
         expect(bracketBindings.length).toBeGreaterThanOrEqual(2);
     });
+
+    it('ExpressionManager.setResult renders matrix result as HTML markup without raw \\begin{bmatrix} string leakage', () => {
+        document.body.innerHTML = `
+            <div id="expressions-list"></div>
+            <button id="add-expression-btn"></button>
+            <div id="sidebar"></div>
+        `;
+        ExpressionManager.init();
+        const blockId = ExpressionManager.addBlock(false, 'a');
+        const block = document.getElementById(blockId)!;
+        const resDisplay = block.querySelector('.result-display') as HTMLElement;
+
+        // Set matrix result
+        ExpressionManager.setResult(blockId, '= [[0, 0], [0, 0], [0, 0]]');
+
+        // MUST NOT display raw LaTeX string as text
+        const text = resDisplay.textContent || '';
+        expect(text).not.toContain('\\begin{bmatrix}');
+        expect(text).not.toContain('\\end{bmatrix}');
+        // MUST contain rendered markup
+        expect(resDisplay.innerHTML).toContain('ML__');
+        expect(block.dataset.isMatrix).toBe('true');
+
+        const visBtn = block.querySelector('.visibility-toggle') as HTMLElement;
+        expect(visBtn.style.display).toBe('none');
+    });
+
+    it('ExpressionManager.setResult renders fraction toggle and markup when toggled to fraction', () => {
+        document.body.innerHTML = `
+            <div id="expressions-list"></div>
+            <button id="add-expression-btn"></button>
+            <div id="sidebar"></div>
+        `;
+        ExpressionManager.init();
+        const blockId = ExpressionManager.addBlock(false, '1.5');
+        const block = document.getElementById(blockId)!;
+        const resDisplay = block.querySelector('.result-display') as HTMLElement;
+
+        // Set decimal result that is rational
+        ExpressionManager.setResult(blockId, '= 1.5');
+        const fracBtn = resDisplay.querySelector('.fraction-toggle-btn') as HTMLButtonElement;
+        expect(fracBtn).toBeTruthy();
+        const text = resDisplay.textContent || '';
+        expect(text).toContain('1.5');
+
+        // Click to toggle fraction
+        fracBtn.click();
+        expect((block as any)._showFraction).toBe(true);
+        // In fraction mode, rendered markup should be present
+        expect(resDisplay.innerHTML).toContain('ML__');
+    });
+
+    it('Camera maintains X in [-10, 10] across initial layout resizing until user pans or zooms', () => {
+        Camera.reset();
+        expect(Camera.hasUserInteracted).toBe(false);
+
+        // Initial measurement at full window width (e.g. 1720x900)
+        Camera.resize(1720, 900);
+        expect(Camera.xMin).toBe(-10);
+        expect(Camera.xMax).toBe(10);
+
+        // Sidebar layout settles at 1220x900 before user interaction
+        Camera.resize(1220, 900);
+        expect(Camera.xMin).toBe(-10);
+        expect(Camera.xMax).toBe(10);
+        const expectedYHalf = 10 * (900 / 1220);
+        expect(Camera.yMin).toBeCloseTo(-expectedYHalf, 5);
+        expect(Camera.yMax).toBeCloseTo(expectedYHalf, 5);
+
+        // Once user interacts (e.g. pan):
+        Camera.pan(50, 0);
+        expect(Camera.hasUserInteracted).toBe(true);
+
+        // Reset clears interaction and restores default
+        Camera.reset();
+        expect(Camera.hasUserInteracted).toBe(false);
+        expect(Camera.xMin).toBe(-10);
+        expect(Camera.xMax).toBe(10);
+    });
+
+    it('ExpressionManager hides visibility-toggle on matrix expressions and preserves hidden state on setError(blockId, null)', () => {
+        document.body.innerHTML = `
+            <div id="expressions-list"></div>
+            <button id="add-expression-btn"></button>
+            <div id="sidebar"></div>
+        `;
+        ExpressionManager.init();
+        const blockId = ExpressionManager.addBlock(false, 'a = \\begin{bmatrix} 0 & 0 \\\\ 0 & 0 \\end{bmatrix}');
+        const block = document.getElementById(blockId)!;
+        const visBtn = block.querySelector('.visibility-toggle') as HTMLElement;
+
+        ExpressionManager.updateMatrixBlockVisual(block, true);
+        expect(block.dataset.isMatrix).toBe('true');
+        expect(visBtn.style.display).toBe('none');
+
+        // Clear error should NOT force visibility toggle to flex if isMatrix is true
+        ExpressionManager.setError(blockId, null);
+        expect(visBtn.style.display).toBe('none');
+
+        // Non-matrix restores flex
+        ExpressionManager.updateMatrixBlockVisual(block, false);
+        expect(block.dataset.isMatrix).toBe('false');
+        expect(visBtn.style.display).toBe('flex');
+    });
+
+    it('verifies virtual keyboard CAS tab inserts bmatrix with zeros instead of pmatrix with placeholders', () => {
+        const mainContent = fs.readFileSync(path.resolve(__dirname, '../src/main.ts'), 'utf-8');
+        expect(mainContent).toContain('{ insert: "\\\\begin{bmatrix} 0 & 0 \\\\\\\\ 0 & 0 \\\\end{bmatrix}", label: "Mat 2x2"');
+        expect(mainContent).toContain('{ insert: "\\\\begin{bmatrix} 0 & 0 & 0 \\\\\\\\ 0 & 0 & 0 \\\\\\\\ 0 & 0 & 0 \\\\end{bmatrix}", label: "Mat 3x3"');
+        expect(mainContent).toContain('{ insert: "\\\\begin{bmatrix} 0 \\\\\\\\ 0 \\\\end{bmatrix}", label: "Vet 2D"');
+        expect(mainContent).not.toContain('{ insert: "\\\\begin{pmatrix}#? & #?');
+    });
 });

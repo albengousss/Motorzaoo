@@ -2,6 +2,7 @@ import { StateManager } from '../core/stateManager';
 import { MathEngine } from '../core/mathEngine';
 import { PrattParser } from '../core/prattParser';
 import { HistoryManager, type BlockSnapshot } from '../core/historyManager';
+import { convertLatexToMarkup } from 'mathlive';
 
 export class ExpressionManager {
     static container: HTMLElement = typeof document !== 'undefined' ? document.getElementById('expressions-list')! : (null as any);
@@ -618,13 +619,20 @@ export class ExpressionManager {
                 if (shadow.querySelector('.ML__matrix .ML__caret, .ML__matrix .ML__focused, .ML__matrix .ML__selected')) {
                     return true;
                 }
+                // Se existe cursor/foco ativo no mathfield porém FORA de .ML__matrix (ex: no 'a = ' ou após ']'), cursor está fora da matriz!
+                if (shadow.querySelector('.ML__caret, .ML__focused, .ML__selected')) {
+                    return false;
+                }
             }
             // Fallback para ambientes de teste (ex: jsdom) onde layout visual de caret não é gerado
-            const val = (typeof mathEl.getValue === 'function' ? mathEl.getValue('latex') : mathEl.value) || '';
-            const trimmed = val.replace(/^[a-zA-Z_][a-zA-Z0-9_]*\s*=\s*/, '').trim();
-            if (trimmed.startsWith('\\begin{') && trimmed.endsWith('\\end{bmatrix}')) {
-                const isPure = !trimmed.includes('+') && !trimmed.includes('*') && !trimmed.includes('-');
-                if (isPure) return true;
+            const isTestEnv = typeof navigator !== 'undefined' && /jsdom|node\.js/i.test(navigator.userAgent || '');
+            if (isTestEnv) {
+                const val = (typeof mathEl.getValue === 'function' ? mathEl.getValue('latex') : mathEl.value) || '';
+                const trimmed = val.replace(/^[a-zA-Z_][a-zA-Z0-9_]*\s*=\s*/, '').trim();
+                if (trimmed.startsWith('\\begin{') && trimmed.endsWith('\\end{bmatrix}')) {
+                    const isPure = !trimmed.includes('+') && !trimmed.includes('*') && !trimmed.includes('-');
+                    if (isPure) return true;
+                }
             }
             return false;
         };
@@ -1614,6 +1622,7 @@ export class ExpressionManager {
     }
 
     static updateMatrixBlockVisual(block: HTMLElement, isMatrix: boolean) {
+        block.dataset.isMatrix = isMatrix ? 'true' : 'false';
         const visBtn = block.querySelector('.visibility-toggle') as HTMLElement;
         if (visBtn) {
             visBtn.style.display = isMatrix ? 'none' : 'flex';
@@ -2465,12 +2474,16 @@ export class ExpressionManager {
                 if (tooltipEl) tooltipEl.innerText = '';
             }
             if (visibilityBtn) {
-                visibilityBtn.style.display = 'flex';
-                const curColor = block.dataset.color || '#2d70b3';
-                const isVisible = visibilityBtn.dataset.visible !== 'false';
-                visibilityBtn.style.backgroundColor = isVisible ? curColor : 'transparent';
-                visibilityBtn.style.border = isVisible ? ('2px solid ' + curColor) : ('2px dashed ' + curColor);
-                visibilityBtn.style.boxShadow = 'none';
+                if (block.dataset.isMatrix === 'true') {
+                    visibilityBtn.style.display = 'none';
+                } else {
+                    visibilityBtn.style.display = 'flex';
+                    const curColor = block.dataset.color || '#2d70b3';
+                    const isVisible = visibilityBtn.dataset.visible !== 'false';
+                    visibilityBtn.style.backgroundColor = isVisible ? curColor : 'transparent';
+                    visibilityBtn.style.border = isVisible ? ('2px solid ' + curColor) : ('2px dashed ' + curColor);
+                    visibilityBtn.style.boxShadow = 'none';
+                }
             }
         }
     }
@@ -2600,6 +2613,21 @@ export class ExpressionManager {
         return null;
     }
 
+    static renderLatexMarkup(latex: string): string {
+        const win = typeof window !== 'undefined' ? (window as any) : {};
+        if (typeof win.katex?.renderToString === 'function') {
+            try {
+                return win.katex.renderToString(latex, { throwOnError: false });
+            } catch (_) {}
+        }
+        try {
+            if (typeof convertLatexToMarkup === 'function') {
+                return convertLatexToMarkup(latex);
+            }
+        } catch (_) {}
+        return latex;
+    }
+
     static setResult(id: string, result: string) {
         const block = document.getElementById(id);
         if (block) {
@@ -2615,39 +2643,31 @@ export class ExpressionManager {
                 }
                 resDisplay.classList.remove('hidden');
                 resDisplay.title = result;
-                const win = window as any;
 
                 let mathStr = result.trim();
                 if (mathStr.startsWith('= ')) mathStr = mathStr.substring(2);
                 mathStr = mathStr.replace(/^matrix\s*\[/g, '[').replace(/^list\s*\[/g, '[');
 
-                // Detectar se o resultado é uma matriz: [[1, 2], [3, 4]]
+                // Detectar se o resultado é uma matriz: [[1, 2], [3, 4]] ou \begin{bmatrix} ... \end{bmatrix}
                 const matrixMatch = mathStr.match(/^\[\s*\[(.*)\]\s*\]$/);
-                if (matrixMatch && win.katex) {
+                const isExplicitBmatrix = mathStr.startsWith('\\begin{bmatrix}') || mathStr.includes('\\begin{bmatrix}');
+                if (matrixMatch || isExplicitBmatrix) {
                     try {
-                        const rowStrings = mathStr.slice(1, -1).split(/\],\s*\[/);
-                        const katexRows = rowStrings.map((r: string) => {
-                            const cells = r.replace(/[\[\]]/g, '').split(',').map((c: string) => c.trim());
-                            return cells.join(' & ');
-                        }).join(' \\\\ ');
-                        const katexMatrix = `\\begin{bmatrix} ${katexRows} \\end{bmatrix}`;
-                        const html = win.katex.renderToString(katexMatrix, { throwOnError: false });
-                        resDisplay.innerHTML = `<div class="flex items-center justify-between"><span>= ${html}</span><button class="add-as-block-btn text-[10px] text-purple-600 hover:underline cursor-pointer ml-2 shrink-0 font-bold" title="Adicionar como novo bloco de matriz">+ Bloco</button></div>`;
-                        const addBlockBtn = resDisplay.querySelector('.add-as-block-btn');
-                        if (addBlockBtn) {
-                            addBlockBtn.addEventListener('click', (e) => {
-                                e.stopPropagation();
-                                const parsedGrid = rowStrings.map((r: string) => r.replace(/[\[\]]/g, '').split(',').map((c: string) => c.trim()));
-                                this.addMatrix({
-                                    rows: parsedGrid.length,
-                                    cols: parsedGrid[0]?.length || 1,
-                                    data: parsedGrid
-                                });
-                            });
+                        let katexMatrix = mathStr;
+                        if (matrixMatch) {
+                            const rowStrings = mathStr.slice(1, -1).split(/\],\s*\[/);
+                            const katexRows = rowStrings.map((r: string) => {
+                                const cells = r.replace(/[\[\]]/g, '').split(',').map((c: string) => c.trim());
+                                return cells.join(' & ');
+                            }).join(' \\\\ ');
+                            katexMatrix = `\\begin{bmatrix} ${katexRows} \\end{bmatrix}`;
                         }
+                        const html = this.renderLatexMarkup(katexMatrix);
+                        resDisplay.innerHTML = `<span class="font-semibold text-gray-800 select-text">= <span style="display:inline-block; vertical-align: middle;">${html}</span></span>`;
+                        this.updateMatrixBlockVisual(block, true);
                         return;
                     } catch(e) {
-                        console.warn('[ExpressionManager] Failed to auto-create matrix block:', e);
+                        console.warn('[ExpressionManager] Failed to format matrix result:', e);
                     }
                 }
 
@@ -2657,11 +2677,11 @@ export class ExpressionManager {
                     const isFracActive = (block as any)._showFraction === true;
                     const valueToRender = isFracActive ? fractionInfo.fractionLatex : fractionInfo.decimalStr;
                     let valueHtml = valueToRender;
-                    if (win.katex && isFracActive) {
+                    if (isFracActive) {
                         try {
-                            valueHtml = win.katex.renderToString(fractionInfo.fractionLatex, { throwOnError: false });
+                            valueHtml = this.renderLatexMarkup(fractionInfo.fractionLatex);
                         } catch (err) {
-                            console.warn('[ExpressionManager] KaTeX fraction render failed:', err);
+                            console.warn('[ExpressionManager] Fraction markup render failed:', err);
                         }
                     }
                     
@@ -2691,11 +2711,15 @@ export class ExpressionManager {
                                      .replace(/,\s*/g, ' & ');
                 }
 
-                if (win.katex && !mathStr.includes('Erro') && !mathStr.includes('indefinido') && !mathStr.includes('carregar')) {
-                    try {
-                        const html = win.katex.renderToString(mathStr, { throwOnError: false });
-                        resDisplay.innerHTML = '= <span style="display:inline-block; vertical-align: middle;">' + html + '</span>';
-                    } catch(e) {
+                if (!mathStr.includes('Erro') && !mathStr.includes('indefinido') && !mathStr.includes('carregar')) {
+                    if (mathStr.includes('\\') || mathStr.startsWith('[') || mathStr.includes('matrix')) {
+                        try {
+                            const html = this.renderLatexMarkup(mathStr);
+                            resDisplay.innerHTML = '<span class="font-semibold text-gray-800 select-text">= <span style="display:inline-block; vertical-align: middle;">' + html + '</span></span>';
+                        } catch(e) {
+                            resDisplay.innerText = `= ${mathStr}`;
+                        }
+                    } else {
                         resDisplay.innerText = `= ${mathStr}`;
                     }
                 } else {

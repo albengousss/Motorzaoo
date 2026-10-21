@@ -50,6 +50,7 @@ function resizeAll() {
     glRenderer.resize();
     renderer3d.resize();
     StateManager.updateViewportDimensions(Camera.width, Camera.height);
+    updateZoomHomeButton();
 }
 
 function getFreeVariables(ast: any, boundVars: string[] = []): string[] {
@@ -1531,6 +1532,7 @@ function compileAllExpressions() {
 
                 ExpressionManager.setResult(item.id, '');
                 ExpressionManager.setError(item.id, null);
+                if (blockEl) ExpressionManager.updateMatrixBlockVisual(blockEl, true);
                 if (StateManager.giacDefinitions[varName] !== giacDef) {
                     StateManager.giacDefinitions[varName] = giacDef;
                     StateManager.casSolutions = {}; // INVALIDE CACHE SO DEPENDENTS UPDATE!
@@ -1832,6 +1834,8 @@ function compileAllExpressions() {
                             ExpressionManager.setResult(item.id, `= ${MatrixEngine.formatMatrixDisplay(evalRes)}`);
                         }
                         ExpressionManager.setError(item.id, null);
+                        const curBlock = typeof document !== 'undefined' ? document.getElementById(item.id) : null;
+                        if (curBlock) ExpressionManager.updateMatrixBlockVisual(curBlock, true);
                         ExpressionManager.setSliderSuggestions(item.id, [], () => {});
                         return;
                     }
@@ -1849,6 +1853,7 @@ function compileAllExpressions() {
                             isHidden: !item.visible
                         });
                         ExpressionManager.setResult(item.id, `Polígono (${evalRes.length} vértices)`);
+                        ExpressionManager.setError(item.id, null);
                         ExpressionManager.setSliderSuggestions(item.id, [], () => {});
                         return;
                     }
@@ -1870,6 +1875,7 @@ function compileAllExpressions() {
                             });
                         }
                         ExpressionManager.setResult(item.id, ListEngine.formatListDisplay(evalRes));
+                        ExpressionManager.setError(item.id, null);
                         ExpressionManager.setSliderSuggestions(item.id, [], () => {});
                         return;
                     }
@@ -1906,6 +1912,8 @@ function compileAllExpressions() {
                         ExpressionManager.setResult(item.id, '= ' + PointEngine.formatPointDisplay(localVal));
                     } else if (MatrixEngine.isMatrix(localVal)) {
                         ExpressionManager.setResult(item.id, '= ' + MatrixEngine.formatMatrixDisplay(localVal));
+                        const curBlock = typeof document !== 'undefined' ? document.getElementById(item.id) : null;
+                        if (curBlock) ExpressionManager.updateMatrixBlockVisual(curBlock, true);
                     } else if (Array.isArray(localVal)) {
                         ExpressionManager.setResult(item.id, ListEngine.formatListDisplay(localVal));
                     }
@@ -2116,6 +2124,15 @@ function compileAllExpressions() {
         }
     });
 
+    // Sincroniza visual das abas (.dcg-tab): se uma expressão é plotável, restaura o círculo colorido
+    const plottableIds = new Set(validEquations.map(eq => eq.id));
+    rawData.forEach(item => {
+        const block = typeof document !== 'undefined' ? document.getElementById(item.id) : null;
+        if (block && plottableIds.has(item.id)) {
+            ExpressionManager.updateMatrixBlockVisual(block, false);
+        }
+    });
+
     const currentBlockIds = new Set(rawData.map(r => r.id));
 
     // Run Garbage Collection for deleted sliders and user functions
@@ -2151,7 +2168,7 @@ function updateZoomHomeButton() {
     const expectedYHalf = 10 * (Camera.height / (Camera.width || 1));
     const isAtDefault = StateManager.viewMode === '3d'
         ? (Math.abs(Camera3D.distance - 18) < 1e-2 && Math.abs(Camera3D.theta - Math.PI / 4) < 1e-2 && Math.abs(Camera3D.phi - Math.PI / 6) < 1e-2 && Math.abs(Camera3D.target[0]) < 1e-3 && Math.abs(Camera3D.target[1]) < 1e-3 && Math.abs(Camera3D.target[2]) < 1e-3)
-        : (Math.abs(Camera.xMin - (-10)) < 1e-3 && Math.abs(Camera.xMax - 10) < 1e-3 && Math.abs(Camera.yMin - (-expectedYHalf)) < 1e-3 && Math.abs(Camera.yMax - expectedYHalf) < 1e-3);
+        : (!Camera.hasUserInteracted || (Math.abs(Camera.xMin - (-10)) < 1e-3 && Math.abs(Camera.xMax - 10) < 1e-3 && Math.abs(Camera.yMin - (-expectedYHalf)) < 1e-3 && Math.abs(Camera.yMax - expectedYHalf) < 1e-3));
     
     if (isAtDefault) {
         resetBtn.classList.add('hidden');
@@ -2637,10 +2654,12 @@ function initSettingsPopoverListeners() {
         if (Number.isFinite(x1) && Number.isFinite(x2) && x2 > x1) {
             Camera.xMin = x1;
             Camera.xMax = x2;
+            Camera.hasUserInteracted = true;
         }
         if (Number.isFinite(y1) && Number.isFinite(y2) && y2 > y1) {
             Camera.yMin = y1;
             Camera.yMax = y2;
+            Camera.hasUserInteracted = true;
         }
         drawFrame();
     };
@@ -2956,9 +2975,9 @@ setTimeout(() => {
                         { insert: "PartialFractions(#?)", label: "PartFrac", tooltip: "Frações Parciais" }
                     ],
                     [
-                        { insert: "\\begin{pmatrix}#? & #? \\\\ #? & #?\\end{pmatrix}", label: "Mat 2x2", tooltip: "Matriz 2x2" },
-                        { insert: "\\begin{pmatrix}#? & #? & #? \\\\ #? & #? & #? \\\\ #? & #? & #?\\end{pmatrix}", label: "Mat 3x3", tooltip: "Matriz 3x3" },
-                        { insert: "\\begin{pmatrix}#? \\\\ #?\\end{pmatrix}", label: "Vet 2D", tooltip: "Vetor Coluna 2D" },
+                        { insert: "\\begin{bmatrix} 0 & 0 \\\\ 0 & 0 \\end{bmatrix}", label: "Mat 2x2", tooltip: "Matriz 2x2" },
+                        { insert: "\\begin{bmatrix} 0 & 0 & 0 \\\\ 0 & 0 & 0 \\\\ 0 & 0 & 0 \\end{bmatrix}", label: "Mat 3x3", tooltip: "Matriz 3x3" },
+                        { insert: "\\begin{bmatrix} 0 \\\\ 0 \\end{bmatrix}", label: "Vet 2D", tooltip: "Vetor Coluna 2D" },
                         { insert: "det(#?)", label: "det", tooltip: "Determinante det(A)" },
                         { insert: "inv(#?)", label: "A⁻¹", tooltip: "Inversa inv(A)" }
                     ],

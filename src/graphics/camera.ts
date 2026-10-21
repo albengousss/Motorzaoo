@@ -3,11 +3,13 @@ export class Camera {
     static yMin = -10; static yMax = 10;
     static width = 800; static height = 600;
     static isInitialized = false;
+    static hasUserInteracted = false;
 
-    /** Calcula a proporção real da tela na primeira vez que abre */
     /** Calcula a proporção real da tela na primeira vez que abre (Padrão Desmos: X fixo em [-10, 10], Y ajustado para 1:1) */
     static resize(w: number, h: number) {
-        if (!this.isInitialized && w > 0 && h > 0) {
+        if (w <= 0 || h <= 0) return;
+
+        if (!this.isInitialized || !this.hasUserInteracted) {
             this.width = w;
             this.height = h;
             this.xMin = -10;
@@ -16,7 +18,7 @@ export class Camera {
             this.yMin = -yHalf;
             this.yMax = yHalf;
             this.isInitialized = true;
-        } else if (this.isInitialized && w > 0 && h > 0 && this.width > 0 && this.height > 0) {
+        } else if (this.width > 0 && this.height > 0) {
             const mathWidth = this.xMax - this.xMin;
             const mathHeight = this.yMax - this.yMin;
             const xCenter = (this.xMax + this.xMin) / 2;
@@ -41,6 +43,7 @@ export class Camera {
     /** Repõe a câmara para a vista padrão */
     static reset() {
         this.isInitialized = false;
+        this.hasUserInteracted = false;
         this.resize(this.width, this.height);
     }
 
@@ -62,6 +65,7 @@ export class Camera {
             if (newXMax - newXMin < 1e10 && newYMax - newYMin < 1e10) {
                 this.xMin = newXMin; this.xMax = newXMax;
                 this.yMin = newYMin; this.yMax = newYMax;
+                this.hasUserInteracted = true;
             }
         }
     }
@@ -76,5 +80,6 @@ export class Camera {
         // Nota: no Canvas, Y cresce para baixo, então arrastar para baixo deve revelar
         // a parte superior do gráfico → yMin e yMax devem DIMINUIR (a janela sobe)
         this.yMin += mathDy; this.yMax += mathDy;
+        this.hasUserInteracted = true;
     }
 }

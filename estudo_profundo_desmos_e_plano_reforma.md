@@ -377,15 +377,15 @@ flowchart LR
     F6 --> F7["Fase 7: Distribuições, Tone & Multimídia"]
 ```
 
-### 8.1. Fase 1: Identidade Visual, HUD & Pixel Parity (Commits `04059c9`, `fe523c0`, `0968a3d`, `54f1c11`, `a7c51ab`, `97794b6`, `d62a373`)
+### 8.1. Fase 1: Identidade Visual, HUD & Pixel Parity (Commits `04059c9`, `fe523c0`, `0968a3d`, `54f1c11`, `a7c51ab`, `97794b6`, `d62a373`, `HEAD`)
 - **Já implementado:**
   1. Header Superior Global de `46px` (`#2a2a2a`), Sidebar inicial de `500px`, divisor neutro de `1px solid #cccccc`, colapso suave e botão `>>` de `37×37px`.
   2. Topbar da Sidebar de `48px` (`#f6f6f6`), botões de `40×40px` com raio de `5px`, botão engrenagem `#edit-list-btn` e modo `.is-editing-list`.
-  3. Aba lateral `.dcg-tab` de `38px` (`#eeeeee` em repouso, `#d2e7f5` em foco com borda `#2d70b3`), índice `10.4px` no topo esquerdo e círculo de visibilidade `29×29px` (incluindo correção da borda sólida em `setError(blockId, null)`).
+  3. Aba lateral `.dcg-tab` de `38px` (`#eeeeee` em repouso, `#d2e7f5` em foco com borda `#2d70b3`), índice `10.4px` no topo esquerdo e círculo de visibilidade `29×29px` (incluindo correção da borda sólida em `setError(blockId, null)` e ocultação do botão de visibilidade em linhas de matriz).
   4. Ciclo oficial de 6 cores (`#c74440`, `#2d70b3`, `#388c46`, `#6042a6`, `#fa7e19`, `#000000`) e opacidade de preenchimento `0.40` (`40%`).
   5. Grade dupla subpixel (`#e0e0e0` secundária, `#999999` principal, `#191919` eixos `1.5px`) e suporte a passos de $\pi$ no popover de `290px` da chave inglesa (`37×37px`).
-  6. Cápsula de resultado `#f5f5f5` com botão `[a/b]` de fração racional e implantação completa das 20 fontes `.woff2` do KaTeX em `public/fonts` e `public/assets/fonts`.
-  7. Remoção do antigo card roxo de matriz (`div[data-type="matrix"]`) em favor de matrizes inline `\begin{bmatrix} ... \end{bmatrix}` dentro do `<math-field>`.
+  6. Cápsula de resultado `#f5f5f5` com botão `[a/b]` de fração racional, renderização gráfica MathLive estruturada para matrizes e frações (sem vazamento de LaTeX bruto) e implantação completa das 20 fontes `.woff2` do KaTeX em `public/fonts` e `public/assets/fonts`.
+  7. Remoção do antigo card roxo de matriz (`div[data-type="matrix"]`) em favor de matrizes inline `\begin{bmatrix} ... \end{bmatrix}` dentro do `<math-field>` com alça azul de redimensionamento e sincronização ao vivo com a largura da barra lateral.
 
 ### 8.2. Fase 2: Viewport Reativo, Sliders 2D/3D & Virtualização de Lista
 - **Já implementado:**
@@ -393,53 +393,45 @@ flowchart LR
   2. Virtualização CSS DOM Windowing (`content-visibility: auto; contain-intrinsic-size: 52px`) e compensação de `padding-bottom: 252px` ao abrir o teclado virtual no desktop.
   3. Interpolação cúbica suave de 200ms nos botões de zoom `+` e `-`.
   4. No modo 2D, reconhecimento de `z` como parâmetro escalar livre (exigindo criação do slider `z` antes de plotar curvas como $x^2+y^2+z^2=2$, mapeando `u_var_z` no shader WebGL e mantendo os sliders permanentes no painel).
+  5. Viewport inicial com *Square Zoom* 1:1 rigoroso com $X \in [-10, 10]$ e estabilização de layout imune a condições de corrida via `Camera.hasUserInteracted`, mantendo o botão Home oculto na inicialização.
 
 ---
 
-## 9. Diagnóstico Técnico dos Problemas Atuais Pendentes no Código (Sem Código de Solução)
+## 9. Diagnóstico Técnico dos Problemas Analisados e Status de Resolução (100% Concluído)
 
-Abaixo estão documentadas as causas-raízes exatas dos **4 problemas ativos** identificados na revisão do código atual (pós-commit `d62a373`), que devem ser resolvidos antes de avançar para a Fase 3:
+Abaixo está o registro técnico consolidado dos problemas identificados nas auditorias de código e como cada um foi solucionado e validado por testes automatizados:
 
-### 9.1. Problema 1: Viewport Inicial fixa $Y \in [-10, 10]$ em vez de $X \in [-10, 10]$ com *Square Zoom* $1:1$
-- **Localização no Código:** [`src/graphics/camera.ts` (Linhas 8–18)](file:///F:/Motorzao/Motorzaoo/src/graphics/camera.ts#L8-L18) e [`src/main.ts` (Linha 2151)](file:///F:/Motorzao/Motorzaoo/src/main.ts#L2151).
-- **Causa Raiz:**
-  - Em [`Camera.resize(w, h)` (`src/graphics/camera.ts`, Linhas 12–16)](file:///F:/Motorzao/Motorzaoo/src/graphics/camera.ts#L12-L16), a inicialização da câmera calcula `const ratio = w / h` e fixa **`this.yMin = -10; this.yMax = 10;`** ($\Delta Y = 20$), esticando o eixo $X$ para `[-10 * ratio, 10 * ratio]`.
-  - Isso é o **inverso exato do padrão Desmos** (documentado na Seção 3.2): no Desmos, **quem é fixo em $[-10, 10]$ ($\Delta X = 20$) é o eixo horizontal $X$**, enquanto o eixo vertical $Y$ é ajustado pela razão inversa $h / w$ ($y_{\min} = -10 \cdot \frac{h}{w}$, $y_{\max} = +10 \cdot \frac{h}{w}$) para manter a proporção isotrópica $1:1$ (*Square Zoom*).
-  - **Efeito Colateral no Botão Home (`#reset-view-btn`):** Em [`updateZoomHomeButton()` (`src/main.ts`, Linha 2151)](file:///F:/Motorzao/Motorzaoo/src/main.ts#L2151), a verificação `isAtDefault` exige simultaneamente `xMin === -10`, `xMax === 10`, `yMin === -10` e `yMax === 10`. Como em qualquer tela não-quadrada ($w \neq h$) o Square Zoom faz um dos eixos divergir de $[-10, 10]$, `isAtDefault` avalia sempre como `false`, deixando o botão `Home` visível indevidamente mesmo na vista padrão inicial.
+### 9.1. Problema 1: Viewport Inicial e Botão Home (`#reset-view-btn`) — [RESOLVIDO ✅]
+- **Diagnóstico:** Inicialização da câmera sofria condição de corrida durante o assentamento da largura da `#sidebar` (`500px`), recalculando $X$ para $[-7.1, 7.1]$ e ativando indevidamente o botão Home logo ao carregar a página.
+- **Solução Implementada:** Introduzida a flag `Camera.hasUserInteracted`. Qualquer redimensionamento inicial de contêiner ou janela enquanto o usuário não tiver interagido mantém rigorosamente $X \in [-10, 10]$ e recomputa $Y$ proporcional para manter proporção 1:1. O botão Home permanece oculto até que o usuário execute pan, zoom ou alteração manual dos limites.
 
-### 9.2. Problema 2: Pulo Duplo do Expoente (`^`) ao Digitar Qualquer Coisa na Potência
-- **Localização no Código:** [`src/ui/expressionManager.ts` (Linhas 1056–1091 e 1145–1165)](file:///F:/Motorzao/Motorzaoo/src/ui/expressionManager.ts#L1056-L1165).
-- **Causa Raiz:**
-  1. Ao pressionar a tecla `^` em um teclado brasileiro ABNT2 (tecla morta / *dead key*), o evento `keydown` dispara primeiro com `e.key === 'Dead'` (`e.code === 'Quote'`). A função [`isCaretKey(e)` (Linha 1087)](file:///F:/Motorzao/Motorzaoo/src/ui/expressionManager.ts#L1087) retorna `true` e invoca [`handlePower(e)` (Linha 1146)](file:///F:/Motorzao/Motorzaoo/src/ui/expressionManager.ts#L1146), que executa `(mf as any).executeCommand('moveToSuperscript')`. O cursor sobe imediatamente para o expoente ($x^{\square}$).
-  2. Contudo, no nível do sistema operacional/navegador, chamar `e.preventDefault()` no `keydown` de uma tecla morta (`Dead`) **não limpa o estado de composição pendente do IME do Windows**.
-  3. Quando o usuário digita o próximo caractere dentro da potência (ex.: `2`, após mais de `100ms`, já fora da janela do debounce `now - lastPowerTime < 100`), o navegador descarrega a tecla morta pendente combinada com o novo caractere, disparando o evento `beforeinput` com `e.data === '^2'` (ou `e.data === '^'`).
-  4. O listener de `beforeinput` em [`src/ui/expressionManager.ts` (Linhas 1153–1164)](file:///F:/Motorzao/Motorzaoo/src/ui/expressionManager.ts#L1153-L1164) intercepta `e.data.startsWith('^')` e **chama `(mf as any).executeCommand('moveToSuperscript')` uma segunda vez** antes de inserir o caractere `remainder` (`2`), fazendo o cursor dar um segundo salto para um sub-expoente aninhado ($x^{^{\,2}}$).
+### 9.2. Problema 2: Pulo Duplo do Expoente (`^`) em Teclados ABNT2 — [RESOLVIDO ✅]
+- **Diagnóstico:** Tecla morta (`Dead`) no Windows mantinha estado de composição pendente, disparando `beforeinput` duplicado com `^2` e executando `moveToSuperscript` duas vezes.
+- **Solução Implementada:** Interceptação unificada com sanitização de buffer e normalização de expoentes no parser e listeners de input.
 
-### 9.3. Problema 3: Abrir e Fechar Colchetes (`[` e `]`) Faz Aparecer uma `\` do Nada
-- **Localização no Código:** [`src/ui/expressionManager.ts` (Linhas 872–883)](file:///F:/Motorzao/Motorzaoo/src/ui/expressionManager.ts#L872-L883) em interação com a tabela de keybindings físicos do MathLive (`node_modules/mathlive/mathlive.js`, Linhas 333, 1156–1192 e 12390–12393).
-- **Causa Raiz:**
-  1. Em teclados brasileiros **ABNT2**, a tecla física de fechar colchetes **`]` / `}`** está posicionada na tecla cujo código de varredura físico (`KeyboardEvent.code`) é **`"Backslash"`** (embora `e.key` seja `"]"`).
-  2. O MathLive possui em seus keybindings nativos a regra `{ key: "\\", ifMode: "math", command: ["switchMode", "latex", "", "\\"] }` (`mathlive.js`, Linha 12390). Ao compilar essa regra, o MathLive traduz `key: "\\"` usando o layout padrão americano (`WINDOWS_ENGLISH`), onde `"\\"` mapeia para o código físico **`[Backslash]`** (`e.code === "Backslash"`).
-  3. Como [`src/ui/expressionManager.ts` (Linhas 873–883)](file:///F:/Motorzao/Motorzaoo/src/ui/expressionManager.ts#L873-L883) não removeu `\\` / `[Backslash]` / `[IntlBackslash]` de `mathField.keybindings` nem interceptou `e.key === ']'` por valor lógico de caractere, ao pressionar `]` no teclado ABNT2 (`e.code === 'Backslash'`), o MathLive executa `["switchMode", "latex", "", "\\"]`, abrindo o modo de comando LaTeX e injetando uma barra invertida **`\`** do nada em vez de fechar o colchete `]`.
+### 9.3. Problema 3: Tecla `]` Disparava Modo Backslash `\` no MathLive — [RESOLVIDO ✅]
+- **Diagnóstico:** Keybinding interno do MathLive traduzia código físico `[Backslash]` do teclado ABNT2 para o comando `switchMode latex`.
+- **Solução Implementada:** Remoção do comando `switchMode` para backslash nos keybindings do `<math-field>` e mapeamento explícito do caractere `]`.
 
-### 9.4. Problema 4: Matrizes Inline — Alça/Borda Visíveis Fora da Matriz e Falso Erro em Matrizes Sem Definição
-- **Subproblema 4A (Alça circular com borda visível mesmo com o cursor do teclado fora da matriz, e foco inicial fora de $(1,1)$):**
-  - **Localização:** [`src/ui/expressionManager.ts` (Linhas 610–628, 756–759, 1229 e 1244)](file:///F:/Motorzao/Motorzaoo/src/ui/expressionManager.ts#L610-L628).
-  - **Causas Raízes:**
-    1. *Verificação no bloco inteiro em vez do ambiente da matriz:* Em [`updateHandlePosition()` (Linhas 619–627)](file:///F:/Motorzao/Motorzaoo/src/ui/expressionManager.ts#L619-L627), a visibilidade da alça (`matrixHandle.style.display = 'block'`) depende de `isFocused || isHovered` **do bloco inteiro da expressão**, e não de o cursor do teclado estar efetivamente posicionado **dentro do ambiente da matriz** (`mf._mathfield?.model?.parentEnvironment?.environmentName`).
-    2. *Ativação indevida por hover do mouse:* A flag `const isHovered = block.matches(':hover')` ([Linha 619](file:///F:/Motorzao/Motorzaoo/src/ui/expressionManager.ts#L619)) exibe a alça simplesmente ao passar o mouse sobre a linha, mesmo quando o cursor do teclado está em outra linha ou fora da matriz.
-    3. *Ausência de listener de movimento de cursor (`selection-change`):* O `<math-field>` não escuta o evento `selection-change` para atualizar a visibilidade da alça quando o usuário move o cursor com as setas (`ArrowLeft` / `ArrowRight`) para fora dos colchetes `[ ... ]` na mesma linha.
-    4. *Posição inicial do cursor após digitar `matrix` ou `#rc`:* Nas [Linhas 1229 e 1244 de `src/ui/expressionManager.ts`](file:///F:/Motorzao/Motorzaoo/src/ui/expressionManager.ts#L1229-L1244), `mathEl.setValue(prefix + matLatex, { mode: 'math' })` substitui a expressão e deixa o cursor no **final da linha (à direita de `]`, fora da matriz)**, em vez de posicionar o cursor diretamente dentro da célula $(1,1)$ da matriz.
-- **Subproblema 4B (Programa sinaliza erro/problema na margem esquerda em matrizes sem definição):**
-  - **Localização:** [`src/main.ts` (Linhas 554–561, 1467–1540 e 1803–1835)](file:///F:/Motorzao/Motorzaoo/src/main.ts#L1803-L1835) e [`src/ui/expressionManager.ts` (Linha 865)](file:///F:/Motorzao/Motorzaoo/src/ui/expressionManager.ts#L865).
-  - **Causa Raiz:**
-    1. Enquanto o usuário digita `matrix` ou `#22` sem atribuição (`A =`), os estados intermediários da digitação acionam `ExpressionManager.setError(item.id, ...)`:
-       - Ao atingir a 4ª letra (`matr`), o inline shortcut `'tr': '\\operatorname{tr}'` ([`expressionManager.ts`, Linha 865](file:///F:/Motorzao/Motorzaoo/src/ui/expressionManager.ts#L865)) transforma o sufixo em `\operatorname{tr}` sem argumentos, fazendo [`FaultTolerantParser.checkIncompleteStatus` (`faultTolerantParser.ts`, Linhas 413–420)](file:///F:/Motorzao/Motorzaoo/src/core/faultTolerantParser.ts#L413-L420) disparar `setError(item.id, 'Informe o argumento de tr (ex: tr(x)).')` na [Linha 557 de `src/main.ts`](file:///F:/Motorzao/Motorzaoo/src/main.ts#L557) (ou, no caso de `#22`, o `#` inicial cai no `catch` da [Linha 2082](file:///F:/Motorzao/Motorzaoo/src/main.ts#L2082) com `'Expressão incompleta'`).
-    2. Quando a palavra `matrix` (ou `#22`) finalmente se converte em `\begin{bmatrix} 0 & 0 \\ 0 & 0 \end{bmatrix}`:
-       - Se houver definição (`A = matrix`), o fluxo entra em `if (assignmentMatch) -> if (is2DMatrix)` ([`src/main.ts`, Linha 1491](file:///F:/Motorzao/Motorzaoo/src/main.ts#L1491)), que limpa explicitamente o erro chamando **`ExpressionManager.setError(item.id, null)` na [Linha 1533](file:///F:/Motorzao/Motorzaoo/src/main.ts#L1533)**.
-       - Porém, quando a matriz **não tem definição** (matriz anônima isolada), `assignmentMatch` é `null` e o fluxo desce até a seção `// 4.5. LISTAS, MATRIZES E PONTOS NÃO ATRIBUÍDOS` em [`src/main.ts` (Linhas 1825–1835)](file:///F:/Motorzao/Motorzaoo/src/main.ts#L1825-L1835):
-         - Ali, `if (MatrixEngine.isMatrix(evalRes))` chama `ExpressionManager.setResult(...)` e `ExpressionManager.setSliderSuggestions(...)` e executa `return;` na [Linha 1834](file:///F:/Motorzao/Motorzaoo/src/main.ts#L1834) **sem nunca chamar `ExpressionManager.setError(item.id, null)`**!
-         - Como consequência, o triângulo de erro ativado durante a digitação (`matr` / `#`) permanece preso indefinidamente na linha da matriz anônima (o mesmo esquecimento ocorre nos ramos de pontos, polígonos e listas não atribuídos nas [Linhas 1822, 1850 e 1871](file:///F:/Motorzao/Motorzaoo/src/main.ts#L1822-L1871)).
+### 9.4. Problema 4: Alça de Matriz Inline Fora dos Colchetes e Falso Erro em Matrizes Anônimas — [RESOLVIDO ✅]
+- **Diagnóstico:**
+  1. A alça azul aparecia mesmo com o cursor fora dos colchetes devido a um fallback incondicional em `isCursorInsideMatrix()`.
+  2. Matrizes, polígonos e listas anônimas não limpavam `setError(item.id, null)` na seção 4.5 de `compileAllExpressions()`.
+- **Solução Implementada:**
+  1. `isCursorInsideMatrix()` agora verifica deterministamente a presença do cursor no Shadow DOM do MathLive: se o cursor estiver ativo fora de `.ML__matrix`, a alça é imediatamente ocultada.
+  2. Chamadas explícitas a `ExpressionManager.setError(item.id, null)` adicionadas em todos os ramos de objetos não-atribuídos.
+
+### 9.5. Problema 5: Vazamento de LaTeX Bruto no Resultado e Botão de Frações — [RESOLVIDO ✅]
+- **Diagnóstico:** `ExpressionManager.setResult` dependia de `window.katex` (inexistente no projeto), caindo no fallback que injetava strings como `= \begin{bmatrix} 0 & 0 \\ 0 & 0 \end{bmatrix}` como `innerText` puro.
+- **Solução Implementada:** Criado o helper centralizado `ExpressionManager.renderLatexMarkup()` utilizando `convertLatexToMarkup()` nativo do MathLive. O resultado é renderizado como HTML estruturado com colchetes e células perfeitamente alinhadas, tanto para matrizes quanto para frações racionais no botão `[a/b]`.
+
+### 9.6. Problema 6: Círculo Colorido de Visibilidade em Linhas de Matriz — [RESOLVIDO ✅]
+- **Diagnóstico:** `ExpressionManager.updateMatrixBlockVisual` nunca era invocado, e `setError(blockId, null)` sobrescrevia a visibilidade para `flex`.
+- **Solução Implementada:** `updateMatrixBlockVisual(block, isMatrix)` grava `block.dataset.isMatrix` e oculta a bolinha colorida. `setError` respeita `block.dataset.isMatrix === 'true'`. Ao final de `compileAllExpressions()`, todas as equações plotáveis restauram o círculo, enquanto matrizes o mantêm oculto.
+
+### 9.7. Problema 7: Teclado Virtual CAS com `\begin{pmatrix}` — [RESOLVIDO ✅]
+- **Diagnóstico:** Botões Mat 2x2, Mat 3x3 e Vet 2D inseriam parênteses com `#?`.
+- **Solução Implementada:** Padronizado para `\begin{bmatrix}` com zeros padrão conforme o padrão Desmos.
 
 ---
 
