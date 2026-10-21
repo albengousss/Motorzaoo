@@ -1339,19 +1339,27 @@ function compileAllExpressions() {
                                     MathEngine.askGiac(giacDef);
                                 }
                             } else if (MathEngine.isGiacCommand(ast)) {
-                                const giacQuery = MathEngine.formatForGiac(ast);
+                                const expandedAst = MathEngine.expandUserFunctions(ast);
+                                const giacQuery = MathEngine.formatForGiac(expandedAst);
                                 const cached = StateManager.casSolutions[item.id];
-                                if (cached && (cached.result.includes('pnt') || cached.result.includes('point[') || cached.result.includes('536870912') || cached.result.includes('Erro'))) {
+                                if (cached && (cached.result.includes('pnt') || cached.result.includes('point[') || cached.result.includes('536870912') || cached.result.includes('Erro') || cached.result.includes('integrate('))) {
                                     delete StateManager.casSolutions[item.id];
                                 } else if (cached && cached.query === giacQuery) {
                                     try {
-                                        const solvedAst = new PrattParser(cached.result).parseExpression();
+                                        let solvedStr = cached.result;
+                                        if (solvedStr.includes('usr_')) solvedStr = solvedStr.replace(/usr_/g, '');
+                                        const solvedAst = new PrattParser(solvedStr).parseExpression();
                                         MathEngine.compiledFuncs[funcName] = MathEngine.compile(solvedAst, paramName);
+                                        MathEngine.userFunctions[funcName].ast = solvedAst;
+                                        StateManager.userFunctions[funcName].ast = solvedAst;
                                         validEquations.push({ color: item.color, id: item.id, ast: solvedAst, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
-                                        ExpressionManager.setResult(item.id, `= ${cached.result}`);
+                                        
+                                        const isIndefinite = ast[0] === 'Integrate' && ast.length <= 3;
+                                        const displayResult = isIndefinite && !/[+\-]\s*c\b/i.test(solvedStr) ? `${solvedStr} + C` : solvedStr;
+                                        ExpressionManager.setResult(item.id, `= ${displayResult}`);
                                     } catch(err) {
-                                        MathEngine.compiledFuncs[funcName] = MathEngine.compile(ast, paramName);
-                                        validEquations.push({ color: item.color, id: item.id, ast, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
+                                        MathEngine.compiledFuncs[funcName] = MathEngine.compile(expandedAst, paramName);
+                                        validEquations.push({ color: item.color, id: item.id, ast: expandedAst, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
                                         ExpressionManager.setResult(item.id, `= ${cached.result}`);
                                     }
                                 } else {
@@ -1360,16 +1368,16 @@ function compileAllExpressions() {
                                     StateManager.activeGiacQuery[item.id] = giacQuery;
                                     MathEngine.askGiac(giacQuery).then(res => {
                                         if (StateManager.activeGiacQuery[item.id] !== giacQuery) return; // Stale query, discard!
-                                        const cleanRes = res.replace(/"/g, '').trim();
-                                        if (cleanRes.includes('Erro') || cleanRes.includes('pnt') || cleanRes.includes('point[') || cleanRes.includes('536870912')) {
+                                        let cleanRes = res.replace(/"/g, '').replace(/usr_/g, '').trim();
+                                        if (cleanRes.includes('Erro') || cleanRes.includes('pnt') || cleanRes.includes('point[') || cleanRes.includes('536870912') || cleanRes.includes('integrate(')) {
                                             delete StateManager.casSolutions[item.id];
                                             return;
                                         }
                                         StateManager.casSolutions[item.id] = { query: giacQuery, result: cleanRes };
                                         markExpressionsDirty();
                                     });
-                                    MathEngine.compiledFuncs[funcName] = MathEngine.compile(ast, paramName);
-                                    validEquations.push({ color: item.color, id: item.id, ast, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
+                                    MathEngine.compiledFuncs[funcName] = MathEngine.compile(expandedAst, paramName);
+                                    validEquations.push({ color: item.color, id: item.id, ast: expandedAst, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
                                 }
                             } else {
                                 MathEngine.compiledFuncs[funcName] = MathEngine.compile(ast, paramName);
@@ -1661,6 +1669,7 @@ function compileAllExpressions() {
         try {
             let expressaoPlot = cleanStr;
             let isImplicit = false;
+            let isRelationalEquation = false;
             let operator = '=';
             let isDerivativePlot = false;
             let derivVarTarget = 'x';
@@ -1692,6 +1701,7 @@ function compileAllExpressions() {
                     } else {
                         const implicitMatch = noSpaceStr.match(/^(.+?)(<=|>=|<|>|=)(.+)$/);
                         if (implicitMatch) {
+                            isRelationalEquation = true;
                             const parts = cleanStr.split(implicitMatch[2]);
                             operator = implicitMatch[2];
                             expressaoPlot = `(${parts[0]})-(${parts[1]})`;
@@ -1885,9 +1895,76 @@ function compileAllExpressions() {
                 }
             }
 
-            // MODO CALCULADORA (Sem gráficos)
+            // MODO CALCULADORA OU EQUAÇÃO SEM COORDENADAS (Sem gráficos)
             const isPlot = expressaoPlot.includes('x') || expressaoPlot.includes('y') || expressaoPlot.includes('z');
             if (!isPlot && !isImplicit && !isDerivativePlot && !isExplicitY && !isExplicitZ) {
+                // Se for uma equação ou inequação relacional sem coordenadas (ex: a + b = 2, c + d + e + w = 2)
+                if (isRelationalEquation) {
+                    const boundForSliders = [
+                        'x', 'y', ...(StateManager.viewMode === '3d' ? ['z'] : []), 't', 'pi', 'e',
+                        ...Object.keys(StateManager.values),
+                        ...Object.keys(StateManager.giacDefinitions),
+                        ...definedMatrixNames,
+                        ...definedUserFunctionNames,
+                        ...Object.keys(MathEngine.userFunctions),
+                        ...Object.keys(MathEngine.compiledFuncs)
+                    ];
+                    const free = FaultTolerantParser.detectFreeVariables(cleanStr, boundForSliders, StateManager.viewMode !== '3d');
+                    const missingSliders = free.filter(v => 
+                        StateManager.values[v] === undefined && 
+                        !MathEngine.compiledFuncs[v] &&
+                        !StateManager.giacDefinitions[v] &&
+                        !definedMatrixNames.has(v) &&
+                        !definedUserFunctionNames.has(v) &&
+                        !MathEngine.userFunctions[v]
+                    );
+                    if (missingSliders.length > 0) {
+                        ExpressionManager.setSliderSuggestions(item.id, missingSliders, (varName) => {
+                            ExpressionManager.addExpression(`${varName} = 1`, false, undefined, item.id);
+                            scheduleFrame();
+                        });
+                        const varsList = missingSliders.join(', ');
+                        ExpressionManager.setError(item.id, `Muitas variáveis. Tente definir: ${varsList}`);
+                        ExpressionManager.setResult(item.id, '');
+                        return;
+                    }
+                    // Equação entre constantes definidas (ex: a = 1, b = 1 e a + b = 2)
+                    ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                    ExpressionManager.setError(item.id, null);
+                    ExpressionManager.setResult(item.id, '');
+                    return;
+                }
+
+                // 0. VERIFICAÇÃO PREVENTIVA DE SLIDERS LIVRES (Padrão Desmos: expressões com variáveis não definidas pedem slider antes de calcular)
+                const boundForSliders = [
+                    'x', 'y', ...(StateManager.viewMode === '3d' ? ['z'] : []), 't', 'pi', 'e',
+                    ...Object.keys(StateManager.values),
+                    ...Object.keys(StateManager.giacDefinitions),
+                    ...definedMatrixNames,
+                    ...definedUserFunctionNames,
+                    ...Object.keys(MathEngine.userFunctions),
+                    ...Object.keys(MathEngine.compiledFuncs)
+                ];
+                const free = FaultTolerantParser.detectFreeVariables(cleanStr, boundForSliders, StateManager.viewMode !== '3d');
+                const missingSliders = free.filter(v => 
+                    StateManager.values[v] === undefined && 
+                    !MathEngine.compiledFuncs[v] &&
+                    !StateManager.giacDefinitions[v] &&
+                    !definedMatrixNames.has(v) &&
+                    !definedUserFunctionNames.has(v) &&
+                    !MathEngine.userFunctions[v]
+                );
+                if (missingSliders.length > 0) {
+                    ExpressionManager.setSliderSuggestions(item.id, missingSliders, (varName) => {
+                        ExpressionManager.addExpression(`${varName} = 1`, false, undefined, item.id);
+                        scheduleFrame();
+                    });
+                    const varsList = missingSliders.join(', ');
+                    ExpressionManager.setError(item.id, `Muitas variáveis. Tente definir: ${varsList}`);
+                    ExpressionManager.setResult(item.id, '');
+                    return;
+                }
+
                 // 1. AVALIAÇÃO DIRETA LOCAL (0ms, Instantâneo, Padrão Desmos: números, pontos, matrizes, listas, funções de usuário)
                 let localVal: any = undefined;
                 if (ast) {
@@ -1976,35 +2053,6 @@ function compileAllExpressions() {
                             scheduleFrame();
                         });
                     }
-                    return;
-                }
-
-                // 3. Detecção de Sliders Livres para Variáveis Não Definidas (ex: 'm + 1')
-                const boundForSliders = [
-                    'x', 'y', ...(StateManager.viewMode === '3d' ? ['z'] : []), 't', 'pi', 'e',
-                    ...Object.keys(StateManager.values),
-                    ...Object.keys(StateManager.giacDefinitions),
-                    ...definedMatrixNames,
-                    ...definedUserFunctionNames,
-                    ...Object.keys(MathEngine.userFunctions),
-                    ...Object.keys(MathEngine.compiledFuncs)
-                ];
-                const free = FaultTolerantParser.detectFreeVariables(cleanStr, boundForSliders, StateManager.viewMode !== '3d');
-                const missingSliders = free.filter(v => 
-                    StateManager.values[v] === undefined && 
-                    !MathEngine.compiledFuncs[v] &&
-                    !StateManager.giacDefinitions[v] &&
-                    !definedMatrixNames.has(v) &&
-                    !definedUserFunctionNames.has(v) &&
-                    !MathEngine.userFunctions[v]
-                );
-                if (missingSliders.length > 0) {
-                    ExpressionManager.setSliderSuggestions(item.id, missingSliders, (varName) => {
-                        ExpressionManager.addExpression(`${varName} = 1`, false, undefined, item.id);
-                        scheduleFrame();
-                    });
-                    ExpressionManager.setError(item.id, null);
-                    ExpressionManager.setResult(item.id, '');
                     return;
                 }
 
@@ -2125,12 +2173,13 @@ function compileAllExpressions() {
         }
     });
 
-    // Sincroniza visual das abas (.dcg-tab): se uma expressão é plotável, restaura o círculo colorido
+    // Sincroniza visual das abas (.dcg-tab): só exibe círculo colorido se a expressão gera gráfico (Desmos parity)
     const plottableIds = new Set(validEquations.map(eq => eq.id));
     rawData.forEach(item => {
         const block = typeof document !== 'undefined' ? document.getElementById(item.id) : null;
-        if (block && plottableIds.has(item.id)) {
-            ExpressionManager.updateMatrixBlockVisual(block, false);
+        if (block) {
+            const isPlottable = plottableIds.has(item.id);
+            ExpressionManager.updateMatrixBlockVisual(block, !isPlottable);
         }
     });
 

@@ -1698,11 +1698,12 @@ export class ExpressionManager {
         return `\\begin{bmatrix} ${rowStrs.join(' \\\\ ')} \\end{bmatrix}`;
     }
 
-    static updateMatrixBlockVisual(block: HTMLElement, isMatrix: boolean) {
-        block.dataset.isMatrix = isMatrix ? 'true' : 'false';
+    static updateMatrixBlockVisual(block: HTMLElement, isNonPlottable: boolean) {
+        block.dataset.isPlottable = isNonPlottable ? 'false' : 'true';
+        block.dataset.isMatrix = isNonPlottable ? 'true' : 'false';
         const visBtn = block.querySelector('.visibility-toggle') as HTMLElement;
         if (visBtn) {
-            visBtn.style.display = isMatrix ? 'none' : 'flex';
+            visBtn.style.display = isNonPlottable ? 'none' : 'flex';
         }
     }
 
@@ -2551,7 +2552,7 @@ export class ExpressionManager {
                 if (tooltipEl) tooltipEl.innerText = '';
             }
             if (visibilityBtn) {
-                if (block.dataset.isMatrix === 'true') {
+                if (block.dataset.isMatrix === 'true' || block.dataset.isPlottable === 'false') {
                     visibilityBtn.style.display = 'none';
                 } else {
                     visibilityBtn.style.display = 'flex';

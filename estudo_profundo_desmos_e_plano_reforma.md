@@ -641,6 +641,30 @@ Abaixo está o registro técnico consolidado dos problemas identificados nas aud
 - **Diagnóstico:** Botões Mat 2x2, Mat 3x3 e Vet 2D inseriam parênteses com `#?`.
 - **Solução Implementada:** Padronizado para `\begin{bmatrix}` com zeros padrão conforme o padrão Desmos.
 
+### 9.8. Problema 8: Variáveis Livres em Equações Relacionais e Números Fantasmas (`= -2` em $a+b=2$) — [RESOLVIDO ✅]
+- **Diagnóstico:** O fallback de identificadores não definidos em `MathEngine.toJS` retornava `0` quando o identificador não existia no escopo local. Ao converter qualquer equação relacional sem coordenadas espaciais ($x, y, z$) para `(LHS) - (RHS)` no modo calculadora, o motor substituía $a=0, b=0$, produzindo o resultado numérico falso $(0+0)-2 = -2$, ou $(0+0+e+0)-2 = 0.7182818285$ com Euler $e$, sem solicitar a criação de sliders.
+- **Solução Implementada:** 
+  1. Alterado o fallback padrão de identificadores não definidos em `MathEngine.toJS` de `0` para `NaN`.
+  2. Isoladas as equações relacionais (`<, >, <=, >=, =`): se a equação não contiver coordenadas espaciais, a verificação de `missingSliders` é executada imediatamente no início do fluxo, exibindo o aviso *"Muitas variáveis. Tente definir: a, b"*, oferecendo os chips de criação de slider e limpando o resultado numérico (`result = ''`).
+  3. Adicionada verificação preventiva de variáveis livres no Passo 0 do Modo Calculadora (para expressões como $m+1$).
+
+### 9.9. Problema 9: Definição de Funções por Integrais Simbólicas (`g(x) = \int f(x) dx`) e Constante $+ C$ — [RESOLVIDO ✅]
+- **Diagnóstico:** 
+  1. Ao definir $g(x) = \int f(x) dx$, o Giac recebia o identificador opaco `usr_f(x)`, não expandia a função previamente definida $f(x) = x^2$, e retornava a string não resolvida `integrate(usr_f(x), x)`.
+  2. O fallback renderizava o texto bruto e compilava uma função nula ($y = 0$). Consequentemente, avaliações posteriores como $g(2)$ resultavam em $0$.
+- **Solução Implementada:**
+  1. `MathEngine.expandUserFunctions(ast)` é agora executado antes de enviar a consulta ao Giac, substituindo $f(x)$ analiticamente pela sua definição ($x^2$).
+  2. A resposta do Giac é sanitizada removendo prefixos residuais `usr_`, e saídas não integradas (`integrate(...)`) são rejeitadas.
+  3. A AST resolvida ($x^3 / 3$) é gravada tanto em `MathEngine.userFunctions['g'].ast` quanto em `StateManager.userFunctions['g'].ast`, permitindo que $g(2)$ avalie corretamente para $8/3 \approx 2.666667$.
+  4. Para integrais indefinidas, adiciona-se $+ C$ ao texto de exibição do resultado caso a constante não esteja explicitamente presente.
+
+### 9.10. Problema 10: Círculo Colorido de Visibilidade Exibido em Linhas Não-Plotáveis — [RESOLVIDO ✅]
+- **Diagnóstico:** O círculo colorido de visibilidade (`.visibility-toggle`) aparecia em expressões puramente escalares ($g(2)$, $f(2)$, $a+b=2$), violando a paridade de interface com o Desmos, onde apenas expressões que geram curvas ou pontos no plano exibem o botão colorido.
+- **Solução Implementada:**
+  1. `ExpressionManager.updateMatrixBlockVisual(block, isNonPlottable)` define `block.dataset.isPlottable = isNonPlottable ? 'false' : 'true'`.
+  2. Ao final de `compileAllExpressions`, linhas cujo `id` não está em `plottableIds` recebem `isNonPlottable = true`, ocultando o botão de visibilidade e exibindo apenas o número da linha no `.dcg-tab`.
+  3. `ExpressionManager.setError(blockId, null)` agora respeita `block.dataset.isPlottable === 'false'`, impedindo que a limpeza de erros torne o botão visível novamente.
+
 ---
 
 ## 10. Plano Diretor Estruturado para Paridade 100% com o Desmos (Roteiro de Engenharia Fase 2.5 a Fase 8)

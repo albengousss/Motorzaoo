@@ -690,7 +690,7 @@ export class MathEngine {
             if (MathEngine.WINDOW_GLOBALS.has(cleanNode)) {
                 return `(typeof scope !== 'undefined' && scope && scope[${JSON.stringify(cleanNode)}] !== undefined ? scope[${JSON.stringify(cleanNode)}] : 0)`;
             }
-            return `(typeof scope !== 'undefined' && scope && scope[${JSON.stringify(cleanNode)}] !== undefined ? scope[${JSON.stringify(cleanNode)}] : (typeof ${cleanNode} !== 'undefined' ? ${cleanNode} : 0))`;
+            return `(typeof scope !== 'undefined' && scope && scope[${JSON.stringify(cleanNode)}] !== undefined ? scope[${JSON.stringify(cleanNode)}] : (typeof ${cleanNode} !== 'undefined' ? ${cleanNode} : NaN))`;
         }
         if (Array.isArray(node)) {
             const op = node[0];
