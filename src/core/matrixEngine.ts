@@ -498,6 +498,93 @@ export class MatrixEngine {
     }
 
     /**
+     * Constrói uma matriz a partir de blocos: [M, M^2; M^3, M^T] ou escalares [1, 2; 3, 4]
+     */
+    static fromBlocks(blockRows: any[][]): number[][] {
+        if (!Array.isArray(blockRows) || blockRows.length === 0) {
+            throw new DesmosSemanticError('Matriz de blocos vazia não é permitida.', 'MATRIX_INVALID_DIMENSIONS');
+        }
+
+        const normalizeBlock = (cell: any): number[][] => {
+            if (typeof cell === 'number' && Number.isFinite(cell)) {
+                return [[cell]];
+            }
+            if (typeof cell === 'number' && Number.isNaN(cell)) {
+                return [[NaN]];
+            }
+            if (this.isMatrix(cell)) {
+                return cell;
+            }
+            throw new DesmosSemanticError(
+                'Todos os elementos de uma matriz em blocos devem ser números ou matrizes compatíveis.',
+                'MATRIX_INVALID_BLOCK'
+            );
+        };
+
+        const normalizedGrid: number[][][][] = blockRows.map((row) => {
+            if (!Array.isArray(row) || row.length === 0) {
+                throw new DesmosSemanticError('Linha de blocos matriciais vazia.', 'MATRIX_INVALID_DIMENSIONS');
+            }
+            return row.map(normalizeBlock);
+        });
+
+        const blockColsCount = normalizedGrid[0].length;
+        const colWidths: number[] = new Array(blockColsCount).fill(0);
+        const rowHeights: number[] = new Array(normalizedGrid.length).fill(0);
+
+        for (let br = 0; br < normalizedGrid.length; br++) {
+            const row = normalizedGrid[br];
+            if (row.length !== blockColsCount) {
+                throw new DesmosSemanticError(
+                    'Todas as linhas de uma matriz em blocos devem ter o mesmo número de blocos.',
+                    'MATRIX_DIMENSION_MISMATCH'
+                );
+            }
+            const expectedHeight = row[0].length;
+            rowHeights[br] = expectedHeight;
+            for (let bc = 0; bc < row.length; bc++) {
+                const blk = row[bc];
+                const h = blk.length;
+                const w = blk[0]?.length || 0;
+                if (h !== expectedHeight) {
+                    throw new DesmosSemanticError(
+                        `Blocos na mesma linha devem ter a mesma altura (${expectedHeight} vs ${h}).`,
+                        'MATRIX_DIMENSION_MISMATCH'
+                    );
+                }
+                if (br === 0) {
+                    colWidths[bc] = w;
+                } else if (w !== colWidths[bc]) {
+                    throw new DesmosSemanticError(
+                        `Blocos na mesma coluna devem ter a mesma largura (${colWidths[bc]} vs ${w}).`,
+                        'MATRIX_DIMENSION_MISMATCH'
+                    );
+                }
+            }
+        }
+
+        const totalRows = rowHeights.reduce((a, b) => a + b, 0);
+        const totalCols = colWidths.reduce((a, b) => a + b, 0);
+        this.validateDimensions(totalRows, totalCols);
+
+        const out: number[][] = [];
+        for (let br = 0; br < normalizedGrid.length; br++) {
+            const h = rowHeights[br];
+            for (let innerR = 0; innerR < h; innerR++) {
+                const rowOut: number[] = [];
+                for (let bc = 0; bc < blockColsCount; bc++) {
+                    const blkRow = normalizedGrid[br][bc][innerR];
+                    for (let innerC = 0; innerC < blkRow.length; innerC++) {
+                        rowOut.push(blkRow[innerC]);
+                    }
+                }
+                out.push(rowOut);
+            }
+        }
+        return out;
+    }
+
+    /**
      * Formata matriz para visualização elegante em LaTeX e saída textual
      */
     static formatMatrixDisplay(m: number[][]): string {

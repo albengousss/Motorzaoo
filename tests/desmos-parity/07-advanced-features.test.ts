@@ -182,8 +182,113 @@ describe('Desmos Parity Module 07: Advanced Features, IEEE-754 Precision & Phase
         expect(pieceGLSL).toContain('?');
         expect(pieceGLSL).not.toContain('-1e9');
     });
-    it.todo('Phase D: implements list helpers repeat(), join(), sort(), shuffle(), unique()');
-    it.todo('Phase D: implements block matrices [M, M^2; M^3, M^T], submatrices M[3;1,2], and 2D matrix comprehensions');
+    it('Phase D: implements list helpers repeat(), join(), sort(), shuffle(), unique()', () => {
+        const ev = (expr: string, extraScope: Record<string, any> = {}) => {
+            const ast = new PrattParser(LatexNormalizer.normalize(expr)).parseExpression();
+            const astVal = MathEngine.evaluateAST(ast, { ...StateManager.values, ...extraScope });
+            const jitVal = MathEngine.compile(ast)(0, 0, { ...StateManager.values, ...extraScope });
+            return { astVal, jitVal };
+        };
+
+        // repeat(x, n) & Desmos elementwise repeat(L, counts)
+        expect(ev('repeat(5, 3)').astVal).toEqual([5, 5, 5]);
+        expect(ev('repeat(5, 3)').jitVal).toEqual([5, 5, 5]);
+        expect(ev('repeat([1, 2], 2)').astVal).toEqual([1, 1, 2, 2]);
+        expect(ev('repeat([1, 2], [1, 3])').astVal).toEqual([1, 2, 2, 2]);
+
+        // join(A, B, scalar...)
+        expect(ev('join([1, 2], [3, 4], 5)').astVal).toEqual([1, 2, 3, 4, 5]);
+        expect(ev('join([1, 2], [3, 4], 5)').jitVal).toEqual([1, 2, 3, 4, 5]);
+
+        // sort(L), L.sort, and key-ordered sort(values, keys)
+        expect(ev('sort([3, 1, 2])').astVal).toEqual([1, 2, 3]);
+        expect(ev('[3, 1, 2].sort').astVal).toEqual([1, 2, 3]);
+        expect(ev('sort([10, 20, 30], [3, 1, 2])').astVal).toEqual([20, 30, 10]);
+        expect(ev('sort([10, 20, 30], [3, 1, 2])').jitVal).toEqual([20, 30, 10]);
+
+        // unique(L) & L.unique
+        expect(ev('unique([1, 2, 1, 3, 2])').astVal).toEqual([1, 2, 3]);
+        expect(ev('[1, 2, 1, 3, 2].unique').astVal).toEqual([1, 2, 3]);
+        expect(ev('unique([(1, 2), (3, 4), (1, 2)])').astVal).toEqual([{ x: 1, y: 2 }, { x: 3, y: 4 }]);
+
+        // shuffle(L, seed) deterministic seeded permutation & unseeded validity
+        const shufA1 = ev('shuffle([1, 2, 3, 4, 5], 42)').astVal;
+        const shufA2 = ev('shuffle([1, 2, 3, 4, 5], 42)').jitVal;
+        const shufB = ev('shuffle([1, 2, 3, 4, 5], 99)').astVal;
+        expect(shufA1).toEqual(shufA2);
+        expect([...shufA1].sort((a: number, b: number) => a - b)).toEqual([1, 2, 3, 4, 5]);
+        expect(shufA1).not.toEqual(shufB);
+    });
+
+    it('Phase D: implements block matrices [M, M^2; M^3, M^T], submatrices M[3;1,2], 2D matrix comprehensions, [a/b] matrix toggle, and cross shortcut', () => {
+        StateManager.values['M'] = [[1, 2], [3, 4]];
+
+        // Block matrix [M, M^2; M^3, M^T]
+        const blockAst = new PrattParser(LatexNormalizer.normalize('[M, M^2; M^3, M^T]')).parseExpression();
+        expect(blockAst[0]).toBe('MatrixBlock');
+        const blockVal = MathEngine.evaluateAST(blockAst, StateManager.values);
+        const blockJit = MathEngine.compile(blockAst)(0, 0, StateManager.values);
+        const expectedBlock = [
+            [1, 2, 7, 10],
+            [3, 4, 15, 22],
+            [37, 54, 1, 3],
+            [81, 118, 2, 4]
+        ];
+        expect(blockVal).toEqual(expectedBlock);
+        expect(blockJit).toEqual(expectedBlock);
+
+        // Horizontal concatenation [A, B]
+        StateManager.values['A'] = [[1, 2], [3, 4]];
+        StateManager.values['B'] = [[5], [6]];
+        expect(MathEngine.evaluateAST(new PrattParser('[A, B]').parseExpression(), StateManager.values)).toEqual([
+            [1, 2, 5],
+            [3, 4, 6]
+        ]);
+
+        // Submatrix extraction M[3; 1, 2] & slice M[[1, 3]; [2, 3]]
+        StateManager.values['G'] = [[1, 2, 3], [4, 5, 6], [7, 8, 9]];
+        expect(MathEngine.evaluateAST(new PrattParser('G[3; 1, 2]').parseExpression(), StateManager.values)).toEqual([[7, 8]]);
+        expect(MathEngine.evaluateAST(new PrattParser('G[[1, 3]; [2, 3]]').parseExpression(), StateManager.values)).toEqual([[2, 3], [8, 9]]);
+
+        // 2D Matrix Comprehension [r*c for r=1...3; c=1...4]
+        const compAst = new PrattParser(LatexNormalizer.normalize('[r*c for r=1...3; c=1...4]')).parseExpression();
+        expect(compAst[0]).toBe('MatrixComprehension');
+        expect(MathEngine.evaluateAST(compAst, StateManager.values)).toEqual([
+            [1, 2, 3, 4],
+            [2, 4, 6, 8],
+            [3, 6, 9, 12]
+        ]);
+
+        // Matrix & List [a/b] interactive fraction toggle + cross vs times inlineShortcut
+        const rowId = ExpressionManager.addExpression('M');
+        const mf = document.getElementById(rowId)?.querySelector('math-field') as any;
+        expect(mf?.inlineShortcuts?.cross).toBe('\\times');
+        expect(mf?.inlineShortcuts?.times).toBeUndefined();
+
+        ExpressionManager.setResult(rowId, '= [[0.5, 0.3333333333333333], [0.25, 0.2]]');
+        const rowEl = document.getElementById(rowId)!;
+        const fracBtn = rowEl.querySelector('.fraction-toggle-btn') as HTMLButtonElement | null;
+        expect(fracBtn).not.toBeNull();
+        expect(fracBtn?.title).toBe('Mostrar fração exata');
+
+        fracBtn!.click();
+        const fracBtnActive = rowEl.querySelector('.fraction-toggle-btn') as HTMLButtonElement | null;
+        expect(fracBtnActive?.title).toBe('Mostrar aproximação decimal');
+        const matHtml = rowEl.querySelector('.result-display')?.innerHTML || '';
+        expect(matHtml.includes('\\frac{1}{2}') || matHtml.includes('ML__frac')).toBe(true);
+
+        // Numeric list [a/b] toggle on fresh block (e.g. \int_0^1 [x, x^2] dx)
+        const listRowId = ExpressionManager.addExpression('[0.5, 0.3333333333333333]');
+        const listRowEl = document.getElementById(listRowId)!;
+        ExpressionManager.setResult(listRowId, '= [0.5, 0.3333333333333333] (2 elementos)');
+        expect(listRowEl.querySelector('.result-display')?.textContent).toContain('0.5');
+        const listFracBtn = listRowEl.querySelector('.fraction-toggle-btn') as HTMLButtonElement | null;
+        expect(listFracBtn).not.toBeNull();
+        listFracBtn!.click();
+        expect((listRowEl.querySelector('.fraction-toggle-btn') as HTMLButtonElement | null)?.title).toBe('Mostrar aproximação decimal');
+        const listHtml = listRowEl.querySelector('.result-display')?.innerHTML || '';
+        expect(listHtml.includes('\\frac{1}{2}') || listHtml.includes('ML__frac')).toBe(true);
+    });
     it.todo('Phase E: surfaces non-blocking "detalhes nao totalmente resolvidos" notice on quadtree budget overflow');
     it.todo('Phase E: supports Complex mode i, dynamic color helpers rgb/hsv/oklch/okhsv, regressions (~), and actions (->)');
 });

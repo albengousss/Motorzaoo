@@ -14,7 +14,7 @@ const OPERATORNAME_UNWRAP_WORDS = new Set([
     'log', 'ln', 'exp', 'sqrt', 'cbrt', 'nthroot', 'abs',
     'floor', 'ceil', 'round', 'sign', 'sgn', 'mod', 'gcd', 'lcm',
     'ncr', 'npr', 'binom',
-    'min', 'max', 'mean', 'median', 'stdev', 'stdevp', 'var', 'varp', 'cov', 'covp', 'corr', 'spearman', 'quartile', 'quantile', 'mad', 'samplesd', 'samplevariance', 'total', 'count', 'length', 'sort', 'unique', 'join',
+    'min', 'max', 'mean', 'median', 'stdev', 'stdevp', 'var', 'varp', 'cov', 'covp', 'corr', 'spearman', 'quartile', 'quantile', 'mad', 'samplesd', 'samplevariance', 'total', 'count', 'length', 'sort', 'unique', 'join', 'repeat',
     'dot', 'cross', 'midpoint', 'distance', 'mag', 'magnitude', 'norm', 'pointperp', 'perp',
     'det', 'determinant', 'inv', 'invert', 'tran', 'transpose', 'rref', 'trace', 'rank', 'matrixrank',
     'reducedrowechelonform', 'rows', 'columns', 'cols', 'dims', 'identity', 'eye', 'zeros', 'ones',

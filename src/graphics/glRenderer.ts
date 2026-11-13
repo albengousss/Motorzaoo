@@ -151,7 +151,7 @@ export class GLRenderer {
             if (op === 'Atanh') return `(0.5 * log((1.0 + clamp(${L}, -0.999999, 0.999999)) / (1.0 - clamp(${L}, -0.999999, 0.999999))))`;
             if (op === 'Asin') return fromRadGLSL(`asin(clamp(${L}, -1.0, 1.0))`);
             if (op === 'Acos') return fromRadGLSL(`acos(clamp(${L}, -1.0, 1.0))`);
-            if (op === 'Atan') return fromRadGLSL(node.length > 2 ? `atan(${L}, ${R})` : `atan(${L})`);
+            if (op === 'Atan') return fromRadGLSL(node.length > 2 ? `(((${R}) == 0.0 && (${L}) == 0.0) ? 0.0 : atan(${L}, ${R}))` : `atan(${L})`);
             if (op === 'Asec') return fromRadGLSL(`acos(clamp(1.0 / (${L}), -1.0, 1.0))`);
             if (op === 'Acsc') return fromRadGLSL(`asin(clamp(1.0 / (${L}), -1.0, 1.0))`);
             if (op === 'Acot') return fromRadGLSL(`atan(1.0, ${L})`);

@@ -158,7 +158,8 @@ export class PrattParser {
                 return ["Range", first, end];
             }
 
-            // 5. Elementos separados por vírgula: [a, c...b] ou lista padrão [a, b, ...]
+            // 5. Elementos separados por vírgula ou bloco matricial com ';': [a, c...b], [a, b], [M, M^2; M^3, M^T]
+            const rowItems: any[] = [first];
             if (this.lookahead && this.lookahead.type === TokenTypes.COMMA) {
                 this.eat(TokenTypes.COMMA);
                 const second = this.parseExpression(0);
@@ -171,17 +172,33 @@ export class PrattParser {
                     return ["RangeStep", first, second, end];
                 }
 
-                const list = ["List", first, second];
+                rowItems.push(second);
                 while (this.lookahead && this.lookahead.type === TokenTypes.COMMA) {
                     this.eat(TokenTypes.COMMA);
-                    list.push(this.parseExpression(0));
+                    rowItems.push(this.parseExpression(0));
+                }
+            }
+
+            // 6. Matriz por blocos / linhas separadas por ponto e vírgula: [M, M^2; M^3, M^T] ou [A; B]
+            if (this.lookahead && this.lookahead.type === TokenTypes.SEMICOLON) {
+                const blockRows: any[] = [["List", ...rowItems]];
+                while (this.lookahead && this.lookahead.type === TokenTypes.SEMICOLON) {
+                    this.eat(TokenTypes.SEMICOLON);
+                    if (this.lookahead && (this.lookahead as Token).type === TokenTypes.BRACKET_RIGHT) break;
+                    const rowFirst = this.parseExpression(0);
+                    const curRow: any[] = [rowFirst];
+                    while (this.lookahead && this.lookahead.type === TokenTypes.COMMA) {
+                        this.eat(TokenTypes.COMMA);
+                        curRow.push(this.parseExpression(0));
+                    }
+                    blockRows.push(["List", ...curRow]);
                 }
                 this.eat(TokenTypes.BRACKET_RIGHT);
-                return list;
+                return ["MatrixBlock", ...blockRows];
             }
 
             this.eat(TokenTypes.BRACKET_RIGHT);
-            return ["List", first];
+            return ["List", ...rowItems];
         }
 
         // MÓDULO MATEMÁTICO: |-2| vira ["Abs", -2]
@@ -548,10 +565,39 @@ export class PrattParser {
         // Produto vetorial (\times): P1 \times P2
         if (token.type === TokenTypes.CROSS) return ["Cross", left, this.parseExpression(20)];
 
-        // Compreensão de lista ou matriz: expr for var = list, var2 = list2 (ou com ';' para matriz)
+        // Compreensão de lista ou matriz: expr for var = list, var2 = list2 (ou com ';' para matriz), ou domínio contínuo: expr for -2 < t < 2
         if (token.type === TokenTypes.FOR) {
+            const firstClause = this.parseExpression(2);
+            const isBindingAssign =
+                Array.isArray(firstClause) &&
+                firstClause[0] === 'Equal' &&
+                typeof firstClause[1] === 'string' &&
+                !firstClause[1].includes('(');
+
+            if (!isBindingAssign) {
+                return ["ForDomain", left, firstClause];
+            }
+
             const bindings: Array<[string, any]> = [];
             let isMatrixComp = false;
+            const firstVarName = (firstClause[1] as string).replace(/[\{\}\\]/g, '');
+            let firstListExpr = firstClause[2];
+            if (this.lookahead && this.lookahead.type === TokenTypes.ELLIPSIS) {
+                this.eat(TokenTypes.ELLIPSIS);
+                const end = this.parseExpression(2);
+                firstListExpr = ["Range", firstListExpr, end];
+            }
+            bindings.push([firstVarName, firstListExpr]);
+
+            if (this.lookahead && this.lookahead.type === TokenTypes.SEMICOLON) {
+                this.eat(TokenTypes.SEMICOLON);
+                isMatrixComp = true;
+            } else if (this.lookahead && this.lookahead.type === TokenTypes.COMMA) {
+                this.eat(TokenTypes.COMMA);
+            } else {
+                return ["Comprehension", left, bindings];
+            }
+
             while (true) {
                 let varToken = this.lookahead;
                 if (!varToken || (varToken.type !== TokenTypes.IDENTIFIER && varToken.type !== TokenTypes.VAR)) {

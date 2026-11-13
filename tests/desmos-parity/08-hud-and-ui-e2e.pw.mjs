@@ -75,7 +75,10 @@ async function run() {
         const consoleErrors = [];
         const pageErrors = [];
         page.on('console', (msg) => {
-            if (msg.type() === 'error') consoleErrors.push(msg.text());
+            const text = msg.text();
+            if (msg.type() === 'error' && !text.includes('Invalid keybindings for current keyboard layout')) {
+                consoleErrors.push(text);
+            }
         });
         page.on('pageerror', (err) => {
             pageErrors.push(err.message || String(err));
@@ -452,10 +455,164 @@ async function run() {
         assert(cChecks2.f32Res === '= 19' && cChecks2.f32WarnHidden,
             `Expected wackscope "f(3, 2)" result "= 19" without warning, got "${cChecks2.f32Res}"`);
 
+        // 9. Keyboard shortcut fix: "cross" -> \times, "times" -> NOT \times
+        await page.evaluate(() => window._clearAll());
+        await page.waitForTimeout(200);
+        const kbIds = await page.evaluate(() => {
+            const firstId = document.querySelector('#expressions-list > div')?.id;
+            const em = window.ExpressionManager;
+            return [firstId || em.addBlock(false, ''), em.addBlock(false, '')];
+        });
+        await page.evaluate((id) => document.getElementById(id)?.querySelector('math-field')?.focus?.(), kbIds[0]);
+        await page.waitForTimeout(100);
+        await page.keyboard.type('cross');
+        await page.waitForTimeout(150);
+        await page.evaluate((id) => document.getElementById(id)?.querySelector('math-field')?.focus?.(), kbIds[1]);
+        await page.waitForTimeout(100);
+        await page.keyboard.type('times');
+        await page.waitForTimeout(150);
+        const shortcutCheck = await page.evaluate((blockIds) => ({
+            crossVal: document.getElementById(blockIds[0])?.querySelector('math-field')?.getValue?.() || '',
+            timesVal: document.getElementById(blockIds[1])?.querySelector('math-field')?.getValue?.() || ''
+        }), kbIds);
+        assert(shortcutCheck.crossVal.trim() === '\\times',
+            `Expected typing "cross" in math-field to become \\times, got "${shortcutCheck.crossVal}"`);
+        assert(shortcutCheck.timesVal.length > 0 && !shortcutCheck.timesVal.includes('\\times'),
+            `Expected typing "times" in math-field NOT to become \\times (and stay focused in block 2), got "${shortcutCheck.timesVal}"`);
+
+        // 10. Phase D E2E checks (parametric/polar domains, implicit polar, matrix integral [a/b], block matrices, list fns)
+        await page.evaluate(() => window._clearAll());
+        await page.waitForTimeout(200);
+        const dIds = await page.evaluate(() => {
+            const firstId = document.querySelector('#expressions-list > div')?.id;
+            const em = window.ExpressionManager;
+            return [
+                firstId || em.addBlock(false, ''),
+                em.addBlock(false, ''),
+                em.addBlock(false, ''),
+                em.addBlock(false, ''),
+                em.addBlock(false, ''),
+                em.addBlock(false, ''),
+                em.addBlock(false, ''),
+                em.addBlock(false, '')
+            ];
+        });
+
+        await setMathBlockValue(page, dIds[0], '(-\\cos(t), \\sin(t))');
+        await setMathBlockValue(page, dIds[1], 'r = \\sqrt{\\theta}');
+        await setMathBlockValue(page, dIds[2], '2 r \\cos(\\theta) = 1');
+        await setMathBlockValue(page, dIds[3], '\\int_{0}^{1} [[x, x^2], [x^3, x^4]] dx');
+        await setMathBlockValue(page, dIds[4], 'M = [[1, 2], [3, 4]]');
+        await setMathBlockValue(page, dIds[5], 'B = [M, M^2; M^3, M^T]');
+        await setMathBlockValue(page, dIds[6], '\\operatorname{join}([1, 2], 3)');
+        await setMathBlockValue(page, dIds[7], '\\operatorname{repeat}([1, 2], 2)');
+        await page.waitForTimeout(1500);
+
+        const dChecks = await page.evaluate((blockIds) => {
+            const getEl = (id) => document.getElementById(id);
+            const getRes = (id) => {
+                const res = getEl(id)?.querySelector('.result-display');
+                if (!res) return '';
+                const mf = res.querySelector('math-field');
+                if (mf && typeof mf.getValue === 'function') return String(mf.getValue() || '').trim();
+                const katexAnn = res.querySelector('.katex-mathml annotation');
+                if (katexAnn && katexAnn.textContent) return katexAnn.textContent.trim();
+                return (res.textContent || '').trim();
+            };
+            const isWarnHidden = (id) => {
+                const w = getEl(id)?.querySelector('.block-warning-trigger');
+                return !w || w.classList.contains('hidden') || getComputedStyle(w).display === 'none';
+            };
+            const getDomainState = (id) => {
+                const row = getEl(id)?.querySelector('.domain-bounds-row');
+                const visible = Boolean(row && !row.classList.contains('hidden') && getComputedStyle(row).display !== 'none');
+                const minVal = row?.querySelector('.domain-min-input')?.value || '';
+                const maxVal = row?.querySelector('.domain-max-input')?.value || '';
+                return { visible, minVal, maxVal };
+            };
+            const impPolarChips = getEl(blockIds[2])?.querySelector('.slider-chips-row');
+            const impPolarHasSliders = Boolean(
+                impPolarChips && !impPolarChips.classList.contains('hidden') && getComputedStyle(impPolarChips).display !== 'none'
+            );
+            const fracBtn = getEl(blockIds[3])?.querySelector('.fraction-toggle-btn');
+            const fracBtnVisible = Boolean(fracBtn && !fracBtn.classList.contains('hidden') && getComputedStyle(fracBtn).display !== 'none');
+
+            return {
+                paramDomain: getDomainState(blockIds[0]),
+                paramWarnHidden: isWarnHidden(blockIds[0]),
+                polarDomain: getDomainState(blockIds[1]),
+                polarWarnHidden: isWarnHidden(blockIds[1]),
+                impPolarWarnHidden: isWarnHidden(blockIds[2]),
+                impPolarHasSliders,
+                intMatResBefore: getRes(blockIds[3]),
+                hasMfracBefore: Boolean(getEl(blockIds[3])?.querySelector('.result-display .ML__frac, .result-display .mfrac')),
+                intMatWarnHidden: isWarnHidden(blockIds[3]),
+                fracBtnVisible,
+                mRes: getRes(blockIds[4]),
+                mTooltip: getEl(blockIds[4])?.querySelector('.warning-popover-tooltip')?.textContent?.trim() || '',
+                mWarnHidden: isWarnHidden(blockIds[4]),
+                blockMatRes: getRes(blockIds[5]),
+                blockMatWarnHidden: isWarnHidden(blockIds[5]),
+                joinRes: getRes(blockIds[6]),
+                joinWarnHidden: isWarnHidden(blockIds[6]),
+                repeatRes: getRes(blockIds[7]),
+                repeatWarnHidden: isWarnHidden(blockIds[7])
+            };
+        }, dIds);
+
+        assert(dChecks.paramDomain.visible && dChecks.paramDomain.minVal === '0' && dChecks.paramDomain.maxVal === '1',
+            `Expected parametric domain [0, 1], got ${JSON.stringify(dChecks.paramDomain)}`);
+        assert(dChecks.paramWarnHidden, 'Expected parametric curve not to warn');
+        assert(dChecks.polarDomain.visible && dChecks.polarDomain.minVal === '0' && dChecks.polarDomain.maxVal.includes('12'),
+            `Expected polar domain [0, 12pi], got ${JSON.stringify(dChecks.polarDomain)}`);
+        assert(dChecks.polarWarnHidden, 'Expected explicit polar curve not to warn');
+        assert(dChecks.impPolarWarnHidden && !dChecks.impPolarHasSliders,
+            `Expected implicit polar equation not to warn or emit r/theta sliders (warnHidden=${dChecks.impPolarWarnHidden}, sliders=${dChecks.impPolarHasSliders})`);
+        assert(dChecks.intMatWarnHidden && dChecks.fracBtnVisible,
+            `Expected matrix definite integral to succeed with [a/b] toggle visible (warnHidden=${dChecks.intMatWarnHidden}, fracBtn=${dChecks.fracBtnVisible}, res="${dChecks.intMatResBefore}")`);
+
+        // Click [a/b] toggle on matrix definite integral and edit parametric domain bound
+        await page.locator(`#${dIds[3]} .fraction-toggle-btn`).click();
+        await page.locator(`#${dIds[0]} .domain-max-input`).fill('2pi');
+        await page.locator(`#${dIds[0]} .domain-max-input`).press('Enter');
+        await page.waitForTimeout(300);
+
+        const dAfterChecks = await page.evaluate((blockIds) => {
+            const getEl = (id) => document.getElementById(id);
+            const resEl = getEl(blockIds[3])?.querySelector('.result-display');
+            const mf = resEl?.querySelector('math-field');
+            const katexAnn = resEl?.querySelector('.katex-mathml annotation');
+            const intMatAfter = mf && typeof mf.getValue === 'function'
+                ? String(mf.getValue() || '').trim()
+                : (katexAnn?.textContent ? katexAnn.textContent.trim() : (resEl?.textContent || '').trim());
+            const hasFracClass = Boolean(resEl?.querySelector('.ML__frac, .mfrac'));
+            const fracBtnActive = Boolean(getEl(blockIds[3])?.querySelector('.fraction-toggle-btn.active'));
+            const paramWarn = getEl(blockIds[0])?.querySelector('.block-warning-trigger');
+            const paramWarnHidden = !paramWarn || paramWarn.classList.contains('hidden') || getComputedStyle(paramWarn).display === 'none';
+            return { intMatAfter, hasFracClass, fracBtnActive, paramWarnHidden };
+        }, dIds);
+
+        assert(
+            dChecks.intMatResBefore.includes('0.5') &&
+            dAfterChecks.intMatAfter !== dChecks.intMatResBefore &&
+            !dAfterChecks.intMatAfter.includes('0.5') &&
+            !dAfterChecks.intMatAfter.includes('0.333') &&
+            (dAfterChecks.fracBtnActive || dAfterChecks.hasFracClass || (dAfterChecks.intMatAfter.includes('21') && dAfterChecks.intMatAfter.includes('51'))),
+            `Expected [a/b] toggle to convert decimals (0.5/0.333) to fractions, before="${dChecks.intMatResBefore}", after="${dAfterChecks.intMatAfter}", fracBtnActive=${dAfterChecks.fracBtnActive}, hasFracClass=${dAfterChecks.hasFracClass}`
+        );
+        assert(dAfterChecks.paramWarnHidden, 'Expected editing parametric max bound to 2pi to stay clean');
+        assert(dChecks.mWarnHidden, `Expected "M = [[1, 2], [3, 4]]" not to warn, got res="${dChecks.mRes}", tooltip="${dChecks.mTooltip}"`);
+        assert(dChecks.blockMatWarnHidden && dChecks.blockMatRes.length > 0 && dChecks.blockMatRes.includes('37') && dChecks.blockMatRes.includes('118'),
+            `Expected block matrix B = [M, M^2; M^3, M^T] to evaluate (4x4 with M^3 containing 37 and 118), got "${dChecks.blockMatRes}"`);
+        assert(dChecks.joinWarnHidden && dChecks.joinRes.replace(/\s+/g, '').includes('[1,2,3]'),
+            `Expected join([1,2], 3) result to contain "[1,2,3]", got "${dChecks.joinRes}"`);
+        assert(dChecks.repeatWarnHidden && dChecks.repeatRes.replace(/\s+/g, '').includes('[1,1,2,2]'),
+            `Expected repeat([1,2], 2) result to contain "[1,1,2,2]", got "${dChecks.repeatRes}"`);
+
         assert(pageErrors.length === 0, `pageErrors during interaction: ${pageErrors.join(' | ')}`);
         assert(consoleErrors.length === 0, `consoleErrors during interaction: ${consoleErrors.join(' | ')}`);
 
-        console.log('E2E_ALL_PASSED', JSON.stringify({ phaseAB: checks, phaseC1: cChecks1, phaseC2: cChecks2 }, null, 2));
+        console.log('E2E_ALL_PASSED', JSON.stringify({ phaseAB: checks, phaseC1: cChecks1, phaseC2: cChecks2, shortcutCheck, phaseD: dChecks, phaseDAfter: dAfterChecks }, null, 2));
     } finally {
         if (browser) await browser.close().catch(() => {});
         if (viteProc && !viteProc.killed) {

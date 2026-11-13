@@ -20,7 +20,7 @@ import { createIcons, icons } from 'lucide';
     createIcons: (options?: any) => createIcons({ icons, ...options })
 };
 
-let validEquations: {id: string, ast?: any, isImplicit: boolean, operator: string, isEdo: boolean, isDerivative: boolean, derivVar?: string, isIvp?: boolean, isPoint?: boolean, pointX?: number, pointY?: number, pointLabel?: string, isParametric?: boolean, astX?: any, astY?: any, astZ?: any, isExplicitZ?: boolean, tMin?: number, tMax?: number, paramVar?: string, depVar?: string, indepVar?: string, condition?: (x: number, y: number, scope: any, t?: number) => boolean, name?: string, x0?: number, y0?: number, isHidden?: boolean, variable?: string, color?: string, lineStyle?: 'solid' | 'dashed' | 'dotted', lineWidth?: number, isTable?: boolean, tablePoints?: { x: number, y: number, rowIndex: number, tableBlockId: string }[], connectLines?: boolean, isPolygon?: boolean, isPointsList?: boolean, points?: { x: number, y: number }[]}[] = [];
+let validEquations: {id: string, ast?: any, isImplicit: boolean, operator: string, isEdo: boolean, isDerivative: boolean, derivVar?: string, isIvp?: boolean, isPoint?: boolean, pointX?: number, pointY?: number, pointLabel?: string, isParametric?: boolean, astX?: any, astY?: any, astZ?: any, isExplicitZ?: boolean, tMin?: number, tMax?: number, paramVar?: string, paramEvalFn?: (t: number, scope: any) => any, depVar?: string, indepVar?: string, condition?: (x: number, y: number, scope: any, t?: number) => boolean, name?: string, x0?: number, y0?: number, isHidden?: boolean, variable?: string, color?: string, lineStyle?: 'solid' | 'dashed' | 'dotted', lineWidth?: number, fill?: boolean, isTable?: boolean, tablePoints?: { x: number, y: number, rowIndex: number, tableBlockId: string }[], connectLines?: boolean, isPolygon?: boolean, isPointsList?: boolean, points?: { x: number, y: number }[]}[] = [];
 let cachedNotablePointsKey = '';
 let cachedNotablePointsList: NotablePointData[] = [];
 let dragDistance = 0;
@@ -52,6 +52,42 @@ import {
     isImplicitYOnlyExpression,
     type ParsedStatement
 } from './core/statementRouter';
+import {
+    DEFAULT_PARAMETRIC_BOUNDS,
+    DEFAULT_POLAR_BOUNDS,
+    extractContinuousDomainFromAst,
+    astUsesPolarSpatialCoord,
+    rewritePolarImplicitAst
+} from './core/parametricDomain';
+
+function evalInlineDomainBound(exprStr?: string): number | undefined {
+    if (!exprStr || !exprStr.trim()) return undefined;
+    try {
+        const norm = LatexNormalizer.normalize(exprStr.trim());
+        const bAst = new PrattParser(norm).parseExpression();
+        const val = MathEngine.evaluateAST(bAst, StateManager.values);
+        return typeof val === 'number' && Number.isFinite(val) ? val : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+function formatCompositeIntegralDisplay(val: any): string | null {
+    if (typeof val === 'number' && Number.isFinite(val)) {
+        const r = parseFloat(val.toFixed(10));
+        return String(Object.is(r, -0) || r === 0 ? 0 : r);
+    }
+    if (MatrixEngine.isMatrix(val)) {
+        return MatrixEngine.formatMatrixDisplay(val);
+    }
+    if (PointEngine.isPoint(val)) {
+        return PointEngine.formatPointDisplay(val);
+    }
+    if (Array.isArray(val)) {
+        return ListEngine.formatListDisplay(val).replace(/^=\s*/, '');
+    }
+    return null;
+}
 
 const renderer = new Renderer('graphCanvas');
 const glRenderer = new GLRenderer('webglCanvas');
@@ -611,15 +647,19 @@ function compileAllExpressions() {
                 });
                 if (stmt.kind === 'var_assign') {
                     passVarAsts[stmt.name] = stmt.rhsAst;
-                    const isMatrixLiteral = (Array.isArray(stmt.rhsAst) && stmt.rhsAst[0] === 'List' && Array.isArray(stmt.rhsAst[1]) && stmt.rhsAst[1][0] === 'List') ||
+                    const isLiteralNestedList = (Array.isArray(stmt.rhsAst) && stmt.rhsAst[0] === 'List' && Array.isArray(stmt.rhsAst[1]) && stmt.rhsAst[1][0] === 'List') ||
                         /^\[\[[\s\S]*\]\]$/.test(stmt.rhsRaw);
-                    if (isMatrixLiteral) {
+                    const isBlockOrCompMatrix = Array.isArray(stmt.rhsAst) &&
+                        (stmt.rhsAst[0] === 'MatrixBlock' || stmt.rhsAst[0] === 'MatrixComprehension');
+                    if (isLiteralNestedList || isBlockOrCompMatrix) {
                         definedMatrixNames.add(stmt.name);
-                        const giacDef = `usr_${stmt.name}:=${stmt.rhsRaw}`;
-                        if (StateManager.giacDefinitions[stmt.name] !== giacDef) {
-                            StateManager.giacDefinitions[stmt.name] = giacDef;
-                            StateManager.casSolutions = {};
-                            MathEngine.askGiac(giacDef);
+                        if (isLiteralNestedList) {
+                            const giacDef = `usr_${stmt.name}:=${stmt.rhsRaw}`;
+                            if (StateManager.giacDefinitions[stmt.name] !== giacDef) {
+                                StateManager.giacDefinitions[stmt.name] = giacDef;
+                                StateManager.casSolutions = {};
+                                MathEngine.askGiac(giacDef);
+                            }
                         }
                     }
                 } else if (stmt.kind === 'func_def') {
@@ -660,6 +700,7 @@ function compileAllExpressions() {
     // e nunca devem ser auto-deletados do painel de expressões ao compilar.
 
     rawData.forEach(item => {
+        ExpressionManager.setDomainBounds(item.id, { active: false });
         if (item.isTable) {
             if (item.tablePoints && item.tablePoints.length > 0) {
                 validEquations.push({
@@ -738,6 +779,8 @@ function compileAllExpressions() {
         // Extração de restrições de domínio entre chaves: ex: y = x^2 {x >= 0} ou {0 <= t <= 2pi}
         let conditionFn: ((x: number, y: number, scope: any, t?: number) => boolean) | undefined = undefined;
         let explicitTBounds: { tMin: number, tMax: number } | undefined = undefined;
+        let isPolarImplicitRewritten = false;
+        let forDomainVar: string | null = null;
         const isMatrixDef = cleanStr.includes('{{') || cleanStr.includes('[[');
         if (!isMatrixDef) {
             const domainMatch = cleanStr.match(/(.*?[^\s\\=:,(\[{])\s*\\?\{([^:}]+?)\\?\}\s*$/);
@@ -895,16 +938,19 @@ function compileAllExpressions() {
             const isIntegralCmd = ast[0] === 'Integrate';
             const isDefiniteInt = isIntegralCmd && ast.length > 3;
 
-            // Pré-avaliação numérica instantânea para integrais definidas
-            let numIntegralVal: number | null = null;
+            // Pré-avaliação numérica instantânea para integrais definidas (escalares, matrizes, pontos e listas)
+            let numIntegralVal: any = null;
+            let numIntegralDisplay: string | null = null;
             if (isDefiniteInt) {
                 try {
-                    const lowVal = MathEngine.evaluateAST(ast[3], StateManager.values);
-                    const uppVal = MathEngine.evaluateAST(ast[4], StateManager.values);
-                    const intVar = (typeof ast[2] === 'string' ? ast[2] : 'x');
-                    const numRes = MathEngine.evaluateDefiniteIntegral(ast[1], lowVal, uppVal, intVar, StateManager.values);
-                    if (!isNaN(numRes) && isFinite(numRes)) {
+                    const lowVal = MathEngine.evaluateAST(expandedAst[3], StateManager.values);
+                    const uppVal = MathEngine.evaluateAST(expandedAst[4], StateManager.values);
+                    const intVar = (typeof expandedAst[2] === 'string' ? expandedAst[2] : 'x');
+                    const numRes = MathEngine.evaluateDefiniteIntegral(expandedAst[1], lowVal, uppVal, intVar, StateManager.values);
+                    const formatted = formatCompositeIntegralDisplay(numRes);
+                    if (formatted !== null) {
                         numIntegralVal = numRes;
+                        numIntegralDisplay = formatted;
                     }
                 } catch(err) {
                     console.warn('[Main] Error evaluating numerical definite integral fallback:', err);
@@ -913,8 +959,10 @@ function compileAllExpressions() {
 
             const formatCasDisplay = (rawRes: string): string => {
                 if (rawRes.includes('Erro') || rawRes.includes('pnt') || rawRes.includes('point[') || rawRes.includes('point(') || rawRes.includes('536870912') || rawRes.includes('Piecewise') || /\bintegrate?\(/.test(rawRes)) {
-                    if (numIntegralVal !== null) {
-                        return `= ${parseFloat(numIntegralVal.toFixed(6))}`;
+                    if (numIntegralDisplay !== null) {
+                        return typeof numIntegralVal === 'number'
+                            ? `= ${parseFloat(numIntegralVal.toFixed(6))}`
+                            : `= ${numIntegralDisplay}`;
                     }
                     return '- Erro no cálculo';
                 }
@@ -965,6 +1013,47 @@ function compileAllExpressions() {
                     ExpressionManager.updateMatrixBlockVisual(curBlock, !pushedToPlot);
                 }
             };
+
+            // Integrais definidas de matrizes, pontos ou listas são resolvidas diretamente via quadratura elemento a elemento
+            if (isDefiniteInt && numIntegralDisplay !== null &&
+                (MatrixEngine.isMatrix(numIntegralVal) || PointEngine.isPoint(numIntegralVal) || Array.isArray(numIntegralVal))
+            ) {
+                ExpressionManager.setError(item.id, null);
+                ExpressionManager.setResult(item.id, `= ${numIntegralDisplay}`);
+                if (assignVarName && assignVarName !== 'y') {
+                    const literalAst = MatrixEngine.isMatrix(numIntegralVal)
+                        ? ['List', ...numIntegralVal.map((row: any[]) => ['List', ...row])]
+                        : (PointEngine.isPoint(numIntegralVal)
+                            ? (numIntegralVal.z !== undefined ? ['Point', numIntegralVal.x, numIntegralVal.y, numIntegralVal.z] : ['Point', numIntegralVal.x, numIntegralVal.y])
+                            : ['List', ...numIntegralVal]);
+                    StateManager.values[assignVarName] = numIntegralVal;
+                    StateManager.defineVariable(assignVarName, literalAst);
+                    activeVars.push(assignVarName);
+                } else if (PointEngine.isPoint(numIntegralVal)) {
+                    if (numIntegralVal.z !== undefined && StateManager.viewMode !== '3d') {
+                        ExpressionManager.setError(item.id, 'Não é possível plotar ponto 3D no modo 2D.');
+                    } else {
+                        validEquations.push({
+                            color: item.color,
+                            id: item.id,
+                            ast,
+                            isImplicit: false,
+                            isEdo: false,
+                            isDerivative: false,
+                            isPoint: true,
+                            pointX: numIntegralVal.x,
+                            pointY: numIntegralVal.y,
+                            pointLabel: numIntegralDisplay,
+                            operator: '=',
+                            isHidden: !item.visible
+                        });
+                        pushedToPlot = true;
+                    }
+                }
+                updateSlidersForGiac();
+                syncGiacBlockVisual();
+                return;
+            }
 
             if (cached && cached.query === giacQuery) {
                 const isErrCached = cached.result.includes('Erro');
@@ -1783,8 +1872,10 @@ function compileAllExpressions() {
                 const astX = ["Multiply", astR, ["Cos", thetaVar]];
                 const astY = ["Multiply", astR, ["Sin", thetaVar]];
 
-                const tMin = explicitTBounds?.tMin ?? 0;
-                const tMax = explicitTBounds?.tMax ?? (2 * Math.PI);
+                const uiMin = evalInlineDomainBound(item.domainMin);
+                const uiMax = evalInlineDomainBound(item.domainMax);
+                const tMin = explicitTBounds?.tMin ?? uiMin ?? DEFAULT_POLAR_BOUNDS.min;
+                const tMax = explicitTBounds?.tMax ?? uiMax ?? DEFAULT_POLAR_BOUNDS.max;
 
                 const freePolar = getFreeVariables(astR, [thetaVar, 'pi', 'e']);
                 const unboundPolar = freePolar.filter(v => StateManager.values[v] === undefined && !MathEngine.compiledFuncs[v] && !definedMatrixNames.has(v));
@@ -1801,6 +1892,13 @@ function compileAllExpressions() {
                     ExpressionManager.setError(item.id, null);
                 }
 
+                ExpressionManager.setDomainBounds(item.id, {
+                    active: true,
+                    paramVar: thetaVar,
+                    minExpr: explicitTBounds ? String(parseFloat(tMin.toFixed(6))) : DEFAULT_POLAR_BOUNDS.minExpr,
+                    maxExpr: explicitTBounds ? String(parseFloat(tMax.toFixed(6))) : DEFAULT_POLAR_BOUNDS.maxExpr
+                });
+
                 validEquations.push({
                     color: item.color,
                     id: item.id,
@@ -1816,7 +1914,10 @@ function compileAllExpressions() {
                     paramVar: thetaVar,
                     condition: conditionFn,
                     operator: '=',
-                    isHidden: !item.visible
+                    isHidden: !item.visible,
+                    lineStyle: item.lineStyle,
+                    lineWidth: item.lineWidth,
+                    fill: item.fill
                 });
                 ExpressionManager.setResult(item.id, 'Curva Polar (r = f(θ))');
                 return;
@@ -1857,53 +1958,85 @@ function compileAllExpressions() {
 
             // É matriz ou vetor 2D? Verifica se tem estrutura multidimensional ou comando de matriz
             const cleanMatStr = rightSideClean.replace(/\\/g, '');
-            const is2DMatrix = item.isMatrix || cleanMatStr.startsWith('[[') || cleanMatStr.startsWith('{{') ||
+            const isExplicitLatexBmatrix = rawLatex.includes('\\begin{') || cleanMatStr.startsWith('begin{') || cleanMatStr.startsWith('lbrace');
+            const isBlockOrCompAst = Array.isArray(rhsAst) && (rhsAst[0] === 'MatrixBlock' || rhsAst[0] === 'MatrixComprehension');
+            const is2DMatrix = item.isMatrix || isBlockOrCompAst || cleanMatStr.startsWith('[[') || cleanMatStr.startsWith('{{') ||
                                cleanMatStr.includes('],[') || cleanMatStr.includes('};{') ||
                                (cleanMatStr.startsWith('[') && cleanMatStr.includes(';')) ||
-                               cleanMatStr.startsWith('matrix') || cleanMatStr.startsWith('begin{') ||
-                               rawLatex.includes('matrix}') || rawLatex.includes('\\bmatrix') || rawLatex.includes('\\pmatrix') || rawLatex.includes('\\begin{');
+                               cleanMatStr.startsWith('matrix') || isExplicitLatexBmatrix ||
+                               rawLatex.includes('matrix}') || rawLatex.includes('\\bmatrix') || rawLatex.includes('\\pmatrix');
 
             if (is2DMatrix) {
                 let giacMatrix = '';
-                if (cleanMatStr.startsWith('lbrace') || cleanMatStr.startsWith('begin{') || rawLatex.includes('\\begin{') || !cleanMatStr.includes('{')) {
-                    giacMatrix = rawLatex.replace(/\\left\\{/g, '[').replace(/\\right\\}/g, ']')
-                                         .replace(/\\{/g, '[').replace(/\\}/g, ']')
-                                         .replace(/\\left\[/g, '[').replace(/\\right\]/g, ']')
-                                         .replace(/\\begin\{(?:b|p|v|V)?matrix\}/g, '[')
-                                         .replace(/\\end\{(?:b|p|v|V)?matrix\}/g, ']')
-                                         .replace(/\\\\/g, '],[')
-                                         .replace(/&/g, ',')
-                                         .replace(/#/g, '')
-                                         .replace(/=/g, '').replace(/[a-zA-Z_]+\s*/, '');
-                    const matchMat = giacMatrix.match(/\[.*\]/);
-                    if (matchMat) giacMatrix = matchMat[0];
-                } else {
-                    giacMatrix = cleanMatStr.replace(/\{/g, '[').replace(/\}/g, ']');
-                }
-                giacMatrix = giacMatrix.replace(/\]\s*\[/g, '],[');
-                const giacDef = `usr_${varName}:=${giacMatrix}`;
+                let parsedMatrix: any = null;
+                let hasDynamicMatrixFormula = false;
 
-                try {
-                    let parsedMatrix: any = null;
-                    try {
-                        parsedMatrix = JSON.parse(giacMatrix);
-                    } catch (_) {
-                        const matAst = rhsAst || new PrattParser(giacMatrix).parseExpression();
-                        assertNoUndefinedCalls(matAst);
-                        parsedMatrix = MathEngine.evaluateAST(matAst, StateManager.values);
-                    }
+                if (!item.isMatrix && !isExplicitLatexBmatrix && rhsAst && (isBlockOrCompAst || (Array.isArray(rhsAst) && rhsAst[0] !== 'List'))) {
+                    const matAst = rhsAst;
+                    assertNoUndefinedCalls(matAst);
+                    parsedMatrix = MathEngine.evaluateAST(matAst, StateManager.values);
                     if (MatrixEngine.isMatrix(parsedMatrix)) {
                         MatrixEngine.validateDimensions(parsedMatrix.length, parsedMatrix[0]?.length || 0);
-                        StateManager.defineVariable(varName, parsedMatrix);
+                        StateManager.defineVariable(varName, matAst);
                         StateManager.values[varName] = parsedMatrix;
                         activeVars.push(varName);
+                        giacMatrix = JSON.stringify(parsedMatrix);
+                        hasDynamicMatrixFormula = rhsAst[0] === 'MatrixComprehension' ||
+                            JSON.stringify(rhsAst).includes('"') && !/^\[\s*\[?\s*-?\d/.test(cleanMatStr);
+                        // Se MatrixBlock possui expressões/submatrizes (ex: [M, M^2; M^3, M^T]), exibir o resultado calculado
+                        if (rhsAst[0] === 'MatrixBlock') {
+                            hasDynamicMatrixFormula = rhsAst.slice(1).some((row: any) =>
+                                Array.isArray(row) && row.slice(1).some((cell: any) => typeof cell !== 'number')
+                            );
+                        }
                     }
-                } catch(e) {
-                    if (e instanceof DesmosSemanticError || (e as any)?.name === 'DesmosSemanticError') throw e;
-                    console.warn('[Main] Erro ao registrar matriz nativa:', e);
+                } else {
+                    if (isExplicitLatexBmatrix || !cleanMatStr.includes('{')) {
+                        giacMatrix = rawLatex.replace(/\\left\\{/g, '[').replace(/\\right\\}/g, ']')
+                                             .replace(/\\{/g, '[').replace(/\\}/g, ']')
+                                             .replace(/\\left\[/g, '[').replace(/\\right\]/g, ']')
+                                             .replace(/\\begin\{(?:b|p|v|V)?matrix\}/g, '[')
+                                             .replace(/\\end\{(?:b|p|v|V)?matrix\}/g, ']')
+                                             .replace(/\\\\/g, '],[')
+                                             .replace(/&/g, ',')
+                                             .replace(/#/g, '')
+                                             .replace(/=/g, '').replace(/[a-zA-Z_]+\s*/, '');
+                        const matchMat = giacMatrix.match(/\[.*\]/);
+                        if (matchMat) giacMatrix = matchMat[0];
+                    } else {
+                        giacMatrix = cleanMatStr.replace(/\{/g, '[').replace(/\}/g, ']');
+                    }
+                    giacMatrix = giacMatrix.replace(/\]\s*\[/g, '],[');
+
+                    try {
+                        try {
+                            parsedMatrix = JSON.parse(giacMatrix);
+                        } catch (_) {
+                            const matAst = rhsAst || new PrattParser(giacMatrix).parseExpression();
+                            assertNoUndefinedCalls(matAst);
+                            parsedMatrix = MathEngine.evaluateAST(matAst, StateManager.values);
+                        }
+                        if (MatrixEngine.isMatrix(parsedMatrix)) {
+                            MatrixEngine.validateDimensions(parsedMatrix.length, parsedMatrix[0]?.length || 0);
+                            const matAstForState = rhsAst || ['List', ...parsedMatrix.map((row: any[]) => ['List', ...row])];
+                            StateManager.defineVariable(varName, matAstForState);
+                            StateManager.values[varName] = parsedMatrix;
+                            activeVars.push(varName);
+                            giacMatrix = JSON.stringify(parsedMatrix);
+                        }
+                    } catch(e) {
+                        if (e instanceof DesmosSemanticError || (e as any)?.name === 'DesmosSemanticError') throw e;
+                        console.warn('[Main] Erro ao registrar matriz nativa:', e);
+                    }
                 }
 
-                ExpressionManager.setResult(item.id, '');
+                const giacDef = `usr_${varName}:=${giacMatrix}`;
+                ExpressionManager.setResult(
+                    item.id,
+                    hasDynamicMatrixFormula && MatrixEngine.isMatrix(parsedMatrix)
+                        ? `= ${MatrixEngine.formatMatrixDisplay(parsedMatrix)}`
+                        : ''
+                );
                 ExpressionManager.setError(item.id, null);
                 if (blockEl) ExpressionManager.updateMatrixBlockVisual(blockEl, true);
                 if (StateManager.giacDefinitions[varName] !== giacDef) {
@@ -2092,7 +2225,13 @@ function compileAllExpressions() {
                 isRelationalEquation = true;
                 operator = parsedStmt.operator;
                 plotAst = parsedStmt.ast;
-                isImplicit = operator !== '=' ? true : astContainsSpatialCoord(plotAst, StateManager.viewMode === '3d');
+                if (StateManager.viewMode !== '3d' && astUsesPolarSpatialCoord(plotAst)) {
+                    plotAst = rewritePolarImplicitAst(plotAst);
+                    isImplicit = true;
+                    isPolarImplicitRewritten = true;
+                } else {
+                    isImplicit = operator !== '=' ? true : astContainsSpatialCoord(plotAst, StateManager.viewMode === '3d');
+                }
             }
         } else {
             const directDiffPlot = expressaoPlot.match(/^diff\s*\(\s*(.+?)\s*,\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)$/i);
@@ -2115,7 +2254,12 @@ function compileAllExpressions() {
                         isImplicit = true;
                         operator = '=';
                     } else if (Array.isArray(exprAst) && ['And', 'Or', 'LessThan', 'GreaterThan', 'LessEqual', 'GreaterEqual'].includes(exprAst[0])) {
-                        plotAst = ['Piecewise', [exprAst, -1], [null, 1]];
+                        let condAst = exprAst;
+                        if (StateManager.viewMode !== '3d' && astUsesPolarSpatialCoord(condAst)) {
+                            condAst = rewritePolarImplicitAst(condAst);
+                            isPolarImplicitRewritten = true;
+                        }
+                        plotAst = ['Piecewise', [condAst, -1], [null, 1]];
                         isImplicit = true;
                         operator = '<=';
                     } else {
@@ -2126,8 +2270,101 @@ function compileAllExpressions() {
         }
 
         ast = plotAst || new PrattParser(expressaoPlot).parseExpression();
+        if (Array.isArray(ast) && ast[0] === 'ForDomain') {
+            assertNoUndefinedCalls(ast);
+            const domainInfo = extractContinuousDomainFromAst(
+                ast[2],
+                (node) => MathEngine.evaluateAST(node, StateManager.values)
+            );
+            if (domainInfo) {
+                forDomainVar = domainInfo.paramVar;
+                explicitTBounds = { tMin: domainInfo.tMin, tMax: domainInfo.tMax };
+                const prevCond = conditionFn;
+                conditionFn = (px, py, sc, tVal) => {
+                    const domainInput = (domainInfo.paramVar === 'x')
+                        ? px
+                        : (domainInfo.paramVar === 'y' ? py : (tVal ?? NaN));
+                    if (!domainInfo.check(domainInput)) return false;
+                    return prevCond ? prevCond(px, py, sc, tVal) : true;
+                };
+            }
+            ast = ast[1];
+        }
+        const rawAstBeforeExpand = ast;
         assertNoUndefinedCalls(ast);
         ast = MathEngine.expandUserFunctions(ast);
+
+        const pushParametricEntry = (
+            entryAst: any,
+            astX: any,
+            astY: any,
+            astZ: any,
+            paramVar: string,
+            is3D: boolean,
+            paramEvalFn?: (t: number, scope: any) => any
+        ): boolean => {
+            const uiMin = evalInlineDomainBound(item.domainMin);
+            const uiMax = evalInlineDomainBound(item.domainMax);
+            let tMin = explicitTBounds?.tMin ?? uiMin ?? DEFAULT_PARAMETRIC_BOUNDS.min;
+            let tMax = explicitTBounds?.tMax ?? uiMax ?? DEFAULT_PARAMETRIC_BOUNDS.max;
+            const rawTMin = explicitTBounds?.tMin ?? uiMin;
+            const rawTMax = explicitTBounds?.tMax ?? uiMax;
+            if (tMin === -Infinity) tMin = -100;
+            if (tMax === Infinity) tMax = 100;
+
+            const freeParams = getFreeVariables(entryAst, [paramVar, 'x', 'y', 'z', 'd', 'pi', 'e']);
+            const unboundParams = freeParams.filter(v => StateManager.values[v] === undefined && !MathEngine.compiledFuncs[v] && !definedMatrixNames.has(v));
+            if (unboundParams.length > 0) {
+                ExpressionManager.setSliderSuggestions(item.id, unboundParams, (varName) => {
+                    ExpressionManager.addExpression(`${varName} = 1`, false, undefined, item.id);
+                    scheduleFrame();
+                });
+                ExpressionManager.setError(item.id, `Muitas variáveis. Tente definir: ${unboundParams.join(', ')}`);
+                return false;
+            }
+            ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+            ExpressionManager.setError(item.id, null);
+
+            if (!is3D) {
+                ExpressionManager.setDomainBounds(item.id, {
+                    active: true,
+                    paramVar,
+                    minExpr: explicitTBounds ? String(parseFloat(tMin.toFixed(6))) : DEFAULT_PARAMETRIC_BOUNDS.minExpr,
+                    maxExpr: explicitTBounds ? String(parseFloat(tMax.toFixed(6))) : DEFAULT_PARAMETRIC_BOUNDS.maxExpr
+                });
+            }
+
+            validEquations.push({
+                color: item.color,
+                id: item.id,
+                ast: entryAst,
+                isImplicit: false,
+                isEdo: false,
+                isDerivative: false,
+                isParametric: true,
+                astX,
+                astY,
+                astZ: is3D ? astZ : undefined,
+                tMin,
+                tMax,
+                paramVar,
+                paramEvalFn,
+                condition: conditionFn,
+                operator: '=',
+                isHidden: !item.visible,
+                lineStyle: item.lineStyle,
+                lineWidth: item.lineWidth,
+                fill: item.fill
+            });
+            const dispMin = rawTMin === -Infinity ? '-∞' : parseFloat(tMin.toFixed(2));
+            const dispMax = rawTMax === Infinity ? '∞' : parseFloat(tMax.toFixed(2));
+            ExpressionManager.setResult(item.id, `Curva Paramétrica ${is3D ? '3D ' : ''}(${paramVar} ∈ [${dispMin}, ${dispMax}])`);
+            return true;
+        };
+
+        const wasUserFuncCall = Array.isArray(rawAstBeforeExpand) &&
+            typeof rawAstBeforeExpand[0] === 'string' &&
+            Boolean(MathEngine.userFunctions[rawAstBeforeExpand[0]]);
 
             // Suporte para plotagem de pontos individuais ou curvas paramétricas: (x(t), y(t)) ou (x(t), y(t), z(t))
             if (ast && ast[0] === 'Point') {
@@ -2136,54 +2373,14 @@ function compileAllExpressions() {
                 const varsY = StateManager.extractVariables(ast[2]);
                 const varsZ = is3D ? StateManager.extractVariables(ast[3]) : [];
                 const allVars = [...varsX, ...varsY, ...varsZ];
-                const isParametric = allVars.includes('t') || allVars.includes('theta') || allVars.includes('u');
-                const paramVar = (allVars.includes('theta')) ? 'theta' : (allVars.includes('u') ? 'u' : 't');
+                const hasXParam = !is3D && allVars.includes('x') && !allVars.includes('y') && !allVars.includes('z');
+                const isParametric = allVars.includes('t') || allVars.includes('theta') || allVars.includes('u') || ((wasUserFuncCall || forDomainVar === 'x') && hasXParam);
+                const paramVar = allVars.includes('theta')
+                    ? 'theta'
+                    : (allVars.includes('u') ? 'u' : (allVars.includes('t') ? 't' : (forDomainVar || 'x')));
 
                 if (isParametric) {
-                    const hasTrig = JSON.stringify(ast).toLowerCase().includes('sin') || JSON.stringify(ast).toLowerCase().includes('cos');
-                    let tMin = explicitTBounds?.tMin ?? (hasTrig ? 0 : -10);
-                    let tMax = explicitTBounds?.tMax ?? (hasTrig ? 2 * Math.PI : 10);
-                    const rawTMin = explicitTBounds?.tMin;
-                    const rawTMax = explicitTBounds?.tMax;
-                    if (tMin === -Infinity) tMin = -100;
-                    if (tMax === Infinity) tMax = 100;
-
-                    // Sugestões de sliders para variáveis livres (ex: a, b em (a*cos(t), b*sin(t)))
-                    const freeParams = getFreeVariables(ast, [paramVar, 'x', 'y', 'z', 'd', 'pi', 'e']);
-                    const unboundParams = freeParams.filter(v => StateManager.values[v] === undefined && !MathEngine.compiledFuncs[v] && !definedMatrixNames.has(v));
-                    if (unboundParams.length > 0) {
-                        ExpressionManager.setSliderSuggestions(item.id, unboundParams, (varName) => {
-                            ExpressionManager.addExpression(`${varName} = 1`, false, undefined, item.id);
-                            scheduleFrame();
-                        });
-                        ExpressionManager.setError(item.id, `Muitas variáveis. Tente definir: ${unboundParams.join(', ')}`);
-                        return;
-                    } else {
-                        ExpressionManager.setSliderSuggestions(item.id, [], () => {});
-                        ExpressionManager.setError(item.id, null);
-                    }
-
-                    validEquations.push({
-                        color: item.color,
-                        id: item.id,
-                        ast,
-                        isImplicit: false,
-                        isEdo: false,
-                        isDerivative: false,
-                        isParametric: true,
-                        astX: ast[1],
-                        astY: ast[2],
-                        astZ: is3D ? ast[3] : undefined,
-                        tMin,
-                        tMax,
-                        paramVar,
-                        condition: conditionFn,
-                        operator: '=',
-                        isHidden: !item.visible
-                    });
-                    const dispMin = rawTMin === -Infinity ? '-∞' : parseFloat(tMin.toFixed(2));
-                    const dispMax = rawTMax === Infinity ? '∞' : parseFloat(tMax.toFixed(2));
-                    ExpressionManager.setResult(item.id, `Curva Paramétrica ${is3D ? '3D ' : ''}(${paramVar} ∈ [${dispMin}, ${dispMax}])`);
+                    pushParametricEntry(ast, ast[1], ast[2], ast[3], paramVar, is3D);
                     return;
                 } else {
                     const evalX = MathEngine.compile(ast[1])(0, 0, StateManager.values);
@@ -2217,6 +2414,32 @@ function compileAllExpressions() {
                         ExpressionManager.setError(item.id, null);
                         return;
                     }
+                }
+            }
+
+            if (ast && ast[0] !== 'Point' && !isImplicit && !isExplicitY && !isExplicitZ && !isDerivativePlot) {
+                const astVars = StateManager.extractVariables(ast);
+                const candParam = forDomainVar || (astVars.includes('theta')
+                    ? 'theta'
+                    : (astVars.includes('u') ? 'u' : (astVars.includes('t') ? 't' : ((wasUserFuncCall && astVars.includes('x') && !astVars.includes('y') && !astVars.includes('z')) ? 'x' : null))));
+                if (candParam) {
+                    try {
+                        const probe = explicitTBounds ? (explicitTBounds.tMin + explicitTBounds.tMax) / 2 : 0.37;
+                        const samplePt = MathEngine.evaluateAST(ast, { ...StateManager.values, [candParam]: probe });
+                        if (PointEngine.isPoint(samplePt)) {
+                            const is3D = samplePt.z !== undefined;
+                            pushParametricEntry(
+                                ast,
+                                undefined,
+                                undefined,
+                                undefined,
+                                candParam,
+                                is3D,
+                                (tv, sc) => MathEngine.evaluateAST(ast, { ...sc, [candParam]: tv })
+                            );
+                            return;
+                        }
+                    } catch (_) {}
                 }
             }
 
@@ -2515,6 +2738,8 @@ function compileAllExpressions() {
                 if (ast && !isEdo) {
                     let boundForSliders = [
                         'x', 'y', ...(StateManager.viewMode === '3d' ? ['z'] : []), 't', 'pi', 'e',
+                        ...(isPolarImplicitRewritten ? ['r', 'theta'] : []),
+                        ...(forDomainVar ? [forDomainVar] : []),
                         ...Object.keys(StateManager.values),
                         ...Object.keys(StateManager.asts),
                         ...Object.keys(passVarAsts),
@@ -2865,18 +3090,29 @@ function drawFrame() {
             }
         } else if (item.isParametric) {
             const paramVar = item.paramVar || 't';
-            const fastX = MathEngine.compile(item.astX, paramVar);
-            const fastY = MathEngine.compile(item.astY, paramVar);
-            const tMin = item.tMin ?? 0;
-            const tMax = item.tMax ?? (2 * Math.PI);
+            const fastX = item.astX ? MathEngine.compile(item.astX, paramVar) : null;
+            const fastY = item.astY ? MathEngine.compile(item.astY, paramVar) : null;
+            const evalFn = item.paramEvalFn;
+            const tMin = item.tMin ?? DEFAULT_PARAMETRIC_BOUNDS.min;
+            const tMax = item.tMax ?? DEFAULT_PARAMETRIC_BOUNDS.max;
             const steps = 800;
             const dt = (tMax - tMin) / steps;
             const pontos: { x: number, y: number }[] = [];
 
             for (let i = 0; i <= steps; i++) {
                 const tVal = tMin + i * dt;
-                const px = fastX(tVal, 0, StateManager.values);
-                const py = fastY(tVal, 0, StateManager.values);
+                let px = NaN;
+                let py = NaN;
+                if (fastX && fastY) {
+                    px = fastX(tVal, 0, StateManager.values);
+                    py = fastY(tVal, 0, StateManager.values);
+                } else if (evalFn) {
+                    const pt = evalFn(tVal, StateManager.values);
+                    if (pt && typeof pt.x === 'number' && typeof pt.y === 'number') {
+                        px = pt.x;
+                        py = pt.y;
+                    }
+                }
                 if (item.condition && !item.condition(px, py, StateManager.values, tVal)) {
                     pontos.push({ x: px, y: NaN });
                 } else if (!isFinite(px) || !isFinite(py) || isNaN(px) || isNaN(py)) {
@@ -2886,6 +3122,9 @@ function drawFrame() {
                 }
             }
 
+            if (item.fill) {
+                renderer.fillParametricLoop(pontos, color);
+            }
             renderer.drawCurve(pontos, color, item.lineStyle, item.lineWidth);
             renderMemory_curve_points.push({ points: pontos, color });
 

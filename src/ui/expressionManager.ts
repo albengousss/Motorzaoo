@@ -64,6 +64,13 @@ export class ExpressionManager {
                     <button class="line-width-btn py-1 px-2 rounded-md text-xs font-medium text-gray-600 hover:text-gray-900 transition-all cursor-pointer" data-width="4">Grossa</button>
                 </div>
             </div>
+            <!-- Preenchimento (Para curvas paramétricas fechadas) -->
+            <div class="flex items-center justify-between pt-2 border-t border-gray-100">
+                <span class="text-[11px] font-semibold text-gray-500">Preenchimento</span>
+                <button type="button" id="style-fill-toggle" aria-pressed="false" class="px-2.5 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-600 hover:text-gray-900 transition-all cursor-pointer">
+                    Preencher
+                </button>
+            </div>
         `;
         document.body.appendChild(this.stylePopover);
 
@@ -106,6 +113,19 @@ export class ExpressionManager {
                 }
             });
         });
+
+        // Preenchimento (Fill para curvas paramétricas / polígonos)
+        const fillToggleBtn = this.stylePopover.querySelector('#style-fill-toggle') as HTMLButtonElement | null;
+        if (fillToggleBtn) {
+            fillToggleBtn.addEventListener('click', () => {
+                if (this.currentStyledBlock) {
+                    const nextFill = this.currentStyledBlock.dataset.fill === 'true' ? 'false' : 'true';
+                    this.currentStyledBlock.dataset.fill = nextFill;
+                    this.updatePopoverSelection();
+                    this.onUpdateCallback();
+                }
+            });
+        }
 
         // Fechar ao clicar fora
         document.addEventListener('pointerdown', (e) => {
@@ -178,6 +198,19 @@ export class ExpressionManager {
                 btn.classList.add('text-gray-600');
             }
         });
+
+        const fillBtn = this.stylePopover.querySelector('#style-fill-toggle') as HTMLButtonElement | null;
+        if (fillBtn) {
+            const isFilled = this.currentStyledBlock.dataset.fill === 'true';
+            fillBtn.setAttribute('aria-pressed', isFilled ? 'true' : 'false');
+            if (isFilled) {
+                fillBtn.classList.add('bg-blue-100', 'text-blue-700', 'font-bold');
+                fillBtn.classList.remove('bg-gray-100', 'text-gray-600');
+            } else {
+                fillBtn.classList.remove('bg-blue-100', 'text-blue-700', 'font-bold');
+                fillBtn.classList.add('bg-gray-100', 'text-gray-600');
+            }
+        }
     }
 
     static applyBlockColor(block: HTMLElement, color: string) {
@@ -443,6 +476,7 @@ export class ExpressionManager {
         block.dataset.color = blockColor;
         block.dataset.lineStyle = 'solid';
         block.dataset.lineWidth = '2.5';
+        block.dataset.fill = 'false';
 
         // Row Index Number (Desmos: número 10.4px posicionado em top: 2px, left: 3px)
         const numberSpan = document.createElement('span');
@@ -815,6 +849,28 @@ export class ExpressionManager {
         sliderChipsRow.className = 'slider-chips-row hidden flex-wrap items-center gap-1.5 px-3 py-1.5 bg-blue-50/70 border-t border-blue-100 text-xs text-gray-600 select-none';
         contentZone.appendChild(sliderChipsRow);
 
+        // --- DOMÍNIO INLINE (PARAMÉTRICAS E POLARES ESTILO DESMOS) ---
+        const domainRow = document.createElement('div');
+        domainRow.className = 'domain-bounds-row hidden items-center gap-1.5 px-3 py-1 bg-gray-50 border-t border-gray-100 text-xs text-gray-600 select-none';
+        domainRow.innerHTML = `
+            <input type="text" class="domain-min-input w-12 px-1.5 py-0.5 text-center font-mono text-[11px] bg-white border border-gray-300 rounded focus:outline-none focus:border-blue-500" value="0" aria-label="Limite inferior do parâmetro" autocomplete="off" spellcheck="false">
+            <span class="domain-var-label text-[11px] font-serif text-gray-600">&le; t &le;</span>
+            <input type="text" class="domain-max-input w-12 px-1.5 py-0.5 text-center font-mono text-[11px] bg-white border border-gray-300 rounded focus:outline-none focus:border-blue-500" value="1" aria-label="Limite superior do parâmetro" autocomplete="off" spellcheck="false">
+        `;
+        const domMinInput = domainRow.querySelector('.domain-min-input') as HTMLInputElement;
+        const domMaxInput = domainRow.querySelector('.domain-max-input') as HTMLInputElement;
+        const syncDomainDataset = (recordHistory: boolean) => {
+            block.dataset.domainMin = domMinInput.value.trim();
+            block.dataset.domainMax = domMaxInput.value.trim();
+            this.onUpdateCallback();
+            if (recordHistory) HistoryManager.recordState(false);
+        };
+        domMinInput.addEventListener('input', () => syncDomainDataset(false));
+        domMaxInput.addEventListener('input', () => syncDomainDataset(false));
+        domMinInput.addEventListener('change', () => syncDomainDataset(true));
+        domMaxInput.addEventListener('change', () => syncDomainDataset(true));
+        contentZone.appendChild(domainRow);
+
         // --- LINHA DO SLIDER ---
         const sliderRow = document.createElement('div');
         sliderRow.className = 'slider-row';
@@ -903,7 +959,7 @@ export class ExpressionManager {
             'approx': '\\approx',
             '*': '\\cdot',
             'cdot': '\\cdot',
-            'times': '\\times',
+            'cross': '\\times',
             'div': '\\div',
             'e': 'e',
             'width': '\\operatorname{width}',
@@ -1793,6 +1849,7 @@ export class ExpressionManager {
         block.dataset.color = blockColor;
         block.dataset.lineStyle = 'solid';
         block.dataset.lineWidth = '2.5';
+        block.dataset.fill = 'false';
         if (folderId) {
             block.dataset.folderId = folderId;
             block.className = 'flex shrink-0 border-b border-gray-100 bg-white transition-colors duration-200 relative group pl-3 border-l-4 border-l-indigo-300';
@@ -2343,7 +2400,11 @@ export class ExpressionManager {
         if (block) {
             const mf = block.querySelector('math-field');
             if (mf) {
-                (mf as any).setValue(asciiValue);
+                if (typeof (mf as any).setValue === 'function') {
+                    (mf as any).setValue(asciiValue);
+                } else {
+                    (mf as any).value = asciiValue;
+                }
             }
         }
         this.updateBlockNumbers();
@@ -2357,7 +2418,11 @@ export class ExpressionManager {
         if (block) {
             const mf = block.querySelector('math-field');
             if (mf) {
-                (mf as any).setValue(asciiValue, { suppressChangeNotifications: true });
+                if (typeof (mf as any).setValue === 'function') {
+                    (mf as any).setValue(asciiValue, { suppressChangeNotifications: true });
+                } else {
+                    (mf as any).value = asciiValue;
+                }
             }
         }
     }
@@ -2369,6 +2434,9 @@ export class ExpressionManager {
         color: string,
         lineStyle: 'solid' | 'dashed' | 'dotted',
         lineWidth: number,
+        fill?: boolean,
+        domainMin?: string,
+        domainMax?: string,
         isTable?: boolean,
         tablePoints?: { x: number, y: number, rowIndex: number, tableBlockId: string }[],
         connectLines?: boolean,
@@ -2384,6 +2452,9 @@ export class ExpressionManager {
             color: string,
             lineStyle: 'solid' | 'dashed' | 'dotted',
             lineWidth: number,
+            fill?: boolean,
+            domainMin?: string,
+            domainMax?: string,
             isTable?: boolean,
             tablePoints?: { x: number, y: number, rowIndex: number, tableBlockId: string }[],
             connectLines?: boolean,
@@ -2479,10 +2550,72 @@ export class ExpressionManager {
             if (mf) {
                 const ascii = typeof mf.getValue === 'function' ? mf.getValue('ascii-math') : (mf.value || mf.getAttribute('value') || '');
                 const latex = typeof mf.getValue === 'function' ? mf.getValue('latex') : (mf.value || mf.getAttribute('value') || '');
-                if (ascii || latex) exprs.push({ id: block.id, rawAscii: ascii || '', latex: latex || '', visible, color, lineStyle, lineWidth });
+                const fill = block.dataset.fill === 'true';
+                const domainMin = block.dataset.domainActive === 'true' ? block.dataset.domainMin : undefined;
+                const domainMax = block.dataset.domainActive === 'true' ? block.dataset.domainMax : undefined;
+                if (ascii || latex) {
+                    exprs.push({
+                        id: block.id,
+                        rawAscii: ascii || '',
+                        latex: latex || '',
+                        visible,
+                        color,
+                        lineStyle,
+                        lineWidth,
+                        fill,
+                        domainMin,
+                        domainMax
+                    });
+                }
             }
         });
         return exprs;
+    }
+
+    /**
+     * Exibe/oculta e sincroniza os controles inline de domínio (ex: 0 <= t <= 1 ou 0 <= θ <= 12π) em expressões paramétricas e polares.
+     */
+    static setDomainBounds(
+        blockId: string,
+        opts: { active: boolean; paramVar?: string; minExpr?: string; maxExpr?: string }
+    ) {
+        const block = typeof document !== 'undefined' ? document.getElementById(blockId) : null;
+        if (!block) return;
+        const row = block.querySelector('.domain-bounds-row') as HTMLElement | null;
+        if (!row) return;
+
+        if (!opts.active) {
+            row.classList.add('hidden');
+            row.classList.remove('flex');
+            delete block.dataset.domainActive;
+            return;
+        }
+
+        row.classList.remove('hidden');
+        row.classList.add('flex');
+        block.dataset.domainActive = 'true';
+
+        const rawVar = (opts.paramVar || 't').replace(/\\/g, '').trim();
+        const displayVar = rawVar === 'theta' ? 'θ' : rawVar;
+        const varLabel = row.querySelector('.domain-var-label') as HTMLElement | null;
+        const minInput = row.querySelector('.domain-min-input') as HTMLInputElement | null;
+        const maxInput = row.querySelector('.domain-max-input') as HTMLInputElement | null;
+        if (varLabel) {
+            varLabel.textContent = `≤ ${displayVar} ≤`;
+        }
+
+        const varChanged = block.dataset.domainVar !== displayVar;
+        if (varChanged || block.dataset.domainMin === undefined) {
+            const nextMin = (opts.minExpr ?? '0').replace(/\\pi/g, 'π');
+            block.dataset.domainMin = nextMin;
+            if (minInput && document.activeElement !== minInput) minInput.value = nextMin;
+        }
+        if (varChanged || block.dataset.domainMax === undefined) {
+            const nextMax = (opts.maxExpr ?? '1').replace(/\\pi/g, 'π');
+            block.dataset.domainMax = nextMax;
+            if (maxInput && document.activeElement !== maxInput) maxInput.value = nextMax;
+        }
+        block.dataset.domainVar = displayVar;
     }
 
     /**
@@ -2693,6 +2826,61 @@ export class ExpressionManager {
         return latex;
     }
 
+    private static parseRationalCell(cellStr: string): { num: number; r: NonNullable<ReturnType<typeof RationalEngine.create>> | null } | null {
+        const s = cellStr.trim();
+        if (!s) return null;
+        if (/^[+-]?\d+$/.test(s)) {
+            const val = parseInt(s, 10);
+            return { num: val, r: RationalEngine.create(val, 1) };
+        }
+        const fracMatch = s.match(/^([+-]?\d+)\s*\/\s*(\d+)$/);
+        if (fracMatch) {
+            const r = RationalEngine.create(parseInt(fracMatch[1], 10), parseInt(fracMatch[2], 10));
+            return r ? { num: r.n / r.d, r } : null;
+        }
+        const texMatch = s.match(/^([+-]?)\s*\\frac\s*\{(\d+)\}\s*\{(\d+)\}$/);
+        if (texMatch) {
+            const sign = texMatch[1] === '-' ? -1 : 1;
+            const r = RationalEngine.create(sign * parseInt(texMatch[2], 10), parseInt(texMatch[3], 10));
+            return r ? { num: r.n / r.d, r } : null;
+        }
+        const numVal = Number(s);
+        if (!isNaN(numVal) && isFinite(numVal)) {
+            if (Math.abs(numVal) < 1e-12) return { num: 0, r: RationalEngine.create(0, 1) };
+            if (Number.isInteger(numVal)) return { num: numVal, r: RationalEngine.create(numVal, 1) };
+            const r = RationalEngine.fromNumber(numVal);
+            return { num: numVal, r: (r && r.d <= 100000) ? r : null };
+        }
+        return null;
+    }
+
+    private static attachFractionToggleMarkup(
+        resDisplay: HTMLElement,
+        block: HTMLElement,
+        id: string,
+        originalResult: string,
+        isFracActive: boolean,
+        valueHtml: string,
+        suffixHtml: string = ''
+    ) {
+        resDisplay.innerHTML = `
+            <div class="flex items-center gap-1.5 select-none">
+                <button type="button" class="fraction-toggle-btn flex items-center justify-center w-6 h-6 rounded border transition-all cursor-pointer select-none text-[10px] font-bold font-serif leading-none tracking-tighter ${isFracActive ? 'bg-blue-100 border-blue-400 text-blue-700 shadow-xs' : 'bg-white border-gray-300 text-gray-500 hover:text-gray-800 hover:bg-gray-100 hover:border-gray-400'}" title="${isFracActive ? 'Mostrar aproximação decimal' : 'Mostrar fração exata'}">
+                    a/b
+                </button>
+                <span class="font-semibold text-gray-800 select-text">= <span style="display:inline-block; vertical-align: middle;">${valueHtml}</span>${suffixHtml}</span>
+            </div>
+        `;
+        const btn = resDisplay.querySelector('.fraction-toggle-btn') as HTMLButtonElement | null;
+        if (btn) {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                (block as any)._showFraction = !isFracActive;
+                this.setResult(id, originalResult);
+            });
+        }
+    }
+
     static setResult(id: string, result: string) {
         const block = document.getElementById(id);
         if (block) {
@@ -2722,40 +2910,94 @@ export class ExpressionManager {
                         let isTruncated = false;
                         let dimRows = 0;
                         let dimCols = 0;
+                        const parsedGrid: number[][] = [];
+                        const rationalGrid: (NonNullable<ReturnType<typeof RationalEngine.create>> | null)[][] = [];
+                        let allNumeric = true;
+                        let allRational = true;
+                        let hasFractionCell = false;
 
-                        if (matrixMatch) {
-                            const rowStrings = mathStr.slice(1, -1).split(/\],\s*\[/);
-                            const parsedGrid: number[][] = [];
-                            let allNumeric = true;
-                            for (const r of rowStrings) {
-                                const cells = r.replace(/[\[\]]/g, '').split(',').map((c: string) => {
-                                    const num = Number(c.trim());
-                                    if (isNaN(num)) allNumeric = false;
-                                    return num;
-                                });
-                                parsedGrid.push(cells);
+                        const rawRows: string[][] = matrixMatch
+                            ? mathStr.slice(1, -1).split(/\],\s*\[/).map((r: string) =>
+                                r.replace(/[\[\]]/g, '').split(',').map((c: string) => c.trim())
+                              )
+                            : mathStr
+                                .replace(/^[\s\S]*?\\begin\{bmatrix\}/, '')
+                                .replace(/\\end\{bmatrix\}[\s\S]*$/, '')
+                                .split(/\\\\/)
+                                .map((r: string) => r.split('&').map((c: string) => c.trim()))
+                                .filter((cells: string[]) => cells.some(Boolean));
+
+                        for (const cells of rawRows) {
+                            const numRow: number[] = [];
+                            const ratRow: (NonNullable<ReturnType<typeof RationalEngine.create>> | null)[] = [];
+                            for (const c of cells) {
+                                const parsed = this.parseRationalCell(c);
+                                if (!parsed) {
+                                    allNumeric = false;
+                                    allRational = false;
+                                    numRow.push(NaN);
+                                    ratRow.push(null);
+                                } else {
+                                    numRow.push(parsed.num);
+                                    ratRow.push(parsed.r);
+                                    if (!parsed.r) {
+                                        allRational = false;
+                                    } else if (parsed.r.d > 1) {
+                                        hasFractionCell = true;
+                                    }
+                                }
                             }
+                            parsedGrid.push(numRow);
+                            rationalGrid.push(ratRow);
+                        }
 
-                            if (allNumeric && parsedGrid.length > 0) {
+                        const isFracActive = (block as any)._showFraction === true;
+                        const canToggleFraction = allNumeric && allRational && hasFractionCell && parsedGrid.length > 0;
+
+                        if (allNumeric && parsedGrid.length > 0) {
+                            dimRows = parsedGrid.length;
+                            dimCols = parsedGrid[0]?.length || 0;
+                            if (canToggleFraction && isFracActive) {
+                                const maxRows = 6;
+                                const maxCols = 6;
+                                isTruncated = dimRows > maxRows || dimCols > maxCols;
+                                const rLim = Math.min(dimRows, maxRows);
+                                const cLim = Math.min(dimCols, maxCols);
+                                const katexRows = rationalGrid.slice(0, rLim).map((row) => {
+                                    const colsTex = row.slice(0, cLim).map((r) =>
+                                        !r ? '0' : (r.d === 1 ? `${r.n}` : RationalEngine.toLatex(r))
+                                    );
+                                    if (dimCols > maxCols) colsTex.push('\\cdots');
+                                    return colsTex.join(' & ');
+                                });
+                                if (dimRows > maxRows) {
+                                    const dots = new Array(cLim).fill('\\vdots');
+                                    if (dimCols > maxCols) dots.push('\\ddots');
+                                    katexRows.push(dots.join(' & '));
+                                }
+                                katexMatrix = `\\begin{bmatrix} ${katexRows.join(' \\\\ ')} \\end{bmatrix}`;
+                            } else {
                                 const fmt = MatrixEngine.formatMatrixLaTeX(parsedGrid, 6, 6);
                                 katexMatrix = fmt.latex;
                                 isTruncated = fmt.isTruncated;
                                 dimRows = fmt.rows;
                                 dimCols = fmt.cols;
-                            } else {
-                                const katexRows = rowStrings.map((r: string) => {
-                                    const cells = r.replace(/[\[\]]/g, '').split(',').map((c: string) => c.trim());
-                                    return cells.join(' & ');
-                                }).join(' \\\\ ');
-                                katexMatrix = `\\begin{bmatrix} ${katexRows} \\end{bmatrix}`;
                             }
+                        } else if (matrixMatch) {
+                            const katexRows = rawRows.map((cells) => cells.join(' & ')).join(' \\\\ ');
+                            katexMatrix = `\\begin{bmatrix} ${katexRows} \\end{bmatrix}`;
                         }
 
                         const html = this.renderLatexMarkup(katexMatrix);
                         const badgeHtml = isTruncated
                             ? `<span class="matrix-dim-badge ml-1.5 inline-block text-[10px] font-sans font-semibold text-gray-500 bg-gray-100 border border-gray-300 rounded px-1 py-0.2 select-none">${dimRows} × ${dimCols}</span>`
                             : '';
-                        resDisplay.innerHTML = `<span class="font-semibold text-gray-800 select-text">= <span style="display:inline-block; vertical-align: middle;">${html}</span>${badgeHtml}</span>`;
+
+                        if (canToggleFraction) {
+                            this.attachFractionToggleMarkup(resDisplay, block, id, result, isFracActive, html, badgeHtml);
+                        } else {
+                            resDisplay.innerHTML = `<span class="font-semibold text-gray-800 select-text">= <span style="display:inline-block; vertical-align: middle;">${html}</span>${badgeHtml}</span>`;
+                        }
                         this.updateMatrixBlockVisual(block, true);
                         return;
                     } catch(e) {
@@ -2776,23 +3018,7 @@ export class ExpressionManager {
                             console.warn('[ExpressionManager] Fraction markup render failed:', err);
                         }
                     }
-                    
-                    resDisplay.innerHTML = `
-                        <div class="flex items-center gap-1.5 select-none">
-                            <button type="button" class="fraction-toggle-btn flex items-center justify-center w-6 h-6 rounded border transition-all cursor-pointer select-none text-[10px] font-bold font-serif leading-none tracking-tighter ${isFracActive ? 'bg-blue-100 border-blue-400 text-blue-700 shadow-xs' : 'bg-white border-gray-300 text-gray-500 hover:text-gray-800 hover:bg-gray-100 hover:border-gray-400'}" title="${isFracActive ? 'Mostrar aproximação decimal' : 'Mostrar fração exata'}">
-                                a/b
-                            </button>
-                            <span class="font-semibold text-gray-800 select-text">= <span style="display:inline-block; vertical-align: middle;">${valueHtml}</span></span>
-                        </div>
-                    `;
-                    const btn = resDisplay.querySelector('.fraction-toggle-btn') as HTMLButtonElement;
-                    if (btn) {
-                        btn.addEventListener('click', (e) => {
-                            e.stopPropagation();
-                            (block as any)._showFraction = !isFracActive;
-                            this.setResult(id, result);
-                        });
-                    }
+                    this.attachFractionToggleMarkup(resDisplay, block, id, result, isFracActive, valueHtml);
                     return;
                 }
 
@@ -2804,8 +3030,29 @@ export class ExpressionManager {
                 }
 
                 const countSuffixMatch = mathStr.match(/^(.*?)\s+(\(\d+\s+elementos?\))$/i);
-                const mathCore = countSuffixMatch ? countSuffixMatch[1] : mathStr;
+                const mathCore = countSuffixMatch ? countSuffixMatch[1].trim() : mathStr;
                 const countSuffix = countSuffixMatch ? countSuffixMatch[2] : '';
+
+                // Botão [a/b] também para listas numéricas com entradas racionais (ex: \int_0^1 [x, x^2] dx)
+                if (!mathCore.includes('[[') && mathCore.startsWith('[') && mathCore.endsWith(']') && !mathCore.includes('(')) {
+                    const listCells = mathCore.slice(1, -1).split(',').map(c => c.trim());
+                    if (listCells.length > 0 && listCells.every(Boolean)) {
+                        const parsedItems = listCells.map(c => this.parseRationalCell(c));
+                        const allRationals = parsedItems.every(p => p && p.r !== null);
+                        const hasFrac = parsedItems.some(p => p && p.r && p.r.d > 1);
+                        if (allRationals && hasFrac) {
+                            const isFracActive = (block as any)._showFraction === true;
+                            const suffixHtml = countSuffix
+                                ? `<span class="ml-1.5 text-xs font-sans font-normal text-gray-500 whitespace-nowrap">${countSuffix}</span>`
+                                : '';
+                            const valueHtml = isFracActive
+                                ? this.renderLatexMarkup(`\\left[${parsedItems.map(p => p!.r!.d === 1 ? `${p!.r!.n}` : RationalEngine.toLatex(p!.r!)).join(', ')}\\right]`)
+                                : `[${parsedItems.map(p => RationalEngine.toDecimalString(p!.r!)).join(', ')}]`;
+                            this.attachFractionToggleMarkup(resDisplay, block, id, result, isFracActive, valueHtml, suffixHtml);
+                            return;
+                        }
+                    }
+                }
 
                 if (!mathStr.includes('Erro') && !mathStr.includes('indefinido') && !mathStr.includes('carregar')) {
                     if (mathCore.includes('\\') || mathCore.startsWith('[') || mathCore.includes('matrix')) {

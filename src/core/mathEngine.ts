@@ -97,6 +97,9 @@ export class MathEngine {
             return clean;
         }
         if (Array.isArray(ast)) {
+            if (ast.length === 0 || typeof ast[0] !== 'string') {
+                return `[${ast.map(el => this.formatForGiac(el)).join(', ')}]`;
+            }
             const op = ast[0];
             if (op === 'Add') return `(${this.formatForGiac(ast[1])} + ${this.formatForGiac(ast[2])})`;
             if (op === 'Subtract') return `(${this.formatForGiac(ast[1])} - ${this.formatForGiac(ast[2])})`;
@@ -227,6 +230,8 @@ export class MathEngine {
             if (prop === 'total' || prop === 'sum') return target.reduce((a, b) => a + Number(b), 0);
             if (prop === 'min') return target.length > 0 ? Math.min(...target.map(Number)) : NaN;
             if (prop === 'max') return target.length > 0 ? Math.max(...target.map(Number)) : NaN;
+            if (prop === 'sort') return ListEngine.sort(target);
+            if (prop === 'unique') return ListEngine.unique(target);
         }
         return NaN;
     }
@@ -693,6 +698,7 @@ export class MathEngine {
         this.compiledFuncs['sub'] = MathEngine.sub;
         this.compiledFuncs['mul'] = MathEngine.mul;
         this.compiledFuncs['div'] = MathEngine.div;
+        this.compiledFuncs['pow'] = MathEngine.pow;
         this.compiledFuncs['cross'] = MathEngine.cross;
         this.compiledFuncs['midpoint'] = MathEngine.midpoint;
         this.compiledFuncs['nCr'] = MathEngine.nCr;
@@ -801,6 +807,9 @@ export class MathEngine {
 
         // Suporte a arrays MathJSON (['Add', 1, 2], etc.)
         if (Array.isArray(ast)) {
+            if (ast.length === 0 || typeof ast[0] !== 'string') {
+                return ast;
+            }
             const op = ast[0];
 
             // 1. Listas, Sequências Sintéticas, Compreensões e With
@@ -809,10 +818,25 @@ export class MathEngine {
                     throw new DesmosSemanticError('As listas não podem ter mais que 10.000 elementos.', 'LIST_LIMIT_EXCEEDED');
                 }
                 const items = ast.slice(1).map((item: any) => this.evaluateAST(item, scope));
+                if (items.length > 0 && items.every((it: any) => MatrixEngine.isMatrix(it))) {
+                    return MatrixEngine.fromBlocks([items]);
+                }
                 if (MatrixEngine.isMatrix(items)) {
                     MatrixEngine.validateDimensions(items.length, items[0].length);
                 }
                 return items;
+            }
+            if (op === 'MatrixBlock') {
+                const blockRows = ast.slice(1).map((rowAst: any) => {
+                    if (Array.isArray(rowAst) && rowAst[0] === 'List') {
+                        return rowAst.slice(1).map((cellAst: any) => this.evaluateAST(cellAst, scope));
+                    }
+                    return [this.evaluateAST(rowAst, scope)];
+                });
+                return MatrixEngine.fromBlocks(blockRows);
+            }
+            if (op === 'ForDomain') {
+                return this.evaluateAST(ast[1], scope);
             }
             if (op === 'With') {
                 const localScope: Record<string, any> = this.withLocalBindings(scope, {});
@@ -994,6 +1018,28 @@ export class MathEngine {
                 const args = ast.slice(1).map((a: any) => this.evaluateAST(a, scope));
                 return ListEngine.random(...args);
             }
+            if (opLower === 'join') {
+                const args = ast.slice(1).map((a: any) => this.evaluateAST(a, scope));
+                return ListEngine.join(...args);
+            }
+            if (opLower === 'repeat') {
+                const valArg = this.evaluateAST(ast[1], scope);
+                const countArg = this.evaluateAST(ast[2], scope);
+                return ListEngine.repeat(valArg, countArg);
+            }
+            if (opLower === 'sort') {
+                const listArg = this.evaluateAST(ast[1], scope);
+                const keysArg = ast.length > 2 ? this.evaluateAST(ast[2], scope) : undefined;
+                return ListEngine.sort(listArg, keysArg);
+            }
+            if (opLower === 'unique') {
+                return ListEngine.unique(this.evaluateAST(ast[1], scope));
+            }
+            if (opLower === 'shuffle') {
+                const listArg = this.evaluateAST(ast[1], scope);
+                const seedArg = ast.length > 2 ? this.evaluateAST(ast[2], scope) : undefined;
+                return ListEngine.shuffle(listArg, seedArg);
+            }
             if (opLower === 'erf') {
                 const val = this.evaluateAST(ast[1], scope);
                 if (Array.isArray(val)) return val.map((v: any) => MathEngine.erf(Number(v)));
@@ -1156,6 +1202,16 @@ export class MathEngine {
             ]);
 
             if (binaryOps.has(op)) {
+                const rawRIdent = typeof ast[2] === 'string'
+                    ? ast[2].trim()
+                    : (ast[2] && typeof ast[2] === 'object' && !Array.isArray(ast[2]) && ast[2].type === 'Identifier'
+                        ? String(ast[2].value || '').trim()
+                        : '');
+                if (op === 'Power' && /^(?:T|\\?top|\\?intercal)$/i.test(rawRIdent)) {
+                    const L = this.evaluateAST(ast[1], scope);
+                    if (MatrixEngine.isMatrix(L)) return MatrixEngine.transpose(L);
+                }
+
                 const L = this.evaluateAST(ast[1], scope);
                 const R = this.evaluateAST(ast[2], scope);
 
@@ -1401,14 +1457,29 @@ export class MathEngine {
 
     static div(a: any, b: any): any {
         if (PointEngine.isPoint(a) && typeof b === 'number') return PointEngine.divide(a, b);
+        if (MatrixEngine.isMatrix(a) && typeof b === 'number') return MatrixEngine.scale(a, 1 / b);
         if (Array.isArray(a) || Array.isArray(b)) return ListEngine.broadcastBinary('Divide', a, b, MathEngine.realPow);
         return b === 0 ? NaN : a / b;
+    }
+
+    static pow(a: any, b: any): any {
+        if (MatrixEngine.isMatrix(a)) {
+            if (typeof b === 'number') return MatrixEngine.power(a, b);
+            if (typeof b === 'string' && /^(?:T|\\?top|\\?intercal)$/i.test(b.trim())) {
+                return MatrixEngine.transpose(a);
+            }
+        }
+        if (Array.isArray(a) || Array.isArray(b)) {
+            return ListEngine.broadcastBinary('Power', a, b, MathEngine.realPow);
+        }
+        return MathEngine.realPow(a, b);
     }
 
     private static readonly AST_EVAL_OPS = new Set([
         'with', 'piecewise', 'polygon', 'min', 'max', 'mean', 'total', 'sum', 'product', 'prod', 'length', 'size', 'count',
         'median', 'var', 'variance', 'samplevariance', 'stdev', 'stddev', 'samplesd',
         'varp', 'stdevp', 'mad', 'quantile', 'quartile', 'cov', 'covp', 'corr', 'spearman', 'random',
+        'join', 'repeat', 'sort', 'unique', 'shuffle',
         'det', 'determinant', 'trace', 'tr', 'rank', 'matrixrank', 'rref', 'reducedrowechelonform',
         'inv', 'invert', 'transpose', 'tran',
         'dot', 'pointdot', 'pointcross', 'pointperp', 'perp', 'distance', 'magnitude', 'norm'
@@ -1442,6 +1513,9 @@ export class MathEngine {
             return lookupIdentJS(cleanNode);
         }
         if (Array.isArray(node)) {
+            if (node.length === 0 || typeof node[0] !== 'string') {
+                return `[${node.map(tr).join(', ')}]`;
+            }
             const op = node[0];
             if (op === 'Add') {
                 return inlineScalarArith
@@ -1464,7 +1538,19 @@ export class MathEngine {
                     : `(funcs && funcs.div ? funcs.div(${tr(node[1])}, ${tr(node[2])}) : (${tr(node[1])} / ${tr(node[2])}))`;
             }
             if (op === 'Cross') return `funcs.cross(${tr(node[1])}, ${tr(node[2])})`;
-            if (op === 'Power') return `funcs.realPow(${tr(node[1])}, ${tr(node[2])})`;
+            if (op === 'Power') {
+                const rawRIdent = typeof node[2] === 'string'
+                    ? node[2].trim()
+                    : (node[2] && typeof node[2] === 'object' && !Array.isArray(node[2]) && node[2].type === 'Identifier'
+                        ? String(node[2].value || '').trim()
+                        : '');
+                if (/^(?:T|\\?top|\\?intercal)$/i.test(rawRIdent)) {
+                    return `((__b) => funcs && funcs.matrixEngine && funcs.matrixEngine.isMatrix(__b) ? funcs.matrixEngine.transpose(__b) : funcs.realPow(__b, ${tr(node[2])}))(${tr(node[1])})`;
+                }
+                return inlineScalarArith
+                    ? `funcs.realPow(${tr(node[1])}, ${tr(node[2])})`
+                    : `(funcs && funcs.pow ? funcs.pow(${tr(node[1])}, ${tr(node[2])}) : funcs.realPow(${tr(node[1])}, ${tr(node[2])}))`;
+            }
             if (op === 'Negate') return `(-(${tr(node[1])}))`;
             if (op === 'Equal') return `(${tr(node[1])} === ${tr(node[2])})`;
             if (op === 'NotEqual') return `(${tr(node[1])} !== ${tr(node[2])})`;
@@ -1520,7 +1606,22 @@ export class MathEngine {
             if (opLower === 'cross') return `funcs.cross(${tr(node[1])}, ${tr(node[2])})`;
             if (opLower === 'midpoint') return `funcs.midpoint(${tr(node[1])}, ${tr(node[2])})`;
 
-            if (op === 'List') return `[${node.slice(1).map(tr).join(', ')}]`;
+            if (op === 'List') {
+                const listLiteral = `[${node.slice(1).map(tr).join(', ')}]`;
+                return inlineScalarArith
+                    ? listLiteral
+                    : `((__items) => funcs && funcs.matrixEngine && __items.length > 0 && __items.every((it) => funcs.matrixEngine.isMatrix(it)) ? funcs.matrixEngine.fromBlocks([__items]) : __items)(${listLiteral})`;
+            }
+            if (op === 'MatrixBlock') {
+                const blockRowsJS = node.slice(1).map((rowNode: any) => {
+                    if (Array.isArray(rowNode) && rowNode[0] === 'List') {
+                        return `[${rowNode.slice(1).map(tr).join(', ')}]`;
+                    }
+                    return `[${tr(rowNode)}]`;
+                });
+                return `funcs.matrixEngine.fromBlocks([${blockRowsJS.join(', ')}])`;
+            }
+            if (op === 'ForDomain') return tr(node[1]);
             if (op === 'Range') return `funcs.listEngine.generateRange(${tr(node[1])}, ${tr(node[2])})`;
             if (op === 'RangeStep') return `funcs.listEngine.generateRange(${tr(node[1])}, ${tr(node[3])}, (${tr(node[2])}) - (${tr(node[1])}))`;
             if (op === 'Index') return `funcs.listEngine.evaluateIndex(${tr(node[1])}, ${JSON.stringify(node.length === 3 ? node[2] : node.slice(2))}, scope, (a, s) => funcs.evaluateAST(a, s), ${JSON.stringify(typeof node[1] === 'string' ? node[1] : '')})`;
@@ -1661,6 +1762,9 @@ export class MathEngine {
         }
         if (typeof ast === 'number') return ast;
         if (Array.isArray(ast)) {
+            if (ast.length === 0 || typeof ast[0] !== 'string') {
+                return ast;
+            }
             const op = ast[0];
             if (op === 'With' && Array.isArray(ast[2])) {
                 const shadowed = new Set<string>();
@@ -1731,6 +1835,9 @@ export class MathEngine {
             return ast;
         }
         if (Array.isArray(ast)) {
+            if (ast.length === 0 || typeof ast[0] !== 'string') {
+                return ast;
+            }
             const op = ast[0];
             if (op === 'Call' && typeof ast[1] === 'string') {
                 return ['Call', ast[1], ...ast.slice(2).map(child => this.inlineDynamicVarsForExpansion(child, boundParams, visitedVars))];
@@ -1757,6 +1864,9 @@ export class MathEngine {
         if (depth > 12) return ast;
         if (typeof ast === 'string' || typeof ast === 'number') return ast;
         if (Array.isArray(ast)) {
+            if (ast.length === 0 || typeof ast[0] !== 'string') {
+                return ast;
+            }
             const op = ast[0];
             const isCallNode = op === 'Call' && typeof ast[1] === 'string';
             const fnName = isCallNode ? ast[1].trim() : (typeof op === 'string' ? op : '');
@@ -1845,11 +1955,13 @@ export class MathEngine {
                 if (op === 'Sin') return `funcs.intSin(${L})`;
                 if (op === 'Cos') return `funcs.intCos(${L})`;
                 if (op === 'Tan') return `funcs.intDiv(funcs.intSin(${L}), funcs.intCos(${L}))`;
+                if (op === 'Sec') return `funcs.intDiv({min: 1, max: 1}, funcs.intCos(${L}))`;
+                if (op === 'Csc') return `funcs.intDiv({min: 1, max: 1}, funcs.intSin(${L}))`;
+                if (op === 'Cot') return `funcs.intDiv(funcs.intCos(${L}), funcs.intSin(${L}))`;
                 if (op === 'Sqrt') return `funcs.intSqrt(${L})`;
                 if (op === 'Ln') return `funcs.intLn(${L})`;
-                if (op === 'Ln') return `funcs.intLn(${L})`;
                 if (op === 'Log') return `funcs.intLog(${L})`;
-                if (op === 'Atan') return `funcs.intAtan(${L})`;
+                if (op === 'Atan') return node.length > 2 ? `funcs.intAtan2(${L}, ${R})` : `funcs.intAtan(${L})`;
                 if (op === 'Asin') return `funcs.intAsin(${L})`;
                 if (op === 'Acos') return `funcs.intAcos(${L})`;
                 if (op === 'Negate') return `funcs.intNeg(${L})`;
@@ -1953,6 +2065,19 @@ export class MathEngine {
             const f = isDeg ? (180 / Math.PI) : 1;
             return { min: Math.atan(a.min) * f, max: Math.atan(a.max) * f };
         },
+        intAtan2: (yInt: any, xInt: any) => {
+            const isDeg = MathEngine.angleModeProvider ? MathEngine.angleModeProvider() === 'degrees' : false;
+            const f = isDeg ? (180 / Math.PI) : 1;
+            // Corte de ramo em x <= 0 com y cruzando 0
+            if (xInt.min <= 0 && yInt.min <= 0 && yInt.max >= 0) {
+                return { min: -Math.PI * f, max: Math.PI * f };
+            }
+            const c1 = Math.atan2(yInt.min, xInt.min) * f;
+            const c2 = Math.atan2(yInt.min, xInt.max) * f;
+            const c3 = Math.atan2(yInt.max, xInt.min) * f;
+            const c4 = Math.atan2(yInt.max, xInt.max) * f;
+            return { min: Math.min(c1, c2, c3, c4), max: Math.max(c1, c2, c3, c4) };
+        },
         intAsin: (a: any) => {
             const isDeg = MathEngine.angleModeProvider ? MathEngine.angleModeProvider() === 'degrees' : false;
             const f = isDeg ? (180 / Math.PI) : 1;
@@ -2023,8 +2148,118 @@ export class MathEngine {
      * Avaliação numérica de integrais definidas (inclusive impróprias ±∞ e integrandos descontínuos/piecewise)
      * via transformação trigonométrica x = tan(theta) e quadratura Gauss-Legendre de 5 pontos adaptativa.
      */
-    static evaluateDefiniteIntegral(ast: any, lower: number, upper: number, variable: string = 'x', scope: Record<string, number> = {}): number {
+    private static readonly QUAD5_NODES = [
+        0,
+        -0.5384693101056831,
+        0.5384693101056831,
+        -0.9061798459386640,
+        0.9061798459386640
+    ];
+    private static readonly QUAD5_WEIGHTS = [
+        0.5688888888888889,
+        0.4786286704993665,
+        0.4786286704993665,
+        0.2369268850561891,
+        0.2369268850561891
+    ];
+
+    private static quadGL5(fn: (t: number) => number, lo: number, hi: number): number {
+        const half = 0.5 * (hi - lo);
+        const mid = 0.5 * (hi + lo);
+        let sum = 0;
+        for (let i = 0; i < 5; i++) {
+            const val = fn(mid + half * this.QUAD5_NODES[i]);
+            if (!Number.isFinite(val)) return NaN;
+            sum += this.QUAD5_WEIGHTS[i] * val;
+        }
+        return half * sum;
+    }
+
+    private static integrateScalarAdaptive(fn: (t: number) => number, a: number, b: number, depth: number = 0): number {
+        const whole = this.quadGL5(fn, a, b);
+        const mid = 0.5 * (a + b);
+        const left = this.quadGL5(fn, a, mid);
+        const right = this.quadGL5(fn, mid, b);
+        if (!Number.isFinite(whole) || !Number.isFinite(left) || !Number.isFinite(right)) {
+            if (depth >= 8) return NaN;
+            return this.integrateScalarAdaptive(fn, a, mid, depth + 1) + this.integrateScalarAdaptive(fn, mid, b, depth + 1);
+        }
+        const combined = left + right;
+        if (depth >= 14 || Math.abs(combined - whole) <= 1e-11 * (1 + Math.abs(combined))) {
+            return Math.abs(combined) < 1e-13 ? 0 : Number(combined.toPrecision(14));
+        }
+        return this.integrateScalarAdaptive(fn, a, mid, depth + 1) + this.integrateScalarAdaptive(fn, mid, b, depth + 1);
+    }
+
+    static evaluateDefiniteIntegral(ast: any, lower: number, upper: number, variable: string = 'x', scope: Record<string, any> = {}): any {
         if (isNaN(lower) || isNaN(upper)) return NaN;
+
+        const probeT = lower === upper ? lower : lower + 0.37123 * (upper - lower);
+        const sample = this.evaluateAST(ast, this.withLocalBindings(scope, { [variable]: probeT }));
+
+        if (MatrixEngine.isMatrix(sample)) {
+            const rows = sample.length;
+            const cols = sample[0]?.length || 0;
+            MatrixEngine.validateDimensions(rows, cols);
+            if (lower === upper) {
+                return Array.from({ length: rows }, () => Array.from({ length: cols }, () => 0));
+            }
+            const aMat = Math.min(lower, upper);
+            const bMat = Math.max(lower, upper);
+            const sgnMat = lower > upper ? -1 : 1;
+            const outMat: number[][] = [];
+            for (let r = 0; r < rows; r++) {
+                const rowVals: number[] = [];
+                for (let c = 0; c < cols; c++) {
+                    const entryVal = this.integrateScalarAdaptive((tVal) => {
+                        const res = this.evaluateAST(ast, this.withLocalBindings(scope, { [variable]: tVal }));
+                        return MatrixEngine.isMatrix(res) ? Number(res[r]?.[c]) : NaN;
+                    }, aMat, bMat);
+                    rowVals.push(sgnMat * entryVal);
+                }
+                outMat.push(rowVals);
+            }
+            return outMat;
+        }
+
+        if (PointEngine.isPoint(sample)) {
+            if (lower === upper) {
+                return sample.z !== undefined ? { x: 0, y: 0, z: 0 } : { x: 0, y: 0 };
+            }
+            const aPt = Math.min(lower, upper);
+            const bPt = Math.max(lower, upper);
+            const sgnPt = lower > upper ? -1 : 1;
+            const ix = sgnPt * this.integrateScalarAdaptive((tVal) => {
+                const res = this.evaluateAST(ast, this.withLocalBindings(scope, { [variable]: tVal }));
+                return PointEngine.isPoint(res) ? res.x : NaN;
+            }, aPt, bPt);
+            const iy = sgnPt * this.integrateScalarAdaptive((tVal) => {
+                const res = this.evaluateAST(ast, this.withLocalBindings(scope, { [variable]: tVal }));
+                return PointEngine.isPoint(res) ? res.y : NaN;
+            }, aPt, bPt);
+            if (sample.z !== undefined) {
+                const iz = sgnPt * this.integrateScalarAdaptive((tVal) => {
+                    const res = this.evaluateAST(ast, this.withLocalBindings(scope, { [variable]: tVal }));
+                    return PointEngine.isPoint(res) ? (res.z ?? 0) : NaN;
+                }, aPt, bPt);
+                return { x: ix, y: iy, z: iz };
+            }
+            return { x: ix, y: iy };
+        }
+
+        if (Array.isArray(sample)) {
+            if (lower === upper) return sample.map(() => 0);
+            const aArr = Math.min(lower, upper);
+            const bArr = Math.max(lower, upper);
+            const sgnArr = lower > upper ? -1 : 1;
+            return sample.map((_: any, idx: number) =>
+                sgnArr * this.integrateScalarAdaptive((tVal) => {
+                    const res = this.evaluateAST(ast, this.withLocalBindings(scope, { [variable]: tVal }));
+                    return Array.isArray(res) ? Number(res[idx]) : NaN;
+                }, aArr, bArr)
+            );
+        }
+
         if (lower === upper) return 0;
 
         let a = lower;

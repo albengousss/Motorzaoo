@@ -172,8 +172,8 @@ export function isSpatialCoordinateVar(name: string, is3D: boolean = false): boo
 
 export const AST_STRUCTURAL_OPS = new Set([
     'Add', 'Subtract', 'Multiply', 'Divide', 'Power', 'Negate', 'Cross',
-    'List', 'Range', 'RangeStep', 'Index', 'MatrixIndex', 'Slice', 'Dot', 'PropertyAccess',
-    'DotProduct', 'Point', 'Tuple', 'Comprehension', 'MatrixComprehension', 'With',
+    'List', 'Range', 'RangeStep', 'Index', 'MatrixIndex', 'MatrixBlock', 'Slice', 'Dot', 'PropertyAccess',
+    'DotProduct', 'Point', 'Tuple', 'Comprehension', 'MatrixComprehension', 'ForDomain', 'With',
     'Abs', 'Sqrt', 'Cbrt', 'Nthroot', 'Exp', 'Ln', 'Log',
     'Sin', 'Cos', 'Tan', 'Sec', 'Csc', 'Cot',
     'Asin', 'Acos', 'Atan', 'Asec', 'Acsc', 'Acot',
@@ -193,7 +193,7 @@ export const RESERVED_BUILTIN_NAMES = new Set([
     'sqrt', 'cbrt', 'nthroot', 'abs', 'exp', 'ln', 'log',
     'floor', 'ceil', 'round', 'sign', 'sgn', 'mod', 'gcd', 'lcm',
     'nCr', 'ncr', 'nPr', 'npr', 'binom',
-    'min', 'max', 'mean', 'median', 'stdev', 'stddev', 'stdevp', 'var', 'variance', 'varp', 'samplesd', 'samplevariance', 'cov', 'covp', 'corr', 'spearman', 'quartile', 'quantile', 'mad', 'erf', 'arsinh', 'arcosh', 'artanh', 'total', 'count', 'length', 'sort', 'unique', 'join',
+    'min', 'max', 'mean', 'median', 'stdev', 'stddev', 'stdevp', 'var', 'variance', 'varp', 'samplesd', 'samplevariance', 'cov', 'covp', 'corr', 'spearman', 'quartile', 'quantile', 'mad', 'erf', 'arsinh', 'arcosh', 'artanh', 'total', 'count', 'length', 'sort', 'unique', 'join', 'repeat',
     'dot', 'cross', 'midpoint', 'distance', 'mag', 'magnitude', 'norm', 'pointperp', 'perp',
     'det', 'determinant', 'inv', 'invert', 'tran', 'transpose', 'rref', 'trace', 'rank', 'matrixrank',
     'rows', 'columns', 'cols', 'dims', 'identity', 'eye', 'zeros', 'ones',

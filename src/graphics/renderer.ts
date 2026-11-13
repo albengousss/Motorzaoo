@@ -1,5 +1,6 @@
 import { Camera } from './camera';
 import { StateManager } from '../core/stateManager';
+import { splitSubpathsAtBreaks } from '../core/parametricDomain';
 
 
 function formatDesmosAxisNumber(val: number, isRad: boolean = false): string {
@@ -92,20 +93,62 @@ export class Renderer {
 
     drawPolygon(points: { x: number, y: number }[], color: string = '#2d70b3') {
         if (!points || points.length < 3) return;
+        const subpaths = splitSubpathsAtBreaks(points);
+        if (subpaths.length === 0) return;
+
+        this.ctx.save();
         this.ctx.fillStyle = color + '66'; // Opacidade oficial Desmos de 40% (#...66)
         this.ctx.beginPath();
-        const startX = Camera.toPixelX(points[0].x);
-        const startY = Camera.toPixelY(points[0].y);
-        this.ctx.moveTo(startX, startY);
-        for (let i = 1; i < points.length; i++) {
-            this.ctx.lineTo(Camera.toPixelX(points[i].x), Camera.toPixelY(points[i].y));
+        let hasFillSubpath = false;
+        for (const sub of subpaths) {
+            if (sub.length < 3) continue;
+            hasFillSubpath = true;
+            this.ctx.moveTo(Camera.toPixelX(sub[0].x), Camera.toPixelY(sub[0].y));
+            for (let i = 1; i < sub.length; i++) {
+                this.ctx.lineTo(Camera.toPixelX(sub[i].x), Camera.toPixelY(sub[i].y));
+            }
+            this.ctx.closePath();
         }
-        this.ctx.closePath();
-        this.ctx.fill();
+        if (hasFillSubpath) {
+            this.ctx.fill('nonzero');
+        }
 
         this.ctx.strokeStyle = color;
         this.ctx.lineWidth = 2;
-        this.ctx.stroke();
+        for (const sub of subpaths) {
+            if (sub.length < 2) continue;
+            this.ctx.beginPath();
+            this.ctx.moveTo(Camera.toPixelX(sub[0].x), Camera.toPixelY(sub[0].y));
+            for (let i = 1; i < sub.length; i++) {
+                this.ctx.lineTo(Camera.toPixelX(sub[i].x), Camera.toPixelY(sub[i].y));
+            }
+            if (sub.length >= 3) this.ctx.closePath();
+            this.ctx.stroke();
+        }
+        this.ctx.restore();
+    }
+
+    /**
+     * Preenche curvas paramétricas fechadas usando a regra non-zero winding do Desmos:
+     * laços separados por quebras NaN com orientações opostas (CCW vs CW) anulam o interior (furo).
+     */
+    fillParametricLoop(points: { x: number, y: number }[], color: string = '#2d70b3') {
+        if (!points || points.length < 3) return;
+        const subpaths = splitSubpathsAtBreaks(points).filter(s => s.length >= 3);
+        if (subpaths.length === 0) return;
+
+        this.ctx.save();
+        this.ctx.fillStyle = color + '55';
+        this.ctx.beginPath();
+        for (const sub of subpaths) {
+            this.ctx.moveTo(Camera.toPixelX(sub[0].x), Camera.toPixelY(sub[0].y));
+            for (let i = 1; i < sub.length; i++) {
+                this.ctx.lineTo(Camera.toPixelX(sub[i].x), Camera.toPixelY(sub[i].y));
+            }
+            this.ctx.closePath();
+        }
+        this.ctx.fill('nonzero');
+        this.ctx.restore();
     }
 
     drawSegments(segments: {x1:number, y1:number, x2:number, y2:number}[], color: string = '#2d70b3') {

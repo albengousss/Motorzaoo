@@ -3,6 +3,9 @@ import { PrattParser } from '../../src/core/prattParser';
 import { MathEngine } from '../../src/core/mathEngine';
 import { StateManager } from '../../src/core/stateManager';
 import { ListEngine } from '../../src/core/listEngine';
+import { MatrixEngine } from '../../src/core/matrixEngine';
+import { PointEngine } from '../../src/core/pointEngine';
+import { RationalEngine } from '../../src/core/rationalEngine';
 import { LatexNormalizer } from '../../src/core/latexNormalizer';
 
 describe('Desmos Parity Module 04: Built-in Functions, Domains, Calculus & Statistics', () => {
@@ -177,5 +180,36 @@ describe('Desmos Parity Module 04: Built-in Functions, Domains, Calculus & Stati
         expect(s1).toEqual(s2);
         expect(s1).not.toEqual(s3);
     });
-    it.todo('Phase D: evaluates matrix-valued definite integrals \\int_0^1 [[x,x^2],[x^3,x^4]] dx');
+    it('Phase D: evaluates matrix-valued definite integrals \\int_0^1 [[x,x^2],[x^3,x^4]] dx', () => {
+        const clean = LatexNormalizer.normalize('\\int_{0}^{1} [[x,x^2],[x^3,x^4]] dx');
+        const ast = new PrattParser(clean).parseExpression();
+        expect(ast[0]).toBe('Integrate');
+
+        const low = MathEngine.evaluateAST(ast[3], {});
+        const upp = MathEngine.evaluateAST(ast[4], {});
+        const matRes = MathEngine.evaluateDefiniteIntegral(ast[1], low, upp, ast[2], {});
+        expect(MatrixEngine.isMatrix(matRes)).toBe(true);
+        expect(matRes[0][0]).toBeCloseTo(0.5, 9);
+        expect(matRes[0][1]).toBeCloseTo(1 / 3, 9);
+        expect(matRes[1][0]).toBeCloseTo(0.25, 9);
+        expect(matRes[1][1]).toBeCloseTo(0.2, 9);
+
+        expect(RationalEngine.fromNumber(matRes[0][0])).toMatchObject({ n: 1, d: 2 });
+        expect(RationalEngine.fromNumber(matRes[0][1])).toMatchObject({ n: 1, d: 3 });
+        expect(RationalEngine.fromNumber(matRes[1][0])).toMatchObject({ n: 1, d: 4 });
+        expect(RationalEngine.fromNumber(matRes[1][1])).toMatchObject({ n: 1, d: 5 });
+
+        const ptAst = new PrattParser(LatexNormalizer.normalize('\\int_{0}^{1} (x, x^2) dx')).parseExpression();
+        const ptRes = MathEngine.evaluateDefiniteIntegral(ptAst[1], 0, 1, 'x', {});
+        expect(PointEngine.isPoint(ptRes)).toBe(true);
+        expect(ptRes.x).toBeCloseTo(0.5, 9);
+        expect(ptRes.y).toBeCloseTo(1 / 3, 9);
+
+        const listAst = new PrattParser(LatexNormalizer.normalize('\\int_{0}^{1} [x, x^2, x^3] dx')).parseExpression();
+        const listRes = MathEngine.evaluateDefiniteIntegral(listAst[1], 0, 1, 'x', {});
+        expect(Array.isArray(listRes)).toBe(true);
+        expect(listRes[0]).toBeCloseTo(0.5, 9);
+        expect(listRes[1]).toBeCloseTo(1 / 3, 9);
+        expect(listRes[2]).toBeCloseTo(0.25, 9);
+    });
 });

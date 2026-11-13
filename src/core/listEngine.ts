@@ -558,6 +558,157 @@ export class ListEngine {
     }
 
     /**
+     * Concatena listas e escalares em uma única lista: join(L1, L2, 9)
+     */
+    static join(...args: any[]): any[] {
+        const result: any[] = [];
+        for (const arg of args) {
+            if (Array.isArray(arg)) {
+                for (const item of arg) {
+                    if (result.length >= ListEngine.MAX_ELEMENTS) {
+                        throw new DesmosSemanticError('As listas não podem ter mais que 10.000 elementos.', 'LIST_LIMIT_EXCEEDED');
+                    }
+                    result.push(item);
+                }
+            } else {
+                if (result.length >= ListEngine.MAX_ELEMENTS) {
+                    throw new DesmosSemanticError('As listas não podem ter mais que 10.000 elementos.', 'LIST_LIMIT_EXCEEDED');
+                }
+                result.push(arg);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Repete elementos de uma lista ou escalar n vezes: repeat(3, 4) -> [3,3,3,3] ou repeat([1,5], [3,2]) -> [1,1,1,5,5]
+     */
+    static repeat(valOrList: any, countsOrScalar: any): any[] {
+        const values = Array.isArray(valOrList) ? valOrList : [valOrList];
+        const rawCounts = Array.isArray(countsOrScalar) ? countsOrScalar : [countsOrScalar];
+        if (values.length === 0 || rawCounts.length === 0) return [];
+
+        const len =
+            values.length === 1 && rawCounts.length > 1
+                ? rawCounts.length
+                : rawCounts.length === 1 && values.length > 1
+                    ? values.length
+                    : Math.min(values.length, rawCounts.length);
+
+        const result: any[] = [];
+        for (let i = 0; i < len; i++) {
+            const item = values[values.length === 1 ? 0 : i];
+            const countNum = Number(rawCounts[rawCounts.length === 1 ? 0 : i]);
+            if (!Number.isFinite(countNum) || countNum < 0) continue;
+            const n = Math.floor(countNum);
+            if (result.length + n > ListEngine.MAX_ELEMENTS) {
+                throw new DesmosSemanticError('As listas não podem ter mais que 10.000 elementos.', 'LIST_LIMIT_EXCEEDED');
+            }
+            for (let k = 0; k < n; k++) {
+                result.push(item);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Ordena uma lista numericamente em ordem crescente, ou reordena L1 pelas chaves de L2: sort(L) / sort(L1, L2)
+     */
+    static sort(list: any, keys?: any): any[] {
+        if (!Array.isArray(list)) return [list];
+        if (Array.isArray(keys)) {
+            const len = Math.min(list.length, keys.length);
+            const paired = Array.from({ length: len }, (_, idx) => ({
+                item: list[idx],
+                key: Number(keys[idx]),
+                idx
+            }));
+            paired.sort((a, b) => {
+                const aNan = Number.isNaN(a.key);
+                const bNan = Number.isNaN(b.key);
+                if (aNan && bNan) return a.idx - b.idx;
+                if (aNan) return 1;
+                if (bNan) return -1;
+                return a.key !== b.key ? a.key - b.key : a.idx - b.idx;
+            });
+            return paired.map(p => p.item);
+        }
+
+        return [...list].sort((a, b) => {
+            if (typeof a === 'object' && a !== null && 'x' in a && typeof b === 'object' && b !== null && 'x' in b) {
+                if (a.x !== b.x) return a.x - b.x;
+                if (a.y !== b.y) return a.y - b.y;
+                return (a.z ?? 0) - (b.z ?? 0);
+            }
+            const na = Number(a);
+            const nb = Number(b);
+            if (Number.isNaN(na) && Number.isNaN(nb)) return 0;
+            if (Number.isNaN(na)) return 1;
+            if (Number.isNaN(nb)) return -1;
+            return na - nb;
+        });
+    }
+
+    /**
+     * Remove duplicatas mantendo a ordem da primeira ocorrência: unique(L)
+     */
+    static unique(list: any): any[] {
+        if (!Array.isArray(list)) return [list];
+        const out: any[] = [];
+        for (const item of list) {
+            const exists = out.some(prev => {
+                if (typeof prev === 'number' && typeof item === 'number') {
+                    return Number.isNaN(prev) && Number.isNaN(item) ? true : prev === item;
+                }
+                if (prev && typeof prev === 'object' && 'x' in prev && item && typeof item === 'object' && 'x' in item) {
+                    return Math.abs(prev.x - item.x) <= 1e-12 &&
+                        Math.abs(prev.y - item.y) <= 1e-12 &&
+                        Math.abs((prev.z ?? 0) - (item.z ?? 0)) <= 1e-12;
+                }
+                return Object.is(prev, item);
+            });
+            if (!exists) out.push(item);
+        }
+        return out;
+    }
+
+    /**
+     * Embaralha elementos de uma lista usando Fisher-Yates com semente determinística opcional: shuffle(L, seed?)
+     */
+    static shuffle(list: any, seed?: any): any[] {
+        if (!Array.isArray(list)) return [list];
+        const arr = [...list];
+        let rand: () => number;
+        if (seed !== undefined && seed !== null && seed !== '') {
+            let s = 0;
+            if (typeof seed === 'number' && Number.isFinite(seed)) {
+                s = Math.floor(seed * 1000003) | 0;
+            } else {
+                const str = String(seed);
+                for (let i = 0; i < str.length; i++) {
+                    s = ((s << 5) - s + str.charCodeAt(i)) | 0;
+                }
+            }
+            let state = (s || 0x9e3779b9) >>> 0;
+            rand = () => {
+                state = (state + 0x6d2b79f5) >>> 0;
+                let t = Math.imul(state ^ (state >>> 15), 1 | state);
+                t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+                return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+            };
+        } else {
+            rand = Math.random;
+        }
+        for (let i = arr.length - 1; i > 0; i--) {
+            const j = Math.floor(rand() * (i + 1));
+            const tmp = arr[i];
+            arr[i] = arr[j];
+            arr[j] = tmp;
+        }
+        return arr;
+    }
+
+    /**
      * Gerador determinístico de números aleatórios (padrão Desmos):
      * - random() -> float [0, 1)
      * - random(n) -> lista de n floats [0, 1)
