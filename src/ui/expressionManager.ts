@@ -427,9 +427,9 @@ export class ExpressionManager {
         }
         if (folderId) {
             block.dataset.folderId = folderId;
-            block.className = 'flex border-b border-[#dcdcdc] bg-white transition-colors duration-150 relative group pl-3 border-l-4 border-l-blue-300 min-h-[43px]';
+            block.className = 'flex shrink-0 border-b border-[#dcdcdc] bg-white transition-colors duration-150 relative group pl-3 border-l-4 border-l-blue-300 min-h-[43px]';
         } else {
-            block.className = 'flex border-b border-[#dcdcdc] bg-white transition-colors duration-150 relative group min-h-[43px]';
+            block.className = 'flex shrink-0 border-b border-[#dcdcdc] bg-white transition-colors duration-150 relative group min-h-[43px]';
         }
 
         // Aba lateral esquerda (.dcg-tab) estilo Desmos (largura exata 38px)
@@ -536,7 +536,7 @@ export class ExpressionManager {
 
         // --- ÁREA DE CONTEÚDO (Matemática + Slider) ---
         const contentZone = document.createElement('div');
-        contentZone.className = 'flex flex-col grow overflow-hidden';
+        contentZone.className = 'flex flex-col grow min-w-0 overflow-visible';
         const topRow = document.createElement('div');
         topRow.className = 'flex items-center px-2 py-2 gap-2 overflow-visible min-h-[50px] relative';
 
@@ -1582,9 +1582,9 @@ export class ExpressionManager {
         block.dataset.type = 'note';
         if (folderId) {
             block.dataset.folderId = folderId;
-            block.className = 'flex border-b border-gray-100 bg-amber-50/20 hover:bg-amber-50/40 transition-colors duration-200 relative group pl-3 border-l-4 border-l-amber-300';
+            block.className = 'flex shrink-0 border-b border-gray-100 bg-amber-50/20 hover:bg-amber-50/40 transition-colors duration-200 relative group pl-3 border-l-4 border-l-amber-300';
         } else {
-            block.className = 'flex border-b border-gray-100 bg-white hover:bg-amber-50/20 transition-colors duration-200 relative group';
+            block.className = 'flex shrink-0 border-b border-gray-100 bg-white hover:bg-amber-50/20 transition-colors duration-200 relative group';
         }
 
         const grabZone = document.createElement('div');
@@ -1795,9 +1795,9 @@ export class ExpressionManager {
         block.dataset.lineWidth = '2.5';
         if (folderId) {
             block.dataset.folderId = folderId;
-            block.className = 'flex border-b border-gray-100 bg-white transition-colors duration-200 relative group pl-3 border-l-4 border-l-indigo-300';
+            block.className = 'flex shrink-0 border-b border-gray-100 bg-white transition-colors duration-200 relative group pl-3 border-l-4 border-l-indigo-300';
         } else {
-            block.className = 'flex border-b border-gray-100 bg-white transition-colors duration-200 relative group';
+            block.className = 'flex shrink-0 border-b border-gray-100 bg-white transition-colors duration-200 relative group';
         }
 
         const grabZone = document.createElement('div');
@@ -2034,7 +2034,7 @@ export class ExpressionManager {
         block.id = folderId;
         block.dataset.type = 'folder';
         block.dataset.collapsed = 'false';
-        block.className = 'flex flex-col border-b border-gray-200 bg-gray-50/90 transition-colors duration-200 relative group select-none';
+        block.className = 'flex flex-col shrink-0 border-b border-gray-200 bg-gray-50/90 transition-colors duration-200 relative group select-none';
 
         const header = document.createElement('div');
         header.className = 'flex items-center px-2 py-2.5 gap-2 cursor-pointer hover:bg-gray-100 transition-colors';
@@ -2497,6 +2497,7 @@ export class ExpressionManager {
         if (!freeVars || freeVars.length === 0) {
             chipsRow.innerHTML = '';
             chipsRow.classList.add('hidden');
+            chipsRow.classList.remove('flex');
             return;
         }
 
@@ -2524,6 +2525,7 @@ export class ExpressionManager {
         }
 
         chipsRow.classList.remove('hidden');
+        chipsRow.classList.add('flex');
     }
 
     /**
@@ -2540,7 +2542,7 @@ export class ExpressionManager {
             if (warningTrigger) {
                 warningTrigger.classList.remove('hidden');
                 warningTrigger.style.display = 'flex';
-                if (tooltipEl) tooltipEl.innerText = errorMsg;
+                if (tooltipEl) tooltipEl.textContent = errorMsg;
             }
             if (visibilityBtn) {
                 visibilityBtn.style.display = 'none';
@@ -2549,7 +2551,7 @@ export class ExpressionManager {
             if (warningTrigger) {
                 warningTrigger.classList.add('hidden');
                 warningTrigger.style.display = 'none';
-                if (tooltipEl) tooltipEl.innerText = '';
+                if (tooltipEl) tooltipEl.textContent = '';
             }
             if (visibilityBtn) {
                 if (block.dataset.isMatrix === 'true' || block.dataset.isPlottable === 'false') {
@@ -2801,19 +2803,26 @@ export class ExpressionManager {
                                      .replace(/,\s*/g, ' & ');
                 }
 
+                const countSuffixMatch = mathStr.match(/^(.*?)\s+(\(\d+\s+elementos?\))$/i);
+                const mathCore = countSuffixMatch ? countSuffixMatch[1] : mathStr;
+                const countSuffix = countSuffixMatch ? countSuffixMatch[2] : '';
+
                 if (!mathStr.includes('Erro') && !mathStr.includes('indefinido') && !mathStr.includes('carregar')) {
-                    if (mathStr.includes('\\') || mathStr.startsWith('[') || mathStr.includes('matrix')) {
+                    if (mathCore.includes('\\') || mathCore.startsWith('[') || mathCore.includes('matrix')) {
                         try {
-                            const html = this.renderLatexMarkup(mathStr);
-                            resDisplay.innerHTML = '<span class="font-semibold text-gray-800 select-text">= <span style="display:inline-block; vertical-align: middle;">' + html + '</span></span>';
+                            const html = this.renderLatexMarkup(mathCore);
+                            const suffixHtml = countSuffix
+                                ? `<span class="ml-1.5 text-xs font-sans font-normal text-gray-500 whitespace-nowrap">${countSuffix}</span>`
+                                : '';
+                            resDisplay.innerHTML = '<span class="font-semibold text-gray-800 select-text">= <span style="display:inline-block; vertical-align: middle;">' + html + '</span>' + suffixHtml + '</span>';
                         } catch(e) {
-                            resDisplay.innerText = `= ${mathStr}`;
+                            resDisplay.textContent = `= ${mathStr}`;
                         }
                     } else {
-                        resDisplay.innerText = `= ${mathStr}`;
+                        resDisplay.textContent = `= ${mathStr}`;
                     }
                 } else {
-                    resDisplay.innerText = `= ${mathStr}`;
+                    resDisplay.textContent = `= ${mathStr}`;
                 }
             }
         }

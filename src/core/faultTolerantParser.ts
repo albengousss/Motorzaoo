@@ -16,10 +16,12 @@ export class FaultTolerantParser {
     // Funções nativas e operadores CAS que não devem ser interpretados como incógnitas soltas
     public static readonly RESERVED_FUNCTIONS = new Set([
         'sin', 'cos', 'tan', 'sec', 'csc', 'cot',
-        'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh',
+        'arcsin', 'arccos', 'arctan', 'arcsec', 'arccsc', 'arccot',
+        'asin', 'acos', 'atan', 'asec', 'acsc', 'acot',
+        'sinh', 'cosh', 'tanh', 'arcsinh', 'arccosh', 'arctanh', 'arsinh', 'arcosh', 'artanh', 'asinh', 'acosh', 'atanh', 'erf',
         'asinh', 'acosh', 'atanh',
         'sqrt', 'cbrt', 'nthroot', 'exp', 'log', 'ln', 'lg',
-        'abs', 'floor', 'ceil', 'round', 'sign', 'sgn',
+        'abs', 'floor', 'ceil', 'round', 'sign', 'sgn', 'mod', 'gcd', 'lcm', 'ncr', 'npr', 'binom',
         'int', 'integrate', 'integral', 'defint', 'diff', 'derivative',
         'lim', 'limit', 'limitabove', 'limitbelow', 'sum', 'prod', 'product',
         'det', 'determinant', 'inv', 'invert', 'tran', 'transpose',
@@ -29,13 +31,16 @@ export class FaultTolerantParser {
         'solve', 'nsolve', 'factor', 'expand', 'simplify',
         'solveode', 'nsolveode', 'edo', 'campo', 'slopefield', 'campovetorial',
         'taylor', 'taylorpolynomial', 'laplace', 'inverselaplace',
-        'mean', 'median', 'stdev', 'stddev', 'var', 'variance', 'samplesd', 'samplevariance',
-        'length', 'size'
+        'min', 'max', 'mean', 'median', 'stdev', 'stddev', 'stdevp', 'var', 'variance', 'varp', 'samplesd', 'samplevariance', 'cov', 'covp', 'corr', 'spearman', 'quartile', 'quantile', 'mad',
+        'total', 'count', 'length', 'size', 'sort', 'unique', 'join',
+        'dot', 'cross', 'midpoint', 'distance', 'mag', 'magnitude', 'norm', 'pointperp', 'perp', 'polygon', 'rgb', 'hsv',
+        'rows', 'columns', 'cols', 'dims', 'identity', 'eye', 'zeros', 'ones', 'random', 'shuffle',
+        'for', 'with', 'and', 'or', 'tau', 'inf', 'infty', 'infinity', 'theta', 'phi', 'rho', 'ans'
     ]);
 
     // Coordenadas universais e constantes matemáticas protegidas
     public static readonly PROTECTED_IDENTIFIERS = new Set([
-        'x', 'y', 'z', 'pi', 'e', 'width', 'height'
+        'x', 'y', 'z', 'pi', 'e', 'tau', 'inf', 'infty', 'infinity', 'width', 'height', 'ans'
     ]);
 
     /**
@@ -44,13 +49,15 @@ export class FaultTolerantParser {
     static sanitizeLatex(latex: string): string {
         if (!latex) return '';
         let s = latex.trim();
-        // Remove delimitadores de placeholder vazios do MathLive
+        // Remove delimitadores de placeholder vazios e espaços não-quebráveis do MathLive
+        s = s.replace(/\\tildeNbsp(?![a-zA-Z])/g, ' ');
+        s = s.replace(/\u00A0/g, ' ');
         s = s.replace(/#\?/g, '');
         s = s.replace(/#@/g, '');
         s = s.replace(/\\placeholder\{[^}]*\}/g, '');
         s = s.replace(/\\(?:mathrm|text|operatorname)\{d\}/gi, 'd');
         s = s.replace(/\\text\{[^}]*\}/g, '');
-        return s;
+        return s.trim();
     }
 
     /**
@@ -151,8 +158,9 @@ export class FaultTolerantParser {
 
         let cleaned = rawStr.trim();
         // Remove definições à esquerda do sinal de igual caso seja função ou atribuição
-        // Ex: f(x) = ... ou a = ...
-        const funcDecl = cleaned.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\(([^)]+)\)\s*=/);
+        // Ex: f(x) = ..., \operatorname{isprime}(x) = ..., f_{unc}(x) = ... ou a = ...
+        const opFuncDecl = cleaned.match(/^\\operatorname\*?\{([a-zA-Z_][a-zA-Z0-9_]*)\}\s*\(([^)]+)\)\s*=/);
+        const funcDecl = opFuncDecl || cleaned.match(/^([a-zA-Z_][a-zA-Z0-9_]*(?:_\{[a-zA-Z0-9_]+\}|_\([a-zA-Z0-9_]+\)|_[a-zA-Z0-9_]+)?)\s*\(([^)]+)\)\s*=/);
         const boundSet = new Set<string>([
             ...this.PROTECTED_IDENTIFIERS,
             ...boundVariables
@@ -162,14 +170,15 @@ export class FaultTolerantParser {
         }
 
         if (funcDecl) {
-            boundSet.add(funcDecl[1]);
-            funcDecl[2].split(',').forEach(p => boundSet.add(p.trim()));
+            boundSet.add(funcDecl[1].replace(/[\{\}\s]/g, ''));
+            funcDecl[2].split(',').forEach(p => boundSet.add(p.trim().replace(/[\{\}]/g, '')));
             cleaned = cleaned.substring(funcDecl[0].length);
         } else {
-            const assignDecl = cleaned.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*=/);
+            const opAssignDecl = cleaned.match(/^\\operatorname\*?\{([a-zA-Z_][a-zA-Z0-9_]*)\}\s*=/);
+            const assignDecl = opAssignDecl || cleaned.match(/^([a-zA-Z_][a-zA-Z0-9_]*(?:_\{[a-zA-Z0-9_]+\}|_\([a-zA-Z0-9_]+\)|_[a-zA-Z0-9_]+)?)\s*=/);
             if (assignDecl) {
                 // Se é 'a = 5', o próprio 'a' não é uma variável livre da expressão, é o alvo
-                boundSet.add(assignDecl[1]);
+                boundSet.add(assignDecl[1].replace(/[\{\}\s]/g, ''));
                 cleaned = cleaned.substring(assignDecl[0].length);
             }
         }
@@ -216,20 +225,65 @@ export class FaultTolerantParser {
 
         // Operadores de matriz: transposta (^T, ^\top, ') e inversa (^-1) não são variáveis livres!
         cleaned = cleaned
-            .replace(/\^\{?(?:T|\\top|intercal)\}?/gi, ' ')
+            .replace(/\\tildeNbsp(?![a-zA-Z])/g, ' ')
+            .replace(/\u00A0/g, ' ')
+            .replace(/\^[ \t]*\{?(?:T|\\top|intercal)\}?/gi, ' ')
             .replace(/\^[\{\(]*\s*(?:-1|\(-1\))\s*[\}\)]*/g, ' ')
             .replace(/'/g, ' ');
 
-        // Funções reservadas e operadores matriciais espaçados pelo MathLive (det, rref, trace, rank, etc.)
+        // Remove propriedades com ponto (ex: M.rows, A.columns, Q.magnitude) para não virarem sliders
+        cleaned = cleaned.replace(/\.[a-zA-Z_][a-zA-Z0-9_]*/g, ' ');
+
+        // Índices mudos de 'for' / 'with'
+        const binderClean = cleaned.replace(/\\operatorname\*?\{\s*(with|for)\s*\}/gi, ' $1 ');
+        const binderMatches = binderClean.matchAll(/\b(?:for|with)\b\s*([^\]\)]+)/gi);
+        for (const bm of binderMatches) {
+            const assignParts = bm[1].matchAll(/([a-zA-Z_][a-zA-Z0-9_\{\}]*)\s*=/g);
+            for (const ap of assignParts) {
+                if (ap[1]) boundSet.add(ap[1].replace(/[\{\}]/g, ''));
+            }
+        }
+
+        // Protege subscritos e \operatorname{...} contra detecção espúria de funções espaçadas (ex: f_{det})
+        const shieldedSegments: string[] = [];
+        const shieldSegment = (seg: string) => {
+            const tok = `\u0000FTP${shieldedSegments.length}\u0000`;
+            shieldedSegments.push(seg);
+            return tok;
+        };
+        cleaned = cleaned
+            .replace(/\\operatorname\*?\{[^}]+\}/g, m => shieldSegment(m))
+            .replace(/_\{[^}]+\}/g, m => shieldSegment(m));
+
+        // Funções reservadas e operadores matriciais espaçados pelo MathLive com fronteiras estritas
         const spacedCasFuncs = [
-            'rref', 'det', 'trace', 'rank', 'tran', 'transpose', 'inv', 'invert', 'matrix', 'matriz'
+            'r r e f', 'd e t', 't r a c e', 'r a n k', 't r a n s p o s e', 't r a n', 'i n v e r t', 'i n v', 'm a t r i x', 'm a t r i z'
         ];
         spacedCasFuncs.forEach(fn => {
-            const regex = new RegExp(fn.split('').join('\\s*'), 'gi');
-            cleaned = cleaned.replace(regex, ' ');
+            const spaced = fn.split(/\s+/).join('\\s+');
+            const compact = fn.replace(/\s+/g, '');
+            const regexSpaced = new RegExp(`(?<![a-zA-Z0-9_\\\\])${spaced}(?![a-zA-Z0-9_])`, 'gi');
+            const regexCompact = new RegExp(`(?<![a-zA-Z0-9_\\\\])${compact}(?![a-zA-Z0-9_])`, 'gi');
+            cleaned = cleaned.replace(regexSpaced, ' ').replace(regexCompact, ' ');
         });
 
-        // Remove comandos LaTeX de formatação (ex: \frac, \left, \right, \operatorname)
+        cleaned = cleaned.replace(/\u0000FTP(\d+)\u0000/g, (_m, idx) => shieldedSegments[Number(idx)]);
+
+        // Trata \operatorname{nome}(...) ou \operatorname{nome} atomicamente sem decompor em letras avulsas
+        const atomicOperatorVars: string[] = [];
+        cleaned = cleaned.replace(/\\operatorname\*?\{([^}]+)\}(\s*\()?/gi, (_m, opName, openParen) => {
+            const name = opName.trim();
+            const lower = name.toLowerCase();
+            if (this.RESERVED_FUNCTIONS.has(lower) || boundSet.has(name) || openParen) {
+                return openParen ? openParen : ' ';
+            }
+            if (/^[a-zA-Z\u0370-\u03FF][a-zA-Z0-9_\u0370-\u03FF]*$/.test(name)) {
+                atomicOperatorVars.push(name);
+            }
+            return ' ';
+        });
+
+        // Remove comandos LaTeX de formatação (ex: \frac, \left, \right)
         cleaned = cleaned.replace(/\\[a-zA-Z]+/g, ' ');
 
         // Remove diferenciais e operadores de integrais
@@ -237,12 +291,12 @@ export class FaultTolerantParser {
             .replace(/(?:\\mathrm\{d\}|\\text\{d\}|\\differentialD|\bd)\s*\\?[a-zA-Z_][a-zA-Z0-9_]*/gi, ' ')
             .replace(/(?:\\int(?![a-zA-Z])|\\iint|\\iiint|\bint\b|\bdefint\b)/gi, ' ');
 
-        const freeVars = new Set<string>();
+        const freeVars = new Set<string>(atomicOperatorVars.filter(v => !boundSet.has(v)));
 
         // Regex para capturar:
-        // 1. Variáveis com subscrito: x_1, a_{2}, v_init
+        // 1. Variáveis com subscrito: x_1, a_{2}, v_init, f_{det}
         // 2. Identificadores gerais: letras ou sequências de letras
-        const tokenRegex = /([a-zA-Z][a-zA-Z0-9]*_(?:\{[a-zA-Z0-9]+\}|[a-zA-Z0-9]+))|([a-zA-Z]+)/g;
+        const tokenRegex = /([a-zA-Z][a-zA-Z0-9]*_(?:\{[a-zA-Z0-9_]+\}|[a-zA-Z0-9_]+))|([a-zA-Z]+)/g;
         let match: RegExpExecArray | null;
 
         while ((match = tokenRegex.exec(cleaned)) !== null) {

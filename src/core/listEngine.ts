@@ -3,6 +3,8 @@
  * Implementa a especificação completa de listas do Desmos (Fase 2 do plano de reforma).
  */
 
+import { DesmosSemanticError } from './policy';
+
 export class ListEngine {
     public static readonly MAX_ELEMENTS = 10000;
     public static angleModeProvider?: () => 'radians' | 'degrees';
@@ -39,17 +41,23 @@ export class ListEngine {
         let count = 0;
 
         if (effectiveStep > 0) {
-            for (let val = start; val <= end + eps && count < ListEngine.MAX_ELEMENTS; count++) {
+            for (let val = start; val <= end + eps; count++) {
                 // Arredondamento limpo para evitar drift de ponto flutuante IEEE-754 (ex: 0.1 + 0.2)
                 const cleanVal = Number((start + count * effectiveStep).toPrecision(12));
                 if (cleanVal > end + eps) break;
+                if (count >= ListEngine.MAX_ELEMENTS) {
+                    throw new DesmosSemanticError('As listas não podem ter mais que 10.000 elementos.', 'LIST_LIMIT_EXCEEDED');
+                }
                 result.push(cleanVal);
                 val = cleanVal + effectiveStep;
             }
         } else {
-            for (let val = start; val >= end - eps && count < ListEngine.MAX_ELEMENTS; count++) {
+            for (let val = start; val >= end - eps; count++) {
                 const cleanVal = Number((start + count * effectiveStep).toPrecision(12));
                 if (cleanVal < end - eps) break;
+                if (count >= ListEngine.MAX_ELEMENTS) {
+                    throw new DesmosSemanticError('As listas não podem ter mais que 10.000 elementos.', 'LIST_LIMIT_EXCEEDED');
+                }
                 result.push(cleanVal);
                 val = cleanVal + effectiveStep;
             }
@@ -291,6 +299,9 @@ export class ListEngine {
         // Gera o produto cartesiano das variáveis
         const iterate = (bindingIndex: number, currentScope: Record<string, any>) => {
             if (bindingIndex >= evaluatedBindings.length) {
+                if (results.length >= ListEngine.MAX_ELEMENTS) {
+                    throw new DesmosSemanticError('As listas não podem ter mais que 10.000 elementos.', 'LIST_LIMIT_EXCEEDED');
+                }
                 const val = evalAst(exprAst, currentScope);
                 results.push(val);
                 return;
@@ -298,7 +309,6 @@ export class ListEngine {
 
             const current = evaluatedBindings[bindingIndex];
             for (let i = 0; i < current.values.length; i++) {
-                if (results.length >= ListEngine.MAX_ELEMENTS) break;
                 const nextScope = { ...currentScope, [current.varName]: current.values[i] };
                 iterate(bindingIndex + 1, nextScope);
             }
@@ -326,6 +336,290 @@ export class ListEngine {
     }
 
     /**
+     * Média aritmética de uma lista numérica
+     */
+    static mean(list: any[]): number {
+        if (!Array.isArray(list) || list.length === 0) return NaN;
+        let sum = 0;
+        for (let i = 0; i < list.length; i++) {
+            const v = Number(list[i]);
+            if (isNaN(v)) return NaN;
+            sum += v;
+        }
+        return sum / list.length;
+    }
+
+    /**
+     * Mediana de uma lista numérica
+     */
+    static median(list: any[]): number {
+        if (!Array.isArray(list) || list.length === 0) return NaN;
+        const sorted = list.map(Number);
+        if (sorted.some(isNaN)) return NaN;
+        sorted.sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
+        return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    }
+
+    /**
+     * Variância amostral (divisor n - 1)
+     */
+    static variance(list: any[]): number {
+        if (!Array.isArray(list) || list.length < 2) return NaN;
+        const m = this.mean(list);
+        if (isNaN(m)) return NaN;
+        let acc = 0;
+        for (let i = 0; i < list.length; i++) {
+            const d = Number(list[i]) - m;
+            acc += d * d;
+        }
+        return acc / (list.length - 1);
+    }
+
+    /**
+     * Desvio padrão amostral (divisor n - 1)
+     */
+    static stdev(list: any[]): number {
+        const v = this.variance(list);
+        return isNaN(v) ? NaN : Math.sqrt(v);
+    }
+
+    /**
+     * Variância populacional (divisor n)
+     */
+    static varp(list: any[]): number {
+        if (!Array.isArray(list) || list.length === 0) return NaN;
+        const m = this.mean(list);
+        if (isNaN(m)) return NaN;
+        let acc = 0;
+        for (let i = 0; i < list.length; i++) {
+            const d = Number(list[i]) - m;
+            acc += d * d;
+        }
+        return acc / list.length;
+    }
+
+    /**
+     * Desvio padrão populacional (divisor n)
+     */
+    static stdevp(list: any[]): number {
+        const v = this.varp(list);
+        return isNaN(v) ? NaN : Math.sqrt(v);
+    }
+
+    /**
+     * Mean Absolute Deviation (padrão Desmos): mean(|L - mean(L)|)
+     */
+    static mad(list: any[]): number {
+        if (!Array.isArray(list) || list.length === 0) return NaN;
+        const m = this.mean(list);
+        if (isNaN(m)) return NaN;
+        let acc = 0;
+        for (let i = 0; i < list.length; i++) {
+            acc += Math.abs(Number(list[i]) - m);
+        }
+        return acc / list.length;
+    }
+
+    /**
+     * Quantil por interpolação linear (padrão Desmos: idx = p * (n - 1), p in [0, 1])
+     */
+    static quantile(list: any[], pRaw: any): any {
+        if (!Array.isArray(list) || list.length === 0) return Array.isArray(pRaw) ? pRaw.map(() => NaN) : NaN;
+        const sorted = list.map(Number);
+        if (sorted.some(isNaN)) return Array.isArray(pRaw) ? pRaw.map(() => NaN) : NaN;
+        sorted.sort((a, b) => a - b);
+
+        const computeOne = (pVal: number): number => {
+            if (isNaN(pVal) || pVal < 0 || pVal > 1) return NaN;
+            if (sorted.length === 1) return sorted[0];
+            const idx = pVal * (sorted.length - 1);
+            const lo = Math.floor(idx);
+            const hi = Math.ceil(idx);
+            const frac = idx - lo;
+            return sorted[lo] * (1 - frac) + sorted[hi] * frac;
+        };
+
+        if (Array.isArray(pRaw)) return pRaw.map(v => computeOne(Number(v)));
+        return computeOne(Number(pRaw));
+    }
+
+    /**
+     * Quartis (padrão Desmos/Tukey: divide ao meio pela mediana excluindo a mediana ímpar)
+     */
+    static quartile(list: any[], qRaw: any): any {
+        if (!Array.isArray(list) || list.length === 0) return Array.isArray(qRaw) ? qRaw.map(() => NaN) : NaN;
+        const sorted = list.map(Number);
+        if (sorted.some(isNaN)) return Array.isArray(qRaw) ? qRaw.map(() => NaN) : NaN;
+        sorted.sort((a, b) => a - b);
+
+        const n = sorted.length;
+        const halfLen = Math.floor(n / 2);
+        const lowerHalf = sorted.slice(0, halfLen);
+        const upperHalf = sorted.slice(n - halfLen);
+
+        const computeOne = (qVal: number): number => {
+            if (!Number.isInteger(qVal) || qVal < 0 || qVal > 4) return NaN;
+            if (n === 1) return sorted[0];
+            if (qVal === 0) return sorted[0];
+            if (qVal === 4) return sorted[n - 1];
+            if (qVal === 2) return this.median(sorted);
+            if (qVal === 1) return this.median(lowerHalf);
+            if (qVal === 3) return this.median(upperHalf);
+            return NaN;
+        };
+
+        if (Array.isArray(qRaw)) return qRaw.map(v => computeOne(Number(v)));
+        return computeOne(Number(qRaw));
+    }
+
+    /**
+     * Covariância amostral (divisor n - 1)
+     */
+    static cov(a: any[], b: any[]): number {
+        if (!Array.isArray(a) || !Array.isArray(b)) return NaN;
+        const n = Math.min(a.length, b.length);
+        if (n < 2) return NaN;
+        const ax = a.slice(0, n).map(Number);
+        const bx = b.slice(0, n).map(Number);
+        if (ax.some(isNaN) || bx.some(isNaN)) return NaN;
+        const ma = ax.reduce((s, v) => s + v, 0) / n;
+        const mb = bx.reduce((s, v) => s + v, 0) / n;
+        let acc = 0;
+        for (let i = 0; i < n; i++) acc += (ax[i] - ma) * (bx[i] - mb);
+        return acc / (n - 1);
+    }
+
+    /**
+     * Covariância populacional (divisor n)
+     */
+    static covp(a: any[], b: any[]): number {
+        if (!Array.isArray(a) || !Array.isArray(b)) return NaN;
+        const n = Math.min(a.length, b.length);
+        if (n < 1) return NaN;
+        const ax = a.slice(0, n).map(Number);
+        const bx = b.slice(0, n).map(Number);
+        if (ax.some(isNaN) || bx.some(isNaN)) return NaN;
+        const ma = ax.reduce((s, v) => s + v, 0) / n;
+        const mb = bx.reduce((s, v) => s + v, 0) / n;
+        let acc = 0;
+        for (let i = 0; i < n; i++) acc += (ax[i] - ma) * (bx[i] - mb);
+        return acc / n;
+    }
+
+    /**
+     * Coeficiente de correlação de Pearson: corr(A, B)
+     */
+    static corr(a: any[], b: any[]): number {
+        if (!Array.isArray(a) || !Array.isArray(b)) return NaN;
+        const n = Math.min(a.length, b.length);
+        if (n < 2) return NaN;
+        const ax = a.slice(0, n).map(Number);
+        const bx = b.slice(0, n).map(Number);
+        if (ax.some(isNaN) || bx.some(isNaN)) return NaN;
+        const ma = ax.reduce((s, v) => s + v, 0) / n;
+        const mb = bx.reduce((s, v) => s + v, 0) / n;
+        let num = 0, ssA = 0, ssB = 0;
+        for (let i = 0; i < n; i++) {
+            const da = ax[i] - ma;
+            const db = bx[i] - mb;
+            num += da * db;
+            ssA += da * da;
+            ssB += db * db;
+        }
+        const denom = Math.sqrt(ssA * ssB);
+        return denom === 0 ? NaN : num / denom;
+    }
+
+    /**
+     * Coeficiente de correlação de Spearman com ranks médios para empates
+     */
+    static spearman(a: any[], b: any[]): number {
+        if (!Array.isArray(a) || !Array.isArray(b)) return NaN;
+        const n = Math.min(a.length, b.length);
+        if (n < 2) return NaN;
+        const rank = (arr: number[]): number[] => {
+            const indexed = arr.map((v, i) => ({ v, i })).sort((p, q) => p.v - q.v);
+            const ranks = new Array<number>(arr.length);
+            let i = 0;
+            while (i < indexed.length) {
+                let j = i;
+                while (j + 1 < indexed.length && indexed[j + 1].v === indexed[i].v) j++;
+                const avgRank = (i + j) / 2 + 1;
+                for (let k = i; k <= j; k++) ranks[indexed[k].i] = avgRank;
+                i = j + 1;
+            }
+            return ranks;
+        };
+        const ax = a.slice(0, n).map(Number);
+        const bx = b.slice(0, n).map(Number);
+        if (ax.some(isNaN) || bx.some(isNaN)) return NaN;
+        return this.corr(rank(ax), rank(bx));
+    }
+
+    /**
+     * Gerador determinístico de números aleatórios (padrão Desmos):
+     * - random() -> float [0, 1)
+     * - random(n) -> lista de n floats [0, 1)
+     * - random(n, seed) -> lista determinística de n floats [0, 1)
+     * - random(L) -> 1 elemento aleatório de L
+     * - random(L, n) -> lista de n elementos amostrados de L
+     * - random(L, n, seed) -> amostragem determinística com semente
+     */
+    static random(...args: any[]): any {
+        const makePrng = (seedInput?: any): (() => number) => {
+            if (seedInput === undefined || seedInput === null || (typeof seedInput === 'number' && isNaN(seedInput))) {
+                return () => Math.random();
+            }
+            let h = 2166136261 >>> 0;
+            const seedStr = String(seedInput);
+            for (let i = 0; i < seedStr.length; i++) {
+                h ^= seedStr.charCodeAt(i);
+                h = Math.imul(h, 16777619) >>> 0;
+            }
+            let state = (h || 0x9e3779b9) >>> 0;
+            return () => {
+                state = (state + 0x6d2b79f5) | 0;
+                let t = Math.imul(state ^ (state >>> 15), 1 | state);
+                t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+                return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+            };
+        };
+
+        if (args.length === 0) {
+            return Math.random();
+        }
+        const first = args[0];
+        if (Array.isArray(first)) {
+            if (first.length === 0) return args.length === 1 ? NaN : [];
+            if (args.length === 1) {
+                return first[Math.floor(Math.random() * first.length)];
+            }
+            const count = Math.max(0, Math.floor(Number(args[1])));
+            if (isNaN(count)) return NaN;
+            if (count > ListEngine.MAX_ELEMENTS) {
+                throw new DesmosSemanticError('As listas não podem ter mais que 10.000 elementos.', 'LIST_LIMIT_EXCEEDED');
+            }
+            const rng = makePrng(args.length >= 3 ? args[2] : undefined);
+            const out: any[] = [];
+            for (let i = 0; i < count; i++) {
+                out.push(first[Math.floor(rng() * first.length)]);
+            }
+            return out;
+        }
+
+        const count = Math.max(0, Math.floor(Number(first)));
+        if (isNaN(count)) return NaN;
+        if (count > ListEngine.MAX_ELEMENTS) {
+            throw new DesmosSemanticError('As listas não podem ter mais que 10.000 elementos.', 'LIST_LIMIT_EXCEEDED');
+        }
+        const rng = makePrng(args.length >= 2 ? args[1] : undefined);
+        const out: number[] = [];
+        for (let i = 0; i < count; i++) out.push(rng());
+        return out;
+    }
+
+    /**
      * Formatação amigável de listas no painel de resultados do usuário (Estilo Desmos)
      * Ex: "= [1, 2, 3, 4, 5]" ou "= [1, 2, 3, ...] (100 elementos)"
      */
@@ -344,6 +638,9 @@ export class ListEngine {
                 return `(${v.slice(1).map(formatVal).join(', ')})`;
             }
             if (typeof v === 'object' && v !== null && 'x' in v && 'y' in v) {
+                if ('z' in v && v.z !== undefined) {
+                    return `(${formatVal(v.x)}, ${formatVal(v.y)}, ${formatVal(v.z)})`;
+                }
                 return `(${formatVal(v.x)}, ${formatVal(v.y)})`;
             }
             return String(v);

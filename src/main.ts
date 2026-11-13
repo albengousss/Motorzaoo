@@ -39,12 +39,56 @@ import { ExpressionManager } from './ui/expressionManager';
 import { MathAnalyzer } from './core/analyzer'; 
 import { ODESolver } from './core/odeSolver';
 import { CommandsGuideModal } from './ui/commandsGuideModal';
-import { PolicyManager } from './core/policy';
+import {
+    DesmosSemanticError,
+    PROTECTED_CONSTANTS,
+    RESERVED_BUILTIN_NAMES,
+    PolicyManager,
+    astContainsSpatialCoord,
+    collectCalledFunctionNames
+} from './core/policy';
+import {
+    parseAndClassifyStatement,
+    isImplicitYOnlyExpression,
+    type ParsedStatement
+} from './core/statementRouter';
 
 const renderer = new Renderer('graphCanvas');
 const glRenderer = new GLRenderer('webglCanvas');
 const renderer3d = new Renderer3D('canvas3d');
 const colors = ['#c74440', '#2d70b3', '#388c46', '#6042a6', '#fa7e19', '#000000'];
+
+// Hoisted DOM references and UI interaction state (prevents TDZ in drawFrame/resizeAll)
+const canvasEl = document.getElementById('graphCanvas') as HTMLCanvasElement;
+const webgl2dCanvas = document.getElementById('webglCanvas') as HTMLCanvasElement;
+const canvas3dEl = document.getElementById('canvas3d') as HTMLCanvasElement;
+const sidebarEl = document.getElementById('sidebar') as HTMLElement;
+const sidebarHeader = document.getElementById('sidebar-header') as HTMLElement;
+const sidebarResizer = document.getElementById('sidebar-resizer');
+const sidebarExpandTab = document.getElementById('sidebar-expand-tab');
+const collapseSidebarBtn = document.getElementById('collapse-sidebar-btn');
+const mode2dBtn = document.getElementById('mode-2d-btn');
+const mode3dBtn = document.getElementById('mode-3d-btn');
+
+let isDragging = false;
+let lastX = 0;
+let lastY = 0;
+let isDraggingSidebar = false;
+let startY = 0;
+let startHeight = 0;
+let savedSidebarWidth = 500;
+let isDraggingSidebarResizer = false;
+let activeSidebarAnimation: number | null = null;
+let initialPinchDistance = -1;
+let touchStartTime = 0;
+let touchStartX = 0;
+let touchStartY = 0;
+let touchMoved = false;
+let isRotating3D = false;
+let isPanning3D = false;
+let last3DX = 0;
+let last3DY = 0;
+let initialPinch3D = -1;
 
 function resizeAll() {
     renderer.resize();
@@ -56,41 +100,89 @@ function resizeAll() {
 
 function getFreeVariables(ast: any, boundVars: string[] = []): string[] {
     const vars = new Set<string>();
-    const standardNames = new Set(['pi', 'e', 'width', 'height', ...boundVars]);
+    const standardNames = new Set([
+        'pi', 'e', 'tau', 'ans', 'width', 'height',
+        'inf', 'infty', 'infinity', '∞', 'true', 'false',
+        ...boundVars
+    ]);
+    const builtinOpsLower = new Set([
+        'add', 'subtract', 'multiply', 'divide', 'power', 'negate', 'factorial',
+        'sin', 'cos', 'tan', 'sec', 'csc', 'cot',
+        'asin', 'acos', 'atan', 'asec', 'acsc', 'acot',
+        'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh',
+        'sqrt', 'cbrt', 'nthroot', 'abs', 'exp', 'log', 'ln', 'erf',
+        'floor', 'ceil', 'round', 'sign', 'sgn', 'mod', 'gcd', 'lcm', 'ncr', 'npr', 'binom',
+        'integrate', 'point', 'limit', 'piecewise', 'with', 'list', 'matrix', 'range', 'rangestep',
+        'lessthan', 'greaterthan', 'lessequal', 'greaterequal', 'equal', 'notequal', 'and', 'or',
+        'sum', 'total', 'product', 'prod', 'diff', 'derivative',
+        'mean', 'median', 'stdev', 'stddev', 'samplesd', 'stdevp',
+        'var', 'variance', 'samplevariance', 'varp', 'mad',
+        'cov', 'covp', 'corr', 'spearman', 'quartile', 'quantile',
+        'min', 'max', 'length', 'size', 'count', 'random', 'polygon',
+        'cross', 'dot', 'pointdot', 'pointcross', 'midpoint', 'distance', 'magnitude', 'norm',
+        'comprehension', 'matrixcomprehension', 'index', 'matrixindex', 'propertyaccess', 'call',
+        'det', 'determinant', 'trace', 'tr', 'rank', 'matrixrank', 'rref', 'inv', 'invert', 'transpose', 'tran'
+    ]);
 
-    function walk(node: any) {
+    function walk(node: any, activeBound: Set<string> = standardNames) {
         if (typeof node === 'string') {
             const clean = node.trim();
-            if (!standardNames.has(clean) && isNaN(Number(clean))) {
+            if (!activeBound.has(clean) && !activeBound.has(clean.toLowerCase()) && isNaN(Number(clean))) {
                 vars.add(clean);
             }
         } else if (Array.isArray(node)) {
             const op = node[0];
-            const isBuiltin = ['Add', 'Subtract', 'Multiply', 'Divide', 'Power', 'Negate', 'Sin', 'Cos', 'Tan', 'Sqrt', 'Abs', 'Exp', 'Log', 'Integrate', 'Point', 'Limit'].includes(op);
-            if (!isBuiltin && typeof op === 'string' && !standardNames.has(op)) {
+            const opLower = typeof op === 'string' ? op.toLowerCase() : '';
+            if (typeof op === 'string' && !builtinOpsLower.has(opLower) && !activeBound.has(op) && !activeBound.has(opLower)) {
                 vars.add(op);
             }
-            if (op === 'Integrate') {
-                const intVar = typeof node[2] === 'string' ? node[2].trim() : '';
-                const innerBound = new Set([...standardNames, intVar, 'd', 'D']);
-                const subWalk = (subNode: any) => {
-                    if (typeof subNode === 'string') {
-                        const clean = subNode.trim();
-                        if (!innerBound.has(clean) && isNaN(Number(clean))) vars.add(clean);
-                    } else if (Array.isArray(subNode)) {
-                        for (let j = 1; j < subNode.length; j++) subWalk(subNode[j]);
+            if (opLower === 'integrate' || ((opLower === 'sum' || opLower === 'product' || opLower === 'prod') && node.length >= 5)) {
+                const iterVar = typeof node[2] === 'string' ? node[2].trim() : '';
+                const innerBound = new Set([...activeBound, ...(iterVar ? [iterVar] : []), 'd', 'D']);
+                if (node[1] !== undefined) walk(node[1], innerBound);
+                for (let i = 3; i < node.length; i++) walk(node[i], activeBound);
+                return;
+            }
+            if (op === 'With' && Array.isArray(node[2])) {
+                const withBound = new Set(activeBound);
+                for (const binding of node[2]) {
+                    if (Array.isArray(binding) && typeof binding[0] === 'string') {
+                        withBound.add(binding[0].trim());
+                        if (binding[1] !== undefined) walk(binding[1], activeBound);
                     }
-                };
-                if (node[1]) subWalk(node[1]);
-                for (let i = 3; i < node.length; i++) walk(node[i]);
+                }
+                if (node[1] !== undefined) walk(node[1], withBound);
+                return;
+            }
+            if ((op === 'Comprehension' || op === 'MatrixComprehension') && Array.isArray(node[2])) {
+                const compBound = new Set(activeBound);
+                for (const binding of node[2]) {
+                    if (Array.isArray(binding) && typeof binding[0] === 'string') {
+                        compBound.add(binding[0].trim());
+                        if (binding[1] !== undefined) walk(binding[1], activeBound);
+                    }
+                }
+                if (node[1] !== undefined) walk(node[1], compBound);
+                return;
+            }
+            if (op === 'PropertyAccess') {
+                if (node[1] !== undefined) walk(node[1], activeBound);
+                return;
+            }
+            if (op === 'Call') {
+                const fnName = typeof node[1] === 'string' ? node[1].trim() : '';
+                if (fnName && !builtinOpsLower.has(fnName.toLowerCase()) && !activeBound.has(fnName)) {
+                    vars.add(fnName);
+                }
+                for (let i = 2; i < node.length; i++) walk(node[i], activeBound);
                 return;
             }
             for (let i = 1; i < node.length; i++) {
-                walk(node[i]);
+                walk(node[i], activeBound);
             }
         }
     }
-    walk(ast);
+    walk(ast, standardNames);
     return Array.from(vars);
 }
 
@@ -405,6 +497,9 @@ function scheduleFrame() {
 function compileAllExpressions() {
     // Inicializa funções pré-compiladas do motor matemático (add, sub, mul, div, listEngine, matrixEngine, pointEngine, etc.)
     MathEngine.initCompiledFuncs();
+    MathEngine.userFunctions = {};
+    MathEngine.userBaseCases = {};
+    StateManager.userFunctions = {};
     StateManager.updateViewportDimensions(Camera.width, Camera.height);
 
     const rawData = ExpressionManager.getAllExpressions();
@@ -412,6 +507,44 @@ function compileAllExpressions() {
     const activeVars: string[] = ['width', 'height'];
     const definedUserFunctionNames = new Set<string>();
     const definedMatrixNames = new Set<string>();
+    const edoNames = new Set<string>();
+    const passVarAsts: Record<string, any> = {};
+
+    const stripDomainClause = (exprStr: string): string => {
+        if (exprStr.includes('{{') || exprStr.includes('[[')) return exprStr;
+        const m = exprStr.match(/(.*?[^\s\\=:,(\[{])\s*\\?\{([^:}]+?)\\?\}\s*$/);
+        if (m && /[<>]|\\le|\\ge|<=|>=/.test(m[2])) {
+            return m[1].trim();
+        }
+        return exprStr;
+    };
+
+    const assertNoUndefinedCalls = (astToCheck: any, extraBound: string[] = []) => {
+        if (!astToCheck) return;
+        const called = collectCalledFunctionNames(astToCheck, new Set(extraBound));
+        for (const fn of called) {
+            const lower = fn.toLowerCase();
+            if (
+                RESERVED_BUILTIN_NAMES.has(fn) ||
+                RESERVED_BUILTIN_NAMES.has(lower) ||
+                definedUserFunctionNames.has(fn) ||
+                MathEngine.userFunctions[fn] ||
+                MathEngine.compiledFuncs[fn] ||
+                StateManager.values[fn] !== undefined ||
+                definedMatrixNames.has(fn) ||
+                StateManager.giacDefinitions[fn]
+            ) {
+                continue;
+            }
+            // Identificadores multi-letra ou subscritos chamados como f_9(x), erf(1), func(x) nunca são multiplicação implícita de 1 letra
+            if (fn.length > 1 || fn.includes('_')) {
+                throw new DesmosSemanticError(
+                    `Função '${fn}' não está definida no escopo.`,
+                    'UNDEFINED_FUNCTION'
+                );
+            }
+        }
+    };
 
     // 0. Pré-registro de Matrizes e Funções de Usuário (Suporte a Definição Fora de Ordem e Supressão de Sliders)
     rawData.forEach(item => {
@@ -422,22 +555,24 @@ function compileAllExpressions() {
             if (funcMatch) {
                 const funcName = funcMatch[1];
                 const paramNames = funcMatch[2].split(',').map(s => s.trim());
+                if (PROTECTED_CONSTANTS.has(funcName) || PROTECTED_CONSTANTS.has(funcName.toLowerCase()) ||
+                    RESERVED_BUILTIN_NAMES.has(funcName.toLowerCase())) {
+                    return;
+                }
                 definedUserFunctionNames.add(funcName);
                 try {
                     const ast = new PrattParser(rightSide).parseExpression();
                     MathEngine.userFunctions[funcName] = { params: paramNames, expr: rightSide, ast, blockId: item.id };
                     StateManager.userFunctions[funcName] = { params: paramNames, expr: rightSide, ast, blockId: item.id };
+                    MathEngine.compiledFuncs[funcName] = MathEngine.makeUserFuncWrapper(funcName, paramNames, ast);
                     if (paramNames.length === 1) {
                         const p0 = paramNames[0];
-                        MathEngine.compiledFuncs[funcName] = MathEngine.compile(ast, p0);
                         const d1 = MathEngine.createDerivativeFunction(ast, p0, 1);
                         const d2 = MathEngine.createDerivativeFunction(ast, p0, 2);
                         const d3 = MathEngine.createDerivativeFunction(ast, p0, 3);
                         MathEngine.compiledFuncs[`${funcName}'`] = (x: number, scope: any) => d1(x, 0, scope);
                         MathEngine.compiledFuncs[`${funcName}''`] = (x: number, scope: any) => d2(x, 0, scope);
                         MathEngine.compiledFuncs[`${funcName}'''`] = (x: number, scope: any) => d3(x, 0, scope);
-                    } else if (paramNames.length > 1) {
-                        MathEngine.compiledFuncs[funcName] = MathEngine.compileMultivariable(ast, paramNames);
                     }
                 } catch (_) {}
                 const giacDef = `usr_${funcName}(${paramNames.join(',')}):=${rightSide}`;
@@ -446,7 +581,8 @@ function compileAllExpressions() {
                     StateManager.casSolutions = {};
                     MathEngine.askGiac(giacDef);
                 }
-            } else {
+            } else if (!PROTECTED_CONSTANTS.has(rawName) && !PROTECTED_CONSTANTS.has(rawName.toLowerCase()) &&
+                       !RESERVED_BUILTIN_NAMES.has(rawName.toLowerCase())) {
                 definedMatrixNames.add(rawName);
                 const giacDef = `usr_${rawName}:=${rightSide}`;
                 if (StateManager.giacDefinitions[rawName] !== giacDef) {
@@ -457,35 +593,65 @@ function compileAllExpressions() {
             }
         } else if (!item.isMatrix && !item.isTable) {
             const ascii = item.rawAscii || '';
-            const cleanStr = LatexNormalizer.normalize(ascii, item.latex, definedMatrixNames);
-            const matrixAssignMatch = cleanStr.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*(\[\[[\s\S]*\]\])$/);
-            if (matrixAssignMatch) {
-                const rawName = matrixAssignMatch[1].trim();
-                const rightSide = matrixAssignMatch[2].trim();
-                definedMatrixNames.add(rawName);
-                const giacDef = "usr_" + rawName + ":=" + rightSide;
-                if (StateManager.giacDefinitions[rawName] !== giacDef) {
-                    StateManager.giacDefinitions[rawName] = giacDef;
-                    StateManager.casSolutions = {};
-                    MathEngine.askGiac(giacDef);
-                }
+            const cleanStr = stripDomainClause(LatexNormalizer.normalize(ascii, item.latex, definedMatrixNames));
+            // Pula EDOs explícitas (y' = ..., dy/dx = ...) na pré-checagem AST
+            const compactClean = cleanStr.replace(/\s+/g, '');
+            const edoPreMatch = compactClean.match(/^(?:([a-zA-Z_][a-zA-Z0-9_]*)'(?:\([a-zA-Z_][a-zA-Z0-9_]*\))?|d\(?([a-zA-Z_][a-zA-Z0-9_]*)\)?\/d\(?[a-zA-Z_][a-zA-Z0-9_]*\)?|\\frac\{d\(?([a-zA-Z_][a-zA-Z0-9_]*)\)?\}\{d\(?[a-zA-Z_][a-zA-Z0-9_]*\)?\}|diff\(([a-zA-Z_][a-zA-Z0-9_]*),[a-zA-Z_][a-zA-Z0-9_]*\))=/i);
+            if (edoPreMatch) {
+                const edoTarget = edoPreMatch[1] || edoPreMatch[2] || edoPreMatch[3] || edoPreMatch[4];
+                if (edoTarget) edoNames.add(edoTarget);
+                return;
             }
-            const funcMatch = cleanStr.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\(([^)]+)\)\s*=\s*(.+)$/);
-            if (funcMatch) {
-                const funcName = funcMatch[1].replace(/[\{\}\\]/g, '');
-                const paramNames = funcMatch[2].split(',').map(s => s.trim().replace(/[\{\}\\]/g, ''));
-                const expr = funcMatch[3].trim();
-                definedUserFunctionNames.add(funcName);
-                try {
-                    const ast = new PrattParser(expr).parseExpression();
-                    MathEngine.userFunctions[funcName] = { params: paramNames, expr, ast, blockId: item.id };
-                    StateManager.userFunctions[funcName] = { params: paramNames, expr, ast, blockId: item.id };
-                    if (paramNames.length === 1) {
-                        MathEngine.compiledFuncs[funcName] = MathEngine.compile(ast, paramNames[0]);
-                    } else if (paramNames.length > 1) {
-                        MathEngine.compiledFuncs[funcName] = MathEngine.compileMultivariable(ast, paramNames);
+            try {
+                const stmt = parseAndClassifyStatement(cleanStr, {
+                    is3D: StateManager.viewMode === '3d',
+                    existingVarAsts: passVarAsts,
+                    existingFuncAsts: MathEngine.userFunctions,
+                    currentBlockId: item.id
+                });
+                if (stmt.kind === 'var_assign') {
+                    passVarAsts[stmt.name] = stmt.rhsAst;
+                    const isMatrixLiteral = (Array.isArray(stmt.rhsAst) && stmt.rhsAst[0] === 'List' && Array.isArray(stmt.rhsAst[1]) && stmt.rhsAst[1][0] === 'List') ||
+                        /^\[\[[\s\S]*\]\]$/.test(stmt.rhsRaw);
+                    if (isMatrixLiteral) {
+                        definedMatrixNames.add(stmt.name);
+                        const giacDef = `usr_${stmt.name}:=${stmt.rhsRaw}`;
+                        if (StateManager.giacDefinitions[stmt.name] !== giacDef) {
+                            StateManager.giacDefinitions[stmt.name] = giacDef;
+                            StateManager.casSolutions = {};
+                            MathEngine.askGiac(giacDef);
+                        }
                     }
-                } catch (_) {}
+                } else if (stmt.kind === 'func_def') {
+                    if (!(stmt.name in MathEngine.userFunctions)) {
+                        definedUserFunctionNames.add(stmt.name);
+                        MathEngine.userFunctions[stmt.name] = { params: stmt.params, expr: stmt.rhsRaw, ast: stmt.rhsAst, blockId: item.id };
+                        StateManager.userFunctions[stmt.name] = { params: stmt.params, expr: stmt.rhsRaw, ast: stmt.rhsAst, blockId: item.id };
+                        MathEngine.compiledFuncs[stmt.name] = MathEngine.makeUserFuncWrapper(stmt.name, stmt.params, stmt.rhsAst);
+                    }
+                } else if (stmt.kind === 'func_base_case') {
+                    definedUserFunctionNames.add(stmt.name);
+                    if (!MathEngine.userBaseCases[stmt.name]) MathEngine.userBaseCases[stmt.name] = [];
+                    if (!MathEngine.userBaseCases[stmt.name].some(bc => bc.blockId === item.id)) {
+                        MathEngine.userBaseCases[stmt.name].push({ args: stmt.argAsts, ast: stmt.rhsAst, blockId: item.id });
+                    }
+                }
+            } catch (_) {
+                // Fallback seguro para matrizes brutas não normalizadas em forma [[...]]
+                const matrixAssignMatch = cleanStr.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*(\[\[[\s\S]*\]\])$/);
+                if (matrixAssignMatch) {
+                    const rawName = matrixAssignMatch[1].trim();
+                    if (!PROTECTED_CONSTANTS.has(rawName.toLowerCase()) && !RESERVED_BUILTIN_NAMES.has(rawName.toLowerCase())) {
+                        const rightSide = matrixAssignMatch[2].trim();
+                        definedMatrixNames.add(rawName);
+                        const giacDef = "usr_" + rawName + ":=" + rightSide;
+                        if (StateManager.giacDefinitions[rawName] !== giacDef) {
+                            StateManager.giacDefinitions[rawName] = giacDef;
+                            StateManager.casSolutions = {};
+                            MathEngine.askGiac(giacDef);
+                        }
+                    }
+                }
             }
         }
     });
@@ -518,6 +684,14 @@ function compileAllExpressions() {
             const rawName = item.matrixName.trim();
             const rightSide = item.rawAscii.substring(item.rawAscii.indexOf('=') + 1).trim();
             const funcMatch = rawName.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]+)\)$/);
+            const targetIdent = funcMatch ? funcMatch[1] : rawName;
+            if (PROTECTED_CONSTANTS.has(targetIdent) || PROTECTED_CONSTANTS.has(targetIdent.toLowerCase()) ||
+                RESERVED_BUILTIN_NAMES.has(targetIdent.toLowerCase())) {
+                ExpressionManager.setError(item.id, `Não é possível redefinir a constante ou identificador reservado '${targetIdent}'.`);
+                ExpressionManager.setResult(item.id, '');
+                ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                return;
+            }
             if (funcMatch) {
                 const funcName = funcMatch[1];
                 const paramNames = funcMatch[2].split(',').map(s => s.trim());
@@ -525,15 +699,11 @@ function compileAllExpressions() {
                     const ast = new PrattParser(rightSide).parseExpression();
                     MathEngine.userFunctions[funcName] = { params: paramNames, expr: rightSide, ast, blockId: item.id };
                     StateManager.userFunctions[funcName] = { params: paramNames, expr: rightSide, ast, blockId: item.id };
-                    if (paramNames.length === 1) {
-                        MathEngine.compiledFuncs[funcName] = MathEngine.compile(ast, paramNames[0]);
-                    } else if (paramNames.length > 1) {
-                        MathEngine.compiledFuncs[funcName] = MathEngine.compileMultivariable(ast, paramNames);
-                    }
+                    MathEngine.compiledFuncs[funcName] = MathEngine.makeUserFuncWrapper(funcName, paramNames, ast);
                     ExpressionManager.setError(item.id, null);
                     ExpressionManager.setResult(item.id, '');
                 } catch(e) {
-                    ExpressionManager.setError(item.id, `Erro: ${(e as Error).message}`);
+                    ExpressionManager.setError(item.id, (e instanceof DesmosSemanticError || (e as any)?.name === 'DesmosSemanticError') ? (e as Error).message : `Erro: ${(e as Error).message}`);
                 }
             } else {
                 ExpressionManager.setError(item.id, null);
@@ -570,8 +740,9 @@ function compileAllExpressions() {
         let explicitTBounds: { tMin: number, tMax: number } | undefined = undefined;
         const isMatrixDef = cleanStr.includes('{{') || cleanStr.includes('[[');
         if (!isMatrixDef) {
-            const domainMatch = cleanStr.match(/(.+?)\s*\{([^}]+)\}\s*$/);
-            if (domainMatch && /[<>]|\\le|\\ge|<=|>=/.test(domainMatch[2])) {
+            const domainMatch = cleanStr.match(/(.*?[^\s\\=:,(\[{])\s*\\?\{([^:}]+?)\\?\}\s*$/);
+            if (domainMatch &&
+                /[<>]|\\le|\\ge|<=|>=/.test(domainMatch[2])) {
                 const parsedCond = parseDomainCondition(domainMatch[2]);
                 if (parsedCond) {
                     conditionFn = parsedCond.condition;
@@ -581,31 +752,50 @@ function compileAllExpressions() {
             }
         }
 
+        try {
         // Versão sem espaços APENAS para os testes de Regex (EDO, IVP, Associações)
         const noSpaceStr = cleanStr.replace(/\s+/g, '').replace(/²/g, '^2').replace(/³/g, '^3');
 
-        // Parsing inicial para descobrir o tipo de comando
+        // Parsing AST unificado via PrattParser + PolicyManager (eliminando regexes frágeis)
         let ast: any = null;
         let assignVarName: string | null = null;
-        try {
-            ast = new PrattParser(cleanStr).parseExpression();
-        } catch(_) {
-            // Live typing natural fallback
+        let parsedStmt: ParsedStatement | null = null;
+        const lhsBeforeEq = (noSpaceStr.split('=')[0] || '');
+        const looksLikeEdoLhs = /^([a-zA-Z_][a-zA-Z0-9_]*'(?:\([^)]*\))?|d[a-zA-Z_][a-zA-Z0-9_]*\/d[a-zA-Z_][a-zA-Z0-9_]*|\\frac\{d)/i.test(lhsBeforeEq);
+
+        if (!looksLikeEdoLhs) {
+            try {
+                parsedStmt = parseAndClassifyStatement(cleanStr, {
+                    is3D: StateManager.viewMode === '3d',
+                    existingVarAsts: passVarAsts,
+                    existingFuncAsts: MathEngine.userFunctions,
+                    currentBlockId: item.id
+                });
+                if (parsedStmt.kind === 'var_assign' ||
+                    (parsedStmt.kind === 'plot_equation' && parsedStmt.operator === '=' && parsedStmt.lhsAst === 'y')) {
+                    if (MathEngine.isGiacCommand(parsedStmt.rhsAst)) {
+                        ast = parsedStmt.rhsAst;
+                        assignVarName = parsedStmt.kind === 'var_assign' ? parsedStmt.name : 'y';
+                    } else {
+                        ast = parsedStmt.kind === 'var_assign' ? ['Equal', parsedStmt.lhsAst, parsedStmt.rhsAst] : parsedStmt.ast;
+                    }
+                } else if (parsedStmt.kind === 'func_def' || parsedStmt.kind === 'func_base_case') {
+                    ast = ['Equal', parsedStmt.lhsAst, parsedStmt.rhsAst];
+                } else {
+                    ast = parsedStmt.ast;
+                }
+            } catch (stmtErr) {
+                if (stmtErr instanceof DesmosSemanticError || (stmtErr as any)?.name === 'DesmosSemanticError') {
+                    throw stmtErr;
+                }
+            }
         }
 
-        const funcDeclEarly = cleanStr.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\(([^)]+)\)\s*=/);
-        if (!ast && !funcDeclEarly) {
-            const assignMatch = cleanStr.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*(.+)$/);
-            if (assignMatch) {
-                try {
-                    const rhsAst = new PrattParser(assignMatch[2].trim()).parseExpression();
-                    if (rhsAst && MathEngine.isGiacCommand(rhsAst)) {
-                        ast = rhsAst;
-                        assignVarName = assignMatch[1];
-                    }
-                } catch(_) {
-                    // Live typing natural fallback
-                }
+        if (!ast) {
+            try {
+                ast = new PrattParser(cleanStr).parseExpression();
+            } catch (_) {
+                // Live typing natural fallback
             }
         }
 
@@ -622,6 +812,78 @@ function compileAllExpressions() {
             }
 
             ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+
+            const cmdLower = typeof ast[0] === 'string' ? ast[0].toLowerCase() : '';
+            const isIterativeCalc = cmdLower === 'sum' || cmdLower === 'product' || cmdLower === 'prod';
+            const isLocalStatCmd = new Set([
+                'total', 'mean', 'median', 'stdev', 'stddev', 'samplesd', 'stdevp',
+                'var', 'variance', 'samplevariance', 'varp', 'mad', 'cov', 'covp',
+                'corr', 'spearman', 'quartile', 'quantile', 'length', 'size', 'count', 'random'
+            ]).has(cmdLower);
+            const isNumericDiffCmd = (cmdLower === 'diff' || cmdLower === 'derivative') &&
+                typeof ast[2] === 'string' && StateManager.values[ast[2]] !== undefined;
+
+            const knownBound = new Set([
+                ...Object.keys(StateManager.values),
+                ...Object.keys(StateManager.giacDefinitions),
+                ...Object.keys(MathEngine.userFunctions),
+                ...Object.keys(MathEngine.compiledFuncs),
+                ...definedMatrixNames
+            ]);
+            const freeInCmd = getFreeVariables(ast, Array.from(knownBound));
+
+            if (isIterativeCalc && (assignVarName === 'y' || assignVarName === null) && freeInCmd.length === 1 && freeInCmd[0] === 'x' && StateManager.values['x'] === undefined) {
+                ExpressionManager.setError(item.id, null);
+                ExpressionManager.setResult(item.id, '');
+                validEquations.push({
+                    color: item.color,
+                    id: item.id,
+                    ast,
+                    isImplicit: false,
+                    operator: '=',
+                    isEdo: false,
+                    isDerivative: false,
+                    isHidden: !item.visible,
+                    variable: 'x'
+                });
+                if (typeof document !== 'undefined') {
+                    const curBlock = document.getElementById(item.id);
+                    if (curBlock) ExpressionManager.updateMatrixBlockVisual(curBlock, false);
+                }
+                return;
+            }
+
+            if ((isIterativeCalc || isLocalStatCmd || isNumericDiffCmd) && freeInCmd.length === 0) {
+                try {
+                    const localVal = MathEngine.evaluateAST(ast, StateManager.values);
+                    let displayStr = '';
+                    if (PointEngine.isPoint(localVal)) {
+                        displayStr = `= ${PointEngine.formatPointDisplay(localVal)}`;
+                    } else if (Array.isArray(localVal)) {
+                        displayStr = ListEngine.formatListDisplay(localVal);
+                    } else if (typeof localVal === 'number' && !isNaN(localVal) && isFinite(localVal)) {
+                        displayStr = `= ${parseFloat(localVal.toFixed(10))}`;
+                    }
+                    if (displayStr) {
+                        ExpressionManager.setError(item.id, null);
+                        ExpressionManager.setResult(item.id, displayStr);
+                        if (assignVarName && assignVarName !== 'y' && typeof localVal === 'number') {
+                            StateManager.values[assignVarName] = localVal;
+                            StateManager.defineVariable(assignVarName, ast);
+                        }
+                        if (typeof document !== 'undefined') {
+                            const curBlock = document.getElementById(item.id);
+                            if (curBlock) ExpressionManager.updateMatrixBlockVisual(curBlock, true);
+                        }
+                        return;
+                    }
+                } catch (localErr) {
+                    if (localErr instanceof DesmosSemanticError || (localErr as any)?.name === 'DesmosSemanticError') {
+                        throw localErr;
+                    }
+                }
+            }
+
             const expandedAst = MathEngine.expandUserFunctions(ast);
             const giacQuery = MathEngine.formatForGiac(expandedAst);
             StateManager.activeGiacQuery[item.id] = giacQuery;
@@ -650,15 +912,15 @@ function compileAllExpressions() {
             }
 
             const formatCasDisplay = (rawRes: string): string => {
-                if (rawRes.includes('Erro') || rawRes.includes('pnt') || rawRes.includes('point[') || rawRes.includes('point(') || rawRes.includes('536870912')) {
+                if (rawRes.includes('Erro') || rawRes.includes('pnt') || rawRes.includes('point[') || rawRes.includes('point(') || rawRes.includes('536870912') || rawRes.includes('Piecewise') || /\bintegrate?\(/.test(rawRes)) {
                     if (numIntegralVal !== null) {
                         return `= ${parseFloat(numIntegralVal.toFixed(6))}`;
                     }
                     return '- Erro no cálculo';
                 }
-                let cleanRes = rawRes;
+                let cleanRes = MathEngine.normalizeFractionDisplay(rawRes);
                 if (isDefiniteInt && cleanRes.includes('=')) {
-                    cleanRes = cleanRes.split('=')[0].trim();
+                    cleanRes = MathEngine.normalizeFractionDisplay(cleanRes.split('=')[0].trim());
                 }
                 if (isDefiniteInt) {
                     return `= ${cleanRes}`;
@@ -674,7 +936,7 @@ function compileAllExpressions() {
             const updateSlidersForGiac = () => {
                 if (isIntegralCmd) {
                     const intVar = (typeof ast[2] === 'string' ? ast[2] : 'x').toLowerCase();
-                    const bound = new Set([intVar, 'd', 'x', 'y', 'z', 't', 'pi', 'e', ...Object.keys(StateManager.values), ...Object.keys(StateManager.giacDefinitions), ...definedMatrixNames]);
+                    const bound = new Set([intVar, 'd', 'x', 'y', 'z', 't', 'pi', 'e', 'inf', 'infty', 'infinity', '∞', ...Object.keys(StateManager.values), ...Object.keys(StateManager.giacDefinitions), ...definedMatrixNames]);
                     const freeInAst = getFreeVariables(ast, Array.from(bound));
                     const missingSliders = freeInAst.filter(v => 
                         StateManager.values[v] === undefined && 
@@ -695,8 +957,19 @@ function compileAllExpressions() {
                 }
             };
 
+            let pushedToPlot = false;
+            const syncGiacBlockVisual = () => {
+                if (typeof document === 'undefined') return;
+                const curBlock = document.getElementById(item.id);
+                if (curBlock) {
+                    ExpressionManager.updateMatrixBlockVisual(curBlock, !pushedToPlot);
+                }
+            };
+
             if (cached && cached.query === giacQuery) {
+                const isErrCached = cached.result.includes('Erro');
                 ExpressionManager.setResult(item.id, formatCasDisplay(cached.result));
+                ExpressionManager.setError(item.id, isErrCached ? cached.result : null);
                 updateSlidersForGiac();
                 if (assignVarName && assignVarName !== 'y' && isDefiniteInt) {
                     try {
@@ -717,7 +990,10 @@ function compileAllExpressions() {
                 try {
                     const solvedAst = new PrattParser(cached.result).parseExpression();
                     const free = getFreeVariables(solvedAst, []);
-                    if (!isDefiniteInt && (assignVarName === null || assignVarName === 'y') && (free.includes('x') || (!isNaN(Number(cached.result)) && isFinite(Number(cached.result))))) {
+                    const cmdHead = typeof ast[0] === 'string' ? ast[0].toLowerCase() : '';
+                    const isPlotWorthyCmd = isIntegralCmd || cmdHead === 'diff' || cmdHead === 'derivative';
+                    const isFiniteConstant = !isNaN(Number(cached.result)) && isFinite(Number(cached.result));
+                    if (!isDefiniteInt && (assignVarName === null || assignVarName === 'y') && (free.includes('x') || assignVarName === 'y' || (isPlotWorthyCmd && isFiniteConstant))) {
                         validEquations.push({ 
                             color: item.color, 
                             id: item.id, 
@@ -729,11 +1005,13 @@ function compileAllExpressions() {
                             isHidden: !item.visible, 
                             variable: isIntegralCmd && typeof ast[2] === 'string' ? ast[2] : 'x'
                         });
+                        pushedToPlot = true;
                     }
                 } catch(e) {
                     console.warn('[Main] Error building curve for integral/diff:', e);
                 }
             } else {
+                ExpressionManager.setError(item.id, null);
                 if (numIntegralVal !== null) {
                     ExpressionManager.setResult(item.id, `= ${parseFloat(numIntegralVal.toFixed(10))}`);
                     if (assignVarName && assignVarName !== 'y') {
@@ -749,13 +1027,17 @@ function compileAllExpressions() {
                                           .replace(/list\s*\[/g, '[')
                                           .replace(/usr_/g, '')
                                           .trim();
-                    if (cleanResult.includes('Erro') || cleanResult.includes('undef') || cleanResult.includes('Bad Argument') || cleanResult.includes('pnt') || cleanResult.includes('point[') || cleanResult.includes('536870912')) {
+                    if (cleanResult.includes('Erro') || cleanResult.includes('undef') || cleanResult.includes('Bad Argument') || cleanResult.includes('pnt') || cleanResult.includes('point[') || cleanResult.includes('536870912') || cleanResult.includes('Piecewise') || /\bintegrate?\(/.test(cleanResult)) {
                         cleanResult = numIntegralVal !== null ? `${parseFloat(numIntegralVal.toFixed(10))}` : 'Erro no cálculo';
+                    } else {
+                        cleanResult = MathEngine.normalizeFractionDisplay(cleanResult);
                     }
                     if (cleanResult !== 'Erro no cálculo' && !cleanResult.includes('pnt') && !cleanResult.includes('point[') && !cleanResult.includes('536870912')) {
                         StateManager.casSolutions[item.id] = { query: giacQuery, result: cleanResult };
+                        ExpressionManager.setError(item.id, null);
                     } else {
                         delete StateManager.casSolutions[item.id];
+                        ExpressionManager.setError(item.id, 'Erro no cálculo simbólico');
                     }
                     ExpressionManager.setResult(item.id, formatCasDisplay(cleanResult));
                     if (assignVarName && assignVarName !== 'y' && isDefiniteInt) {
@@ -775,9 +1057,11 @@ function compileAllExpressions() {
                         }
                     }
                     updateSlidersForGiac();
+                    syncGiacBlockVisual();
                     markExpressionsDirty();
                 });
             }
+            syncGiacBlockVisual();
             return;
         }
 
@@ -905,6 +1189,16 @@ function compileAllExpressions() {
             return; // Interrompe para não renderizar mais nada como texto
         } else if (genericCasMatch && casCommandsList.has(genericCasMatch[2].toLowerCase())) {
             const assignTarget = genericCasMatch[1];
+            if (assignTarget) {
+                const assignBase = assignTarget.split('(')[0].replace(/[\{\}\\]/g, '').trim();
+                if (PROTECTED_CONSTANTS.has(assignBase) || PROTECTED_CONSTANTS.has(assignBase.toLowerCase()) ||
+                    RESERVED_BUILTIN_NAMES.has(assignBase.toLowerCase())) {
+                    throw new DesmosSemanticError(
+                        `Não é possível redefinir a constante ou identificador reservado '${assignBase}'.`,
+                        'PROTECTED_IDENTIFIER'
+                    );
+                }
+            }
             const cmdName = genericCasMatch[2].toLowerCase();
             const cmdArgs = genericCasMatch[3];
             const currentQuery = assignTarget ? `${assignTarget}=${cmdName}(${cmdArgs})` : `${cmdName}(${cmdArgs})`;
@@ -929,17 +1223,29 @@ function compileAllExpressions() {
                 }
             }
 
+            let pushedCasToPlot = false;
+            const syncCasBlockVisual = (plottable: boolean) => {
+                if (typeof document === 'undefined') return;
+                const curBlock = document.getElementById(item.id);
+                if (curBlock) {
+                    ExpressionManager.updateMatrixBlockVisual(curBlock, !plottable);
+                }
+            };
+
             let cached: any = StateManager.casSolutions[item.id];
             if (cached && (cached.result.includes('pnt') || cached.result.includes('point[') || cached.result.includes('536870912') || cached.result.includes('Erro'))) {
                 delete StateManager.casSolutions[item.id];
                 cached = undefined;
             }
             if (cached && cached.query === currentQuery) {
-                ExpressionManager.setResult(item.id, cached.result.includes('Erro') ? `- Erro no cálculo` : `= ${cached.result}`);
+                const isErrCached = cached.result.includes('Erro');
+                ExpressionManager.setResult(item.id, isErrCached ? `- Erro no cálculo` : `= ${cached.result}`);
+                ExpressionManager.setError(item.id, isErrCached ? cached.result : null);
                 ExpressionManager.setSliderSuggestions(item.id, [], () => {});
                 
                 if (cached.ast) {
                     validEquations.push({ color: item.color, id: item.id, ast: cached.ast, isImplicit: false, isEdo: false, name: cached.name || '', operator: '=', isDerivative: false, isHidden: !item.visible, variable: cached.variable });
+                    pushedCasToPlot = true;
                     
                     // Registar para que f_n(3) funcione!
                     if (cached.name) {
@@ -948,14 +1254,18 @@ function compileAllExpressions() {
                     }
                 }
             } else {
+                ExpressionManager.setError(item.id, null);
                 ExpressionManager.setResult(item.id, 'Processando CAS...');
                 if (!StateManager.pendingCas[item.id]) {
                     StateManager.pendingCas[item.id] = true;
                     // Força a exigir variável de integração se só for passado 1 argumento
                     if ((cmdName === 'integral' || cmdName === 'nintegral' || cmdName === 'derivative') && !cmdArgs.includes(',')) {
-                        StateManager.casSolutions[item.id] = { query: currentQuery, result: 'Erro: Informe a variável. Ex: Integral(expressão, x)' };
+                        const errStr = 'Erro: Informe a variável. Ex: Integral(expressão, x)';
+                        StateManager.casSolutions[item.id] = { query: currentQuery, result: errStr };
+                        ExpressionManager.setError(item.id, errStr);
                         ExpressionManager.setResult(item.id, `- Erro no cálculo`);
                         StateManager.pendingCas[item.id] = false;
+                        syncCasBlockVisual(false);
                         drawFrame();
                         return;
                     }
@@ -1085,15 +1395,19 @@ function compileAllExpressions() {
                             StateManager.pendingCas[item.id] = false;
                         } else if (res.includes('Erro') || res.includes('ausente') || res.includes('Mock') || res.includes('pnt') || res.includes('point[') || res.includes('536870912')) {
                             delete StateManager.casSolutions[item.id];
+                            ExpressionManager.setError(item.id, 'Erro no cálculo simbólico');
                             ExpressionManager.setResult(item.id, `- Erro no cálculo`);
                             ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                            syncCasBlockVisual(false);
                         } else {
                             // Limpa as aspas do Giac e espaços extras
                             let cleanResult = res.replace(/"/g, '').replace(/matrix\s*\[/g, '[').replace(/list\s*\[/g, '[').replace(/usr_/g, '').trim();
                             if (cleanResult.includes('Erro') || cleanResult.includes('pnt') || cleanResult.includes('point[') || cleanResult.includes('536870912')) {
                                 delete StateManager.casSolutions[item.id];
+                                ExpressionManager.setError(item.id, 'Erro no cálculo simbólico');
                                 ExpressionManager.setResult(item.id, `- Erro no cálculo`);
                                 ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                                syncCasBlockVisual(false);
                                 return;
                             }
                             const arrowMatchClean = cleanResult.match(/^(?:\(?[a-zA-Z_]+\)?\s*->\s*)(.*)/);
@@ -1158,6 +1472,7 @@ function compileAllExpressions() {
 
                               StateManager.casSolutions[item.id] = { query: currentQuery, result: cleanResult, ast: resAst, name: fname, variable: extractVar, index: idx };
         
+                              ExpressionManager.setError(item.id, null);
                               ExpressionManager.setResult(item.id, `= ${cleanResult}`);
 
                               // Cleanup orphaned blocks from previous app versions (legacy)
@@ -1175,12 +1490,16 @@ function compileAllExpressions() {
                                   // Registar para que f_n(3) funcione!
                                   const cleanName = fname.replace(/[\{\}\\]/g, '');
                                   MathEngine.compiledFuncs[cleanName] = MathEngine.compile(resAst, extractVar);
-                              }               
+                                  syncCasBlockVisual(true);
+                              } else {
+                                  syncCasBlockVisual(false);
+                              }
                         }
                         markExpressionsDirty();
                     });
                 }
             }
+            syncCasBlockVisual(pushedCasToPlot);
             return; // Interrompe para não renderizar o gráfico disto
         } else {
             // Detecção Universal de Equações Diferenciais Ordinárias (EDOs)
@@ -1258,9 +1577,9 @@ function compileAllExpressions() {
             return;
         }
 
-        // 2.5. PROBLEMA DE VALOR INICIAL (IVP)
+        // 2.5. PROBLEMA DE VALOR INICIAL (IVP) - apenas quando há EDO declarada para esse nome
         const ivpMatch = cleanStr.match(/^([a-zA-Z_][a-zA-Z0-9_\{\}]*)\s*\(([\d\.\-]+)\)\s*=\s*([\d\.\-]+)$/);
-        if (ivpMatch) {
+        if (ivpMatch && edoNames.has(ivpMatch[1].replace(/[\{\}\\]/g, ''))) {
             let edoName = ivpMatch[1].replace(/[\{\}\\]/g, '');
             const x0 = parseFloat(ivpMatch[2]);
             const y0 = parseFloat(ivpMatch[3]);
@@ -1269,165 +1588,198 @@ function compileAllExpressions() {
             return;
         }
 
-        // 3. FUNÇÕES CUSTOMIZADAS (Mono e Multivariáveis: f(x), f(x, y), f(x, y, z, a, b))
-        const funcMatch = cleanStr.match(/^\\?([a-zA-Z_][a-zA-Z0-9_\{\}]*)\s*\(([^)]+)\)\s*=\s*(.+)$/);
-        if (funcMatch) {
-            const funcName = funcMatch[1].replace(/[\{\}\\]/g, ''); 
-            const paramNames = funcMatch[2].split(',').map(s => s.trim().replace(/[\{\}\\]/g, ''));
-            const expr = funcMatch[3].trim();
+        // 2.6. CASO BASE EXTERNO DE FUNÇÃO RECURSIVA (ex: f_{actorial}(0) = 1)
+        if (parsedStmt && parsedStmt.kind === 'func_base_case') {
+            const bcName = parsedStmt.name;
+            if (!MathEngine.userBaseCases[bcName]) MathEngine.userBaseCases[bcName] = [];
+            if (!MathEngine.userBaseCases[bcName].some(bc => bc.blockId === item.id)) {
+                MathEngine.userBaseCases[bcName].push({ args: parsedStmt.argAsts, ast: parsedStmt.rhsAst, blockId: item.id });
+            }
+            definedUserFunctionNames.add(bcName);
+            try {
+                const rhsVal = MathEngine.evaluateAST(parsedStmt.rhsAst, StateManager.values);
+                if (typeof rhsVal === 'number' && isFinite(rhsVal)) {
+                    const rounded = parseFloat(rhsVal.toFixed(10));
+                    const displayVal = Object.is(rounded, -0) || rounded === 0 ? 0 : rounded;
+                    ExpressionManager.setResult(item.id, `= ${displayVal}`);
+                } else if (PointEngine.isPoint(rhsVal)) {
+                    ExpressionManager.setResult(item.id, `= ${PointEngine.formatPointDisplay(rhsVal)}`);
+                } else if (Array.isArray(rhsVal)) {
+                    ExpressionManager.setResult(item.id, ListEngine.formatListDisplay(rhsVal));
+                } else {
+                    ExpressionManager.setResult(item.id, '');
+                }
+                ExpressionManager.setError(item.id, null);
+                ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+            } catch (bcErr: any) {
+                if (bcErr instanceof DesmosSemanticError || bcErr?.name === 'DesmosSemanticError') throw bcErr;
+                ExpressionManager.setResult(item.id, '');
+            }
+            return;
+        }
+
+        // 3. FUNÇÕES CUSTOMIZADAS (Mono e Multivariáveis: f(x), f(x, y), f(x, y, z, a, b), \operatorname{...}(x))
+        if (parsedStmt && parsedStmt.kind === 'func_def') {
+            const funcName = parsedStmt.name;
+            const paramNames = parsedStmt.params;
+            const expr = parsedStmt.rhsRaw;
             const isMultiVar = paramNames.length > 1;
 
-            // Se for uma função já existente e o usuário está escrevendo f(x, y) = 0 (ou f(x, y) = constante)
-            // ou se está em outro bloco de expressão, isso NÃO é uma definição, mas sim uma EQUAÇÃO A PLOTAR!
-            const existingFunc = MathEngine.userFunctions[funcName];
-            const isRhsConstant = !isNaN(Number(expr)) || expr === '0';
-            const isDifferentBlock = !!(existingFunc && existingFunc.blockId && existingFunc.blockId !== item.id);
-            const isPlotEquation = !!(existingFunc && (isRhsConstant || isDifferentBlock));
+            try {
+                const directDiff = !isMultiVar ? expr.match(/^diff\s*\(\s*(.+?)\s*,\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)$/i) : null;
+                const derivMatch = directDiff || (!isMultiVar ? expr.match(/^(?:\\frac\{d\}\{d([a-zA-Z])\}|d\/d([a-zA-Z])|\(d\)\/\(d([a-zA-Z])\))\s*(.+)$/) : null);
+                if (derivMatch) {
+                    const derivVar = directDiff ? directDiff[2] : (derivMatch[1] || derivMatch[2] || derivMatch[3]);
+                    const derivExpr = directDiff ? directDiff[1] : derivMatch[4];
+                    const ast = new PrattParser(derivExpr).parseExpression();
+                    assertNoUndefinedCalls(ast, paramNames);
+                    MathEngine.compiledFuncs[funcName] = MathEngine.createDerivativeFunction(ast, derivVar);
+                    MathEngine.userFunctions[funcName] = { params: paramNames, expr, ast, blockId: item.id };
+                    StateManager.userFunctions[funcName] = { params: paramNames, expr, ast, blockId: item.id };
+                    definedUserFunctionNames.add(funcName);
+                    validEquations.push({ color: item.color, id: item.id, ast, isImplicit: false, operator: '=', isEdo: false, isDerivative: true, derivVar, isHidden: !item.visible, variable: paramNames[0] });
+                    ExpressionManager.setError(item.id, null);
+                    ExpressionManager.setResult(item.id, `Derivada ${funcName}(${paramNames[0]})`);
+                } else {
+                    const ast = parsedStmt.rhsAst;
+                    assertNoUndefinedCalls(ast, paramNames);
+                    MathEngine.userFunctions[funcName] = { params: paramNames, expr, ast, blockId: item.id };
+                    StateManager.userFunctions[funcName] = { params: paramNames, expr, ast, blockId: item.id };
+                    definedUserFunctionNames.add(funcName);
 
-            if (!isPlotEquation) {
-                try {
-                    const directDiff = !isMultiVar ? expr.match(/^diff\s*\(\s*(.+?)\s*,\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)$/i) : null;
-                    const derivMatch = directDiff || (!isMultiVar ? expr.match(/^(?:\\frac\{d\}\{d([a-zA-Z])\}|d\/d([a-zA-Z])|\(d\)\/\(d([a-zA-Z])\))\s*(.+)$/) : null);
-                    if (derivMatch) {
-                        const derivVar = directDiff ? directDiff[2] : (derivMatch[1] || derivMatch[2] || derivMatch[3]);
-                        const derivExpr = directDiff ? directDiff[1] : derivMatch[4];
-                        const ast = new PrattParser(derivExpr).parseExpression();
-                        MathEngine.compiledFuncs[funcName] = MathEngine.createDerivativeFunction(ast, derivVar);
-                        MathEngine.userFunctions[funcName] = { params: paramNames, expr, ast, blockId: item.id };
-                        StateManager.userFunctions[funcName] = { params: paramNames, expr, ast, blockId: item.id };
-                        definedUserFunctionNames.add(funcName);
-                        validEquations.push({ color: item.color, id: item.id, ast, isImplicit: false, operator: '=', isEdo: false, isDerivative: true, derivVar, isHidden: !item.visible, variable: paramNames[0] });
-                        ExpressionManager.setError(item.id, null);
-                        ExpressionManager.setResult(item.id, `Derivada ${funcName}(${paramNames[0]})`);
+                    const isMatrixValued = expr.trim().startsWith('[[') || (Array.isArray(ast) && ast[0] === 'List' && Array.isArray(ast[1]) && ast[1][0] === 'List');
+
+                    if (isMultiVar) {
+                        // Função multivariável (ex: f(x, y) = x^2*y + y^2/x ou a(x, y, z) = [[x, 0, 0], [0, y, 0], [0, 0, z]])
+                        MathEngine.compiledFuncs[funcName] = MathEngine.makeUserFuncWrapper(funcName, paramNames, ast);
+
+                        // Envia definição multivariável ao Giac para permitir int(f(x, y, z), y) e diff(f(x, y), x)
+                        const giacDef = `usr_${funcName}(${paramNames.join(',')}):=${expr}`;
+                        if (StateManager.giacDefinitions[funcName] !== giacDef) {
+                            StateManager.giacDefinitions[funcName] = giacDef;
+                            StateManager.casSolutions = {};
+                            MathEngine.askGiac(giacDef);
+                        }
+
+                        ExpressionManager.setResult(item.id, '');
                     } else {
-                        const ast = new PrattParser(expr).parseExpression();
-                        MathEngine.userFunctions[funcName] = { params: paramNames, expr, ast, blockId: item.id };
-                        StateManager.userFunctions[funcName] = { params: paramNames, expr, ast, blockId: item.id };
-                        definedUserFunctionNames.add(funcName);
-                        
-                        const isMatrixValued = expr.trim().startsWith('[[') || (Array.isArray(ast) && ast[0] === 'List' && Array.isArray(ast[1]) && ast[1][0] === 'List');
-
-                        if (isMultiVar) {
-                            // Função multivariável (ex: f(x, y) = x^2*y + y^2/x ou a(x, y, z) = [[x, 0, 0], [0, y, 0], [0, 0, z]])
-                            MathEngine.compiledFuncs[funcName] = MathEngine.compileMultivariable(ast, paramNames);
-                            
-                            // Envia definição multivariável ao Giac para permitir int(f(x, y, z), y) e diff(f(x, y), x)
-                            const giacDef = `usr_${funcName}(${paramNames.join(',')}):=${expr}`;
+                        // Função monovariável (ex: f(x) = x^2, f(x) = 3, ou f(x) = [[x, 0], [0, x]])
+                        const paramName = paramNames[0];
+                        if (isMatrixValued) {
+                            MathEngine.compiledFuncs[funcName] = MathEngine.makeUserFuncWrapper(funcName, paramNames, ast);
+                            ExpressionManager.setResult(item.id, '');
+                            ExpressionManager.setError(item.id, null);
+                            ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                            const giacDef = `usr_${funcName}(${paramName}):=${expr}`;
                             if (StateManager.giacDefinitions[funcName] !== giacDef) {
                                 StateManager.giacDefinitions[funcName] = giacDef;
                                 StateManager.casSolutions = {};
                                 MathEngine.askGiac(giacDef);
                             }
+                        } else if (MathEngine.isGiacCommand(ast)) {
+                            const expandedAst = MathEngine.expandUserFunctions(ast);
+                            const giacQuery = MathEngine.formatForGiac(expandedAst);
+                            const cached = StateManager.casSolutions[item.id];
+                            if (cached && (cached.result.includes('pnt') || cached.result.includes('point[') || cached.result.includes('536870912') || cached.result.includes('Erro') || cached.result.includes('integrate('))) {
+                                delete StateManager.casSolutions[item.id];
+                            } else if (cached && cached.query === giacQuery) {
+                                try {
+                                    let solvedStr = cached.result;
+                                    if (solvedStr.includes('usr_')) solvedStr = solvedStr.replace(/usr_/g, '');
+                                    const solvedAst = new PrattParser(solvedStr).parseExpression();
+                                    MathEngine.compiledFuncs[funcName] = MathEngine.compile(solvedAst, paramName);
+                                    MathEngine.userFunctions[funcName].ast = solvedAst;
+                                    StateManager.userFunctions[funcName].ast = solvedAst;
+                                    validEquations.push({ color: item.color, id: item.id, ast: solvedAst, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
 
-                            if (isMatrixValued) {
-                                ExpressionManager.setResult(item.id, '');
-                            } else {
-                                ExpressionManager.setResult(item.id, '');
-                            }
-                        } else {
-                            // Função monovariável (ex: f(x) = x^2 ou f(x) = [[x, 0], [0, x]])
-                            const paramName = paramNames[0];
-                            if (isMatrixValued) {
-                                MathEngine.compiledFuncs[funcName] = MathEngine.compile(ast, paramName);
-                                ExpressionManager.setResult(item.id, '');
-                                ExpressionManager.setError(item.id, null);
-                                ExpressionManager.setSliderSuggestions(item.id, [], () => {});
-                                const giacDef = `usr_${funcName}(${paramName}):=${expr}`;
-                                if (StateManager.giacDefinitions[funcName] !== giacDef) {
-                                    StateManager.giacDefinitions[funcName] = giacDef;
-                                    StateManager.casSolutions = {};
-                                    MathEngine.askGiac(giacDef);
-                                }
-                            } else if (MathEngine.isGiacCommand(ast)) {
-                                const expandedAst = MathEngine.expandUserFunctions(ast);
-                                const giacQuery = MathEngine.formatForGiac(expandedAst);
-                                const cached = StateManager.casSolutions[item.id];
-                                if (cached && (cached.result.includes('pnt') || cached.result.includes('point[') || cached.result.includes('536870912') || cached.result.includes('Erro') || cached.result.includes('integrate('))) {
-                                    delete StateManager.casSolutions[item.id];
-                                } else if (cached && cached.query === giacQuery) {
-                                    try {
-                                        let solvedStr = cached.result;
-                                        if (solvedStr.includes('usr_')) solvedStr = solvedStr.replace(/usr_/g, '');
-                                        const solvedAst = new PrattParser(solvedStr).parseExpression();
-                                        MathEngine.compiledFuncs[funcName] = MathEngine.compile(solvedAst, paramName);
-                                        MathEngine.userFunctions[funcName].ast = solvedAst;
-                                        StateManager.userFunctions[funcName].ast = solvedAst;
-                                        validEquations.push({ color: item.color, id: item.id, ast: solvedAst, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
-                                        
-                                        const isIndefinite = ast[0] === 'Integrate' && ast.length <= 3;
-                                        const displayResult = isIndefinite && !/[+\-]\s*c\b/i.test(solvedStr) ? `${solvedStr} + C` : solvedStr;
-                                        ExpressionManager.setResult(item.id, `= ${displayResult}`);
-                                    } catch(err) {
-                                        MathEngine.compiledFuncs[funcName] = MathEngine.compile(expandedAst, paramName);
-                                        validEquations.push({ color: item.color, id: item.id, ast: expandedAst, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
-                                        ExpressionManager.setResult(item.id, `= ${cached.result}`);
-                                    }
-                                } else {
-                                    ExpressionManager.setResult(item.id, 'Calculando...');
-                                    ExpressionManager.setError(item.id, null);
-                                    StateManager.activeGiacQuery[item.id] = giacQuery;
-                                    MathEngine.askGiac(giacQuery).then(res => {
-                                        if (StateManager.activeGiacQuery[item.id] !== giacQuery) return; // Stale query, discard!
-                                        let cleanRes = res.replace(/"/g, '').replace(/usr_/g, '').trim();
-                                        if (cleanRes.includes('Erro') || cleanRes.includes('pnt') || cleanRes.includes('point[') || cleanRes.includes('536870912') || cleanRes.includes('integrate(')) {
-                                            delete StateManager.casSolutions[item.id];
-                                            return;
-                                        }
-                                        StateManager.casSolutions[item.id] = { query: giacQuery, result: cleanRes };
-                                        markExpressionsDirty();
-                                    });
+                                    const isIndefinite = ast[0] === 'Integrate' && ast.length <= 3;
+                                    const displayResult = isIndefinite && !/[+\-]\s*c\b/i.test(solvedStr) ? `${solvedStr} + C` : solvedStr;
+                                    ExpressionManager.setResult(item.id, `= ${displayResult}`);
+                                } catch(err) {
                                     MathEngine.compiledFuncs[funcName] = MathEngine.compile(expandedAst, paramName);
                                     validEquations.push({ color: item.color, id: item.id, ast: expandedAst, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
+                                    ExpressionManager.setResult(item.id, `= ${cached.result}`);
                                 }
                             } else {
-                                MathEngine.compiledFuncs[funcName] = MathEngine.compile(ast, paramName);
-                                
-                                // Verifica se depende de variáveis adicionais (sliders)
-                                const freeVars = getFreeVariables(ast, [paramName, 'pi', 'e']);
-                                const unbound = freeVars.filter(v => StateManager.values[v] === undefined && MathEngine.compiledFuncs[v] === undefined && !definedMatrixNames.has(v));
-                                if (unbound.length > 0) {
-                                    ExpressionManager.setSliderSuggestions(item.id, unbound, (varName) => {
-                                        ExpressionManager.addExpression(`${varName} = 1`, false, undefined, item.id);
-                                        scheduleFrame();
-                                    });
-                                    ExpressionManager.setError(item.id, `Muitas variáveis. Tente definir: ${unbound.join(', ')}`);
-                                    ExpressionManager.setResult(item.id, '');
-                                    return;
-                                } else {
-                                    ExpressionManager.setSliderSuggestions(item.id, [], () => {});
-                                    ExpressionManager.setError(item.id, null);
-                                    ExpressionManager.setResult(item.id, '');
-                                    // Empurra para plotar no gráfico somente quando todas as variáveis estiverem definidas!
-                                    validEquations.push({ color: item.color, id: item.id, ast, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
-                                }
-                                
-                                // Envia para o Giac para poder ser integrada/derivada simbolicamente!
-                                const giacDef = `usr_${funcName}(${paramName}):=${expr}`;
-                                if (StateManager.giacDefinitions[funcName] !== giacDef) {
-                                    StateManager.giacDefinitions[funcName] = giacDef;
-                                    StateManager.casSolutions = {}; // INVALIDE CACHE
-                                    MathEngine.askGiac(giacDef);
-                                }
+                                ExpressionManager.setResult(item.id, 'Calculando...');
+                                ExpressionManager.setError(item.id, null);
+                                StateManager.activeGiacQuery[item.id] = giacQuery;
+                                MathEngine.askGiac(giacQuery).then(res => {
+                                    if (StateManager.activeGiacQuery[item.id] !== giacQuery) return; // Stale query, discard!
+                                    let cleanRes = res.replace(/"/g, '').replace(/usr_/g, '').trim();
+                                    if (cleanRes.includes('Erro') || cleanRes.includes('pnt') || cleanRes.includes('point[') || cleanRes.includes('536870912') || cleanRes.includes('integrate(')) {
+                                        delete StateManager.casSolutions[item.id];
+                                        return;
+                                    }
+                                    StateManager.casSolutions[item.id] = { query: giacQuery, result: cleanRes };
+                                    markExpressionsDirty();
+                                });
+                                MathEngine.compiledFuncs[funcName] = MathEngine.compile(expandedAst, paramName);
+                                validEquations.push({ color: item.color, id: item.id, ast: expandedAst, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
+                            }
+                        } else {
+                            MathEngine.compiledFuncs[funcName] = MathEngine.makeUserFuncWrapper(funcName, paramNames, ast);
+
+                            // Verifica se depende de variáveis adicionais (sliders)
+                            const freeVars = getFreeVariables(ast, [paramName, 'pi', 'e']);
+                            const unbound = freeVars.filter(v =>
+                                StateManager.values[v] === undefined &&
+                                passVarAsts[v] === undefined &&
+                                StateManager.asts[v] === undefined &&
+                                MathEngine.compiledFuncs[v] === undefined &&
+                                !MathEngine.userFunctions[v] &&
+                                !definedUserFunctionNames.has(v) &&
+                                !definedMatrixNames.has(v)
+                            );
+                            if (unbound.length > 0) {
+                                ExpressionManager.setSliderSuggestions(item.id, unbound, (varName) => {
+                                    ExpressionManager.addExpression(`${varName} = 1`, false, undefined, item.id);
+                                    scheduleFrame();
+                                });
+                                ExpressionManager.setError(item.id, `Muitas variáveis. Tente definir: ${unbound.join(', ')}`);
+                                ExpressionManager.setResult(item.id, '');
+                                return;
+                            } else {
+                                ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                                ExpressionManager.setError(item.id, null);
+                                ExpressionManager.setResult(item.id, '');
+                                // Empurra para plotar no gráfico somente quando todas as variáveis estiverem definidas!
+                                validEquations.push({ color: item.color, id: item.id, ast, isImplicit: false, operator: '=', isEdo: false, isDerivative: false, isHidden: !item.visible, variable: paramName });
+                            }
+
+                            // Envia para o Giac para poder ser integrada/derivada simbolicamente!
+                            const giacDef = `usr_${funcName}(${paramName}):=${expr}`;
+                            if (StateManager.giacDefinitions[funcName] !== giacDef) {
+                                StateManager.giacDefinitions[funcName] = giacDef;
+                                StateManager.casSolutions = {}; // INVALIDE CACHE
+                                MathEngine.askGiac(giacDef);
                             }
                         }
                     }
-                    ExpressionManager.setError(item.id, null);
-                } catch(e) {
-                    ExpressionManager.setError(item.id, `Erro: ${(e as Error).message}`);
-                    ExpressionManager.setResult(item.id, '');
                 }
-                return; 
+                ExpressionManager.setError(item.id, null);
+            } catch(e) {
+                if (e instanceof DesmosSemanticError || (e as any)?.name === 'DesmosSemanticError') {
+                    throw e;
+                }
+                ExpressionManager.setError(item.id, `Erro: ${(e as Error).message}`);
+                ExpressionManager.setResult(item.id, '');
             }
+            return;
         }
 
         // 3.5. CURVAS POLARES: r = f(theta) ou r = f(t)
-        const polarMatch = cleanStr.match(/^\s*r\s*=\s*(.+)$/);
+        const polarRhs = (parsedStmt && parsedStmt.kind === 'plot_equation' && parsedStmt.operator === '=' && parsedStmt.lhsAst === 'r')
+            ? parsedStmt.rhsRaw
+            : null;
+        const polarMatch = polarRhs !== null ? [cleanStr, polarRhs] : cleanStr.match(/^\s*r\s*=\s*(.+)$/);
         if (polarMatch) {
             let rExpr = polarMatch[1].trim();
             rExpr = rExpr.replace(/\\theta/g, 'theta').replace(/θ/g, 'theta');
             const thetaVar = rExpr.includes('theta') ? 'theta' : 't';
             try {
                 const astR = new PrattParser(rExpr).parseExpression();
+                assertNoUndefinedCalls(astR, [thetaVar]);
                 const astX = ["Multiply", astR, ["Cos", thetaVar]];
                 const astY = ["Multiply", astR, ["Sin", thetaVar]];
 
@@ -1469,40 +1821,51 @@ function compileAllExpressions() {
                 ExpressionManager.setResult(item.id, 'Curva Polar (r = f(θ))');
                 return;
             } catch(e) {
+                if (e instanceof DesmosSemanticError || (e as any)?.name === 'DesmosSemanticError') {
+                    throw e;
+                }
                 console.warn('[Main] Error processing polar curve:', e);
             }
         }
 
         // 4. SLIDERS GLOBAIS E DEFINIÇÃO DE MATRIZES
-        const assignmentMatch = noSpaceStr.match(/^\\?([a-zA-Z_][a-zA-Z0-9_]*)=(.+)$/);
-        if (item.isMatrix && !assignmentMatch) {
+        const isAstVarAssign = Boolean(parsedStmt && parsedStmt.kind === 'var_assign');
+        const legacyMatrixAssign = (!isAstVarAssign && item.isMatrix)
+            ? noSpaceStr.match(/^\\?([a-zA-Z_][a-zA-Z0-9_]*)=(.+)$/)
+            : null;
+        if (item.isMatrix && !isAstVarAssign && !legacyMatrixAssign) {
             ExpressionManager.setResult(item.id, '');
             ExpressionManager.setError(item.id, null);
             ExpressionManager.setSliderSuggestions(item.id, [], () => {});
             return;
         }
-        if (assignmentMatch) {
-            const varName = assignmentMatch[1].replace(/[\\]/g, '');
-            const rightSide = assignmentMatch[2];
-            const rightSideClean = cleanStr.substring(cleanStr.indexOf('=') + 1).trim();
-            
+        if (isAstVarAssign || legacyMatrixAssign) {
+            const assignStmt = isAstVarAssign ? (parsedStmt as Extract<ParsedStatement, { kind: 'var_assign' }>) : null;
+            const varName = assignStmt ? assignStmt.name : legacyMatrixAssign![1].replace(/[\\]/g, '');
+            if (!assignStmt && (PROTECTED_CONSTANTS.has(varName.toLowerCase()) || RESERVED_BUILTIN_NAMES.has(varName.toLowerCase()))) {
+                throw new DesmosSemanticError(
+                    `Não é possível redefinir a constante ou identificador reservado '${varName}'.`,
+                    'PROTECTED_IDENTIFIER'
+                );
+            }
+            const rightSideClean = assignStmt ? assignStmt.rhsRaw : cleanStr.substring(cleanStr.indexOf('=') + 1).trim();
+            const rhsAst = assignStmt ? assignStmt.rhsAst : null;
+
             const blockEl = document.getElementById(item.id);
             const mfEl = blockEl ? blockEl.querySelector('math-field') : null;
             const rawLatex = mfEl ? (mfEl as any).getValue('latex') : '';
-            
+
             // É matriz ou vetor 2D? Verifica se tem estrutura multidimensional ou comando de matriz
             const cleanMatStr = rightSideClean.replace(/\\/g, '');
-            const is2DMatrix = item.isMatrix || cleanMatStr.startsWith('[[') || cleanMatStr.startsWith('{{') || 
+            const is2DMatrix = item.isMatrix || cleanMatStr.startsWith('[[') || cleanMatStr.startsWith('{{') ||
                                cleanMatStr.includes('],[') || cleanMatStr.includes('};{') ||
                                (cleanMatStr.startsWith('[') && cleanMatStr.includes(';')) ||
                                cleanMatStr.startsWith('matrix') || cleanMatStr.startsWith('begin{') ||
                                rawLatex.includes('matrix}') || rawLatex.includes('\\bmatrix') || rawLatex.includes('\\pmatrix') || rawLatex.includes('\\begin{');
-            
+
             if (is2DMatrix) {
-                // Se o rightSideClean tiver lbrace ou begin{matrix}, vamos tentar usar o latex diretamente!
                 let giacMatrix = '';
                 if (cleanMatStr.startsWith('lbrace') || cleanMatStr.startsWith('begin{') || rawLatex.includes('\\begin{') || !cleanMatStr.includes('{')) {
-                    // Limpar o LaTeX para Giac: \{ -> [ e \} -> ]
                     giacMatrix = rawLatex.replace(/\\left\\{/g, '[').replace(/\\right\\}/g, ']')
                                          .replace(/\\{/g, '[').replace(/\\}/g, ']')
                                          .replace(/\\left\[/g, '[').replace(/\\right\]/g, ']')
@@ -1511,31 +1874,32 @@ function compileAllExpressions() {
                                          .replace(/\\\\/g, '],[')
                                          .replace(/&/g, ',')
                                          .replace(/#/g, '')
-                                         .replace(/=/g, '').replace(/[a-zA-Z_]+\s*/, ''); 
+                                         .replace(/=/g, '').replace(/[a-zA-Z_]+\s*/, '');
                     const matchMat = giacMatrix.match(/\[.*\]/);
                     if (matchMat) giacMatrix = matchMat[0];
                 } else {
                     giacMatrix = cleanMatStr.replace(/\{/g, '[').replace(/\}/g, ']');
                 }
-                // Fix missing commas between rows: [[a,b][c,d]] -> [[a,b],[c,d]]
                 giacMatrix = giacMatrix.replace(/\]\s*\[/g, '],[');
                 const giacDef = `usr_${varName}:=${giacMatrix}`;
-                
-                // Armazena a matriz nativamente no StateManager.values para cálculo e indexação instantâneos
+
                 try {
                     let parsedMatrix: any = null;
                     try {
                         parsedMatrix = JSON.parse(giacMatrix);
                     } catch (_) {
-                        const matAst = new PrattParser(giacMatrix).parseExpression();
+                        const matAst = rhsAst || new PrattParser(giacMatrix).parseExpression();
+                        assertNoUndefinedCalls(matAst);
                         parsedMatrix = MathEngine.evaluateAST(matAst, StateManager.values);
                     }
                     if (MatrixEngine.isMatrix(parsedMatrix)) {
+                        MatrixEngine.validateDimensions(parsedMatrix.length, parsedMatrix[0]?.length || 0);
                         StateManager.defineVariable(varName, parsedMatrix);
                         StateManager.values[varName] = parsedMatrix;
                         activeVars.push(varName);
                     }
                 } catch(e) {
+                    if (e instanceof DesmosSemanticError || (e as any)?.name === 'DesmosSemanticError') throw e;
                     console.warn('[Main] Erro ao registrar matriz nativa:', e);
                 }
 
@@ -1548,11 +1912,14 @@ function compileAllExpressions() {
                     MathEngine.askGiac(giacDef);
                 }
                 ExpressionManager.setSliderSuggestions(item.id, [], () => {});
-                return; // Encerra o processamento, pois não queremos renderizar gráfico disto
-            } else if (cleanMatStr.startsWith('[') || rightSideClean.includes('for ') || rightSideClean.toLowerCase().includes('polygon(')) {
-                // Definição nativa de Listas, Sequências, Matrizes e Vetores Desmos
+                return;
+            } else if (
+                (Array.isArray(rhsAst) && ['List', 'Range', 'RangeStep', 'Comprehension', 'MatrixComprehension', 'Polygon'].includes(rhsAst[0])) ||
+                cleanMatStr.startsWith('[') || rightSideClean.includes('for ') || rightSideClean.toLowerCase().includes('polygon(')
+            ) {
                 try {
-                    const listAst = new PrattParser(rightSideClean).parseExpression();
+                    const listAst = rhsAst || new PrattParser(rightSideClean).parseExpression();
+                    assertNoUndefinedCalls(listAst);
                     const listVal = MathEngine.evaluateAST(listAst, StateManager.values);
                     StateManager.defineVariable(varName, listAst);
                     StateManager.values[varName] = listVal;
@@ -1563,9 +1930,9 @@ function compileAllExpressions() {
                     } else {
                         ExpressionManager.setResult(item.id, ListEngine.formatListDisplay(listVal));
                     }
+                    ExpressionManager.setError(item.id, null);
                     ExpressionManager.setSliderSuggestions(item.id, [], () => {});
 
-                    // Sincroniza com Giac para comandos CAS que dependam de L
                     if (Array.isArray(listVal)) {
                         const giacListStr = `usr_${varName}:=[${listVal.map(v => typeof v === 'number' ? (isNaN(v) ? 'undef' : (!isFinite(v) ? (v > 0 ? 'infinity' : '-infinity') : v)) : JSON.stringify(v)).join(',')}]`;
                         if (StateManager.giacDefinitions[varName] !== giacListStr) {
@@ -1574,7 +1941,6 @@ function compileAllExpressions() {
                         }
                     }
 
-                    // Se a lista contiver pontos, plota todos os pontos!
                     if (Array.isArray(listVal) && listVal.length > 0 && typeof listVal[0] === 'object' && listVal[0] !== null && 'x' in listVal[0] && 'y' in listVal[0]) {
                         validEquations.push({
                             color: item.color,
@@ -1591,20 +1957,22 @@ function compileAllExpressions() {
                     }
                     return;
                 } catch(e) {
+                    if (e instanceof DesmosSemanticError || (e as any)?.name === 'DesmosSemanticError') throw e;
                     console.warn('[Main] Erro ao definir lista/matriz:', e);
                 }
             }
 
-            const isMultiVarProd = varName.length > 1 && !varName.includes('_') && /[xyzt]/.test(varName);
             const policy = PolicyManager.getPolicy(StateManager.viewMode === '3d');
-            if (policy.isValidSlider(varName) && !isMultiVarProd && !genericCasMatch) {
-                // Suporte para declaração de ponto A = (x, y) ou A = (x, y, z)
-                let pointAst: any = null;
-                try {
-                    pointAst = new PrattParser(rightSideClean).parseExpression();
-                } catch (e) {
-                    console.warn('[Main] Error parsing point assignment:', e);
+            if (policy.isValidSlider(varName)) {
+                let pointAst: any = rhsAst;
+                if (!pointAst) {
+                    try {
+                        pointAst = new PrattParser(rightSideClean).parseExpression();
+                    } catch (e) {
+                        console.warn('[Main] Error parsing point assignment:', e);
+                    }
                 }
+                assertNoUndefinedCalls(pointAst);
 
                 if (pointAst && pointAst[0] === 'Point') {
                     const evalX = MathEngine.compile(pointAst[1])(0, 0, StateManager.values);
@@ -1617,6 +1985,12 @@ function compileAllExpressions() {
                         StateManager.defineVariable(varName, pointAst);
                         StateManager.values[varName] = ptObj;
                         activeVars.push(varName);
+                        ExpressionManager.setResult(item.id, `= ${PointEngine.formatPointDisplay(ptObj)}`);
+                        if (is3D && StateManager.viewMode !== '3d') {
+                            ExpressionManager.setError(item.id, 'Não é possível plotar ponto 3D no modo 2D.');
+                            ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                            return;
+                        }
                         validEquations.push({
                             color: item.color,
                             id: item.id,
@@ -1631,101 +2005,129 @@ function compileAllExpressions() {
                             operator: '=',
                             isHidden: !item.visible
                         });
-                        ExpressionManager.setResult(item.id, `= ${PointEngine.formatPointDisplay(ptObj)}`);
+                        ExpressionManager.setError(item.id, null);
                         ExpressionManager.setSliderSuggestions(item.id, [], () => {});
                         return;
                     }
                 }
 
-                const hasForbiddenCoords = StateManager.viewMode === '3d'
-                    ? (/\b[xyz]\b/.test(rightSide) || /\\mathbf\{[xyz]\}/.test(rightSide))
-                    : (/\b[xy]\b/.test(rightSide) || /\\mathbf\{[xy]\}/.test(rightSide));
-                if (!hasForbiddenCoords) {
-                    activeVars.push(varName);
-                    try {
-                        const parser = new PrattParser(rightSideClean);
-                        StateManager.defineVariable(varName, parser.parseExpression());
-                        ExpressionManager.processBlockState(item.id, ascii, StateManager.values);
-                        ExpressionManager.setResult(item.id, ''); 
-                        
-                        // Envia variável para o Giac!
+                const hasForbiddenCoords = astContainsSpatialCoord(pointAst, StateManager.viewMode === '3d');
+                activeVars.push(varName);
+                try {
+                    const valAst = pointAst || new PrattParser(rightSideClean).parseExpression();
+                    StateManager.defineVariable(varName, valAst);
+                    ExpressionManager.processBlockState(item.id, ascii, StateManager.values);
+
+                    if (!hasForbiddenCoords) {
+                        const computedPt = StateManager.values[varName];
+                        if (PointEngine.isPoint(computedPt)) {
+                            ExpressionManager.setResult(item.id, `= ${PointEngine.formatPointDisplay(computedPt)}`);
+                            if (computedPt.z !== undefined && StateManager.viewMode !== '3d') {
+                                ExpressionManager.setError(item.id, 'Não é possível plotar ponto 3D no modo 2D.');
+                            } else {
+                                validEquations.push({
+                                    color: item.color,
+                                    id: item.id,
+                                    ast: valAst,
+                                    isImplicit: false,
+                                    isEdo: false,
+                                    isDerivative: false,
+                                    isPoint: true,
+                                    pointX: computedPt.x,
+                                    pointY: computedPt.y,
+                                    pointLabel: `${varName}${PointEngine.formatPointDisplay(computedPt)}`,
+                                    operator: '=',
+                                    isHidden: !item.visible
+                                });
+                                ExpressionManager.setError(item.id, null);
+                            }
+                        } else {
+                            ExpressionManager.setResult(item.id, '');
+                            ExpressionManager.setError(item.id, null);
+                        }
+
                         const giacDef = `usr_${varName}:=${rightSideClean}`;
                         if (StateManager.giacDefinitions[varName] !== giacDef) {
                             StateManager.giacDefinitions[varName] = giacDef;
                             MathEngine.askGiac(giacDef);
                         }
-                    } catch (e) {
-                        console.warn('[Main] Error defining variable or sending to Giac:', e);
+                    } else {
+                        // Variável dinâmica com escopo dinâmico (wackscope, ex: w = x^3 - y^3)
+                        ExpressionManager.setResult(item.id, '');
+                        ExpressionManager.setError(item.id, null);
+                        ExpressionManager.setSliderSuggestions(item.id, [], () => {});
                     }
-                    return; 
+                } catch (e) {
+                    if (e instanceof DesmosSemanticError || (e as any)?.name === 'DesmosSemanticError') throw e;
+                    console.warn('[Main] Error defining variable or sending to Giac:', e);
                 }
+                return;
             }
         } else {
-            // Se esta linha não é uma atribuição, esconde qualquer slider residual que possa ter estado nela
             ExpressionManager.processBlockState(item.id, '', {});
         }
 
         // 5. GRÁFICOS (Implícitas, Explícitas e Derivadas Diretas)
-        try {
-            let expressaoPlot = cleanStr;
-            let isImplicit = false;
-            let isRelationalEquation = false;
-            let operator = '=';
-            let isDerivativePlot = false;
-            let derivVarTarget = 'x';
-            
-            let isExplicitY = false;
-            let isExplicitZ = false;
-            
-            const zExplicitMatch = StateManager.viewMode === '3d' ? cleanStr.match(/^\s*z\s*=\s*(.+)$/) : null;
-            const yExplicitMatch = cleanStr.match(/^\s*y\s*=\s*(.+)$/);
-            if (zExplicitMatch) {
-                expressaoPlot = zExplicitMatch[1].trim();
+        let expressaoPlot = cleanStr;
+        let isImplicit = false;
+        let isRelationalEquation = false;
+        let operator = '=';
+        let isDerivativePlot = false;
+        let derivVarTarget = 'x';
+
+        let isExplicitY = false;
+        let isExplicitZ = false;
+        let plotAst: any = null;
+
+        if (parsedStmt && parsedStmt.kind === 'plot_equation') {
+            if (parsedStmt.operator === '=' && StateManager.viewMode === '3d' && parsedStmt.lhsAst === 'z') {
+                expressaoPlot = parsedStmt.rhsRaw;
+                plotAst = parsedStmt.rhsAst;
                 isExplicitZ = true;
-            } else if (yExplicitMatch) {
-                expressaoPlot = yExplicitMatch[1].trim();
+            } else if (parsedStmt.operator === '=' && parsedStmt.lhsAst === 'y') {
+                expressaoPlot = parsedStmt.rhsRaw;
+                plotAst = parsedStmt.rhsAst;
                 isExplicitY = true;
             } else {
-                // Captura gráficos de derivadas diretas como: diff(sin(x), x) ou d/dx sin(x)
-                const directDiffPlot = expressaoPlot.match(/^diff\s*\(\s*(.+?)\s*,\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)$/i);
-                if (directDiffPlot) {
-                    derivVarTarget = directDiffPlot[2];
-                    expressaoPlot = directDiffPlot[1];
+                isRelationalEquation = true;
+                operator = parsedStmt.operator;
+                plotAst = parsedStmt.ast;
+                isImplicit = operator !== '=' ? true : astContainsSpatialCoord(plotAst, StateManager.viewMode === '3d');
+            }
+        } else {
+            const directDiffPlot = expressaoPlot.match(/^diff\s*\(\s*(.+?)\s*,\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)$/i);
+            if (directDiffPlot) {
+                derivVarTarget = directDiffPlot[2];
+                expressaoPlot = directDiffPlot[1];
+                isDerivativePlot = true;
+            } else {
+                const derivPlotMatch = expressaoPlot.match(/^(?:\\frac\{d\}\{d([a-zA-Z])\}|d\/d([a-zA-Z])|\(d\)\/\(d([a-zA-Z])\))(.+)$/);
+                if (derivPlotMatch) {
+                    derivVarTarget = derivPlotMatch[1] || derivPlotMatch[2] || derivPlotMatch[3];
+                    expressaoPlot = derivPlotMatch[4];
                     isDerivativePlot = true;
                 } else {
-                    const derivPlotMatch = expressaoPlot.match(/^(?:\\frac\{d\}\{d([a-zA-Z])\}|d\/d([a-zA-Z])|\(d\)\/\(d([a-zA-Z])\))(.+)$/);
-                    if (derivPlotMatch) {
-                        derivVarTarget = derivPlotMatch[1] || derivPlotMatch[2] || derivPlotMatch[3];
-                        expressaoPlot = derivPlotMatch[4];
-                        isDerivativePlot = true;
+                    const exprAst = parsedStmt && parsedStmt.kind === 'expression'
+                        ? parsedStmt.ast
+                        : new PrattParser(expressaoPlot).parseExpression();
+                    if (isImplicitYOnlyExpression(exprAst, StateManager.viewMode === '3d')) {
+                        plotAst = ['Subtract', 'x', exprAst];
+                        isImplicit = true;
+                        operator = '=';
+                    } else if (Array.isArray(exprAst) && ['And', 'Or', 'LessThan', 'GreaterThan', 'LessEqual', 'GreaterEqual'].includes(exprAst[0])) {
+                        plotAst = ['Piecewise', [exprAst, -1], [null, 1]];
+                        isImplicit = true;
+                        operator = '<=';
                     } else {
-                        const implicitMatch = noSpaceStr.match(/^(.+?)(<=|>=|<|>|=)(.+)$/);
-                        if (implicitMatch) {
-                            isRelationalEquation = true;
-                            const parts = cleanStr.split(implicitMatch[2]);
-                            operator = implicitMatch[2];
-                            expressaoPlot = `(${parts[0]})-(${parts[1]})`;
-                            
-                            if (operator !== '=') {
-                                isImplicit = true;
-                            } else if (implicitMatch[1].includes('z') || implicitMatch[3]?.includes('z') || noSpaceStr.includes('z')) {
-                                isImplicit = true;
-                            } else if (implicitMatch[1].includes('y') && implicitMatch[1] !== 'y') {
-                                isImplicit = true; 
-                            } else if (implicitMatch[1].includes('x')) {
-                                isImplicit = true;
-                            }
-                        } else if (!expressaoPlot.includes('x') && expressaoPlot.includes('y') && !expressaoPlot.includes('z')) {
-                            expressaoPlot = `x-(${expressaoPlot})`;
-                            isImplicit = true;
-                            operator = '=';
-                        }
+                        plotAst = exprAst;
                     }
                 }
             }
+        }
 
-            let ast = new PrattParser(expressaoPlot).parseExpression();
-            ast = MathEngine.expandUserFunctions(ast);
+        ast = plotAst || new PrattParser(expressaoPlot).parseExpression();
+        assertNoUndefinedCalls(ast);
+        ast = MathEngine.expandUserFunctions(ast);
 
             // Suporte para plotagem de pontos individuais ou curvas paramétricas: (x(t), y(t)) ou (x(t), y(t), z(t))
             if (ast && ast[0] === 'Point') {
@@ -1791,6 +2193,12 @@ function compileAllExpressions() {
                         const ptLabel = is3D
                             ? `(${parseFloat(evalX.toFixed(3))}, ${parseFloat(evalY.toFixed(3))}, ${parseFloat(evalZ.toFixed(3))})`
                             : `(${parseFloat(evalX.toFixed(3))}, ${parseFloat(evalY.toFixed(3))})`;
+                        ExpressionManager.setResult(item.id, `= ${ptLabel}`);
+                        if (is3D && StateManager.viewMode !== '3d') {
+                            ExpressionManager.setError(item.id, 'Não é possível plotar ponto 3D no modo 2D.');
+                            ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                            return;
+                        }
                         validEquations.push({
                             color: item.color,
                             id: item.id,
@@ -1806,7 +2214,7 @@ function compileAllExpressions() {
                             condition: conditionFn,
                             isHidden: !item.visible
                         });
-                        ExpressionManager.setResult(item.id, `= ${ptLabel}`);
+                        ExpressionManager.setError(item.id, null);
                         return;
                     }
                 }
@@ -1817,6 +2225,12 @@ function compileAllExpressions() {
                 try {
                     const evalRes = MathEngine.evaluateAST(ast, StateManager.values);
                     if (PointEngine.isPoint(evalRes)) {
+                        ExpressionManager.setResult(item.id, `= ${PointEngine.formatPointDisplay(evalRes)}`);
+                        ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                        if (evalRes.z !== undefined && StateManager.viewMode !== '3d') {
+                            ExpressionManager.setError(item.id, 'Não é possível plotar ponto 3D no modo 2D.');
+                            return;
+                        }
                         validEquations.push({
                             color: item.color,
                             id: item.id,
@@ -1827,13 +2241,11 @@ function compileAllExpressions() {
                             isPoint: true,
                             pointX: evalRes.x,
                             pointY: evalRes.y,
-                            pointLabel: `(${parseFloat(evalRes.x.toFixed(3))}, ${parseFloat(evalRes.y.toFixed(3))})`,
+                            pointLabel: PointEngine.formatPointDisplay(evalRes),
                             operator: '=',
                             isHidden: !item.visible
                         });
-                        ExpressionManager.setResult(item.id, `= ${PointEngine.formatPointDisplay(evalRes)}`);
                         ExpressionManager.setError(item.id, null);
-                        ExpressionManager.setSliderSuggestions(item.id, [], () => {});
                         return;
                     }
                     if (MatrixEngine.isMatrix(evalRes)) {
@@ -1891,18 +2303,23 @@ function compileAllExpressions() {
                         return;
                     }
                 } catch (e) {
+                    if (e instanceof DesmosSemanticError || (e as any)?.name === 'DesmosSemanticError') {
+                        throw e;
+                    }
                     // segue para outros modos se não for lista/matriz/ponto
                 }
             }
 
             // MODO CALCULADORA OU EQUAÇÃO SEM COORDENADAS (Sem gráficos)
-            const isPlot = expressaoPlot.includes('x') || expressaoPlot.includes('y') || expressaoPlot.includes('z');
+            const isPlot = ast ? astContainsSpatialCoord(ast, StateManager.viewMode === '3d') : false;
             if (!isPlot && !isImplicit && !isDerivativePlot && !isExplicitY && !isExplicitZ) {
                 // Se for uma equação ou inequação relacional sem coordenadas (ex: a + b = 2, c + d + e + w = 2)
                 if (isRelationalEquation) {
                     const boundForSliders = [
                         'x', 'y', ...(StateManager.viewMode === '3d' ? ['z'] : []), 't', 'pi', 'e',
                         ...Object.keys(StateManager.values),
+                        ...Object.keys(StateManager.asts),
+                        ...Object.keys(passVarAsts),
                         ...Object.keys(StateManager.giacDefinitions),
                         ...definedMatrixNames,
                         ...definedUserFunctionNames,
@@ -1912,6 +2329,8 @@ function compileAllExpressions() {
                     const free = FaultTolerantParser.detectFreeVariables(cleanStr, boundForSliders, StateManager.viewMode !== '3d');
                     const missingSliders = free.filter(v => 
                         StateManager.values[v] === undefined && 
+                        StateManager.asts[v] === undefined &&
+                        passVarAsts[v] === undefined &&
                         !MathEngine.compiledFuncs[v] &&
                         !StateManager.giacDefinitions[v] &&
                         !definedMatrixNames.has(v) &&
@@ -1939,6 +2358,8 @@ function compileAllExpressions() {
                 const boundForSliders = [
                     'x', 'y', ...(StateManager.viewMode === '3d' ? ['z'] : []), 't', 'pi', 'e',
                     ...Object.keys(StateManager.values),
+                    ...Object.keys(StateManager.asts),
+                    ...Object.keys(passVarAsts),
                     ...Object.keys(StateManager.giacDefinitions),
                     ...definedMatrixNames,
                     ...definedUserFunctionNames,
@@ -1948,6 +2369,8 @@ function compileAllExpressions() {
                 const free = FaultTolerantParser.detectFreeVariables(cleanStr, boundForSliders, StateManager.viewMode !== '3d');
                 const missingSliders = free.filter(v => 
                     StateManager.values[v] === undefined && 
+                    StateManager.asts[v] === undefined &&
+                    passVarAsts[v] === undefined &&
                     !MathEngine.compiledFuncs[v] &&
                     !StateManager.giacDefinitions[v] &&
                     !definedMatrixNames.has(v) &&
@@ -1970,22 +2393,28 @@ function compileAllExpressions() {
                 if (ast) {
                     try {
                         localVal = MathEngine.evaluateAST(ast, StateManager.values);
-                    } catch (_) {}
+                    } catch (e) {
+                        if (e instanceof DesmosSemanticError || (e as any)?.name === 'DesmosSemanticError') throw e;
+                    }
 
                     if (localVal === undefined || (typeof localVal === 'number' && isNaN(localVal))) {
                         try {
-                            const evalFunc = MathEngine.compile(ast);
-                            const compiledVal = evalFunc(0, 0, StateManager.values);
+                            const evalFunc = MathEngine.compile(ast, '__unused_x__', '__unused_y__');
+                            const compiledVal = evalFunc(NaN, NaN, StateManager.values);
                             if (!isNaN(compiledVal) && isFinite(compiledVal)) {
                                 localVal = compiledVal;
                             }
-                        } catch (_) {}
+                        } catch (e) {
+                            if (e instanceof DesmosSemanticError || (e as any)?.name === 'DesmosSemanticError') throw e;
+                        }
                     }
                 }
 
                 if (localVal !== undefined && (typeof localVal !== 'number' || (!isNaN(localVal) && isFinite(localVal)))) {
                     if (typeof localVal === 'number') {
-                        ExpressionManager.setResult(item.id, '= ' + parseFloat(localVal.toFixed(10)).toString());
+                        const rounded = parseFloat(localVal.toFixed(10));
+                        const displayVal = Object.is(rounded, -0) || rounded === 0 ? 0 : rounded;
+                        ExpressionManager.setResult(item.id, '= ' + displayVal.toString());
                     } else if (PointEngine.isPoint(localVal)) {
                         ExpressionManager.setResult(item.id, '= ' + PointEngine.formatPointDisplay(localVal));
                     } else if (MatrixEngine.isMatrix(localVal)) {
@@ -2018,7 +2447,7 @@ function compileAllExpressions() {
                     }
                     if (cached && cached.query === currentQuery) {
                         ExpressionManager.setResult(item.id, cached.result.includes('Erro') ? `- Erro no cálculo` : `= ${cached.result}`);
-                        ExpressionManager.setError(item.id, null);
+                        ExpressionManager.setError(item.id, cached.result.includes('Erro') ? cached.result : null);
                         ExpressionManager.setSliderSuggestions(item.id, [], () => {});
                     } else if (!StateManager.pendingCas[item.id]) {
                         StateManager.pendingCas[item.id] = true;
@@ -2041,6 +2470,7 @@ function compileAllExpressions() {
                             // If Giac returns an error or geometric artifact
                             if (formattedRes.includes('Erro') || formattedRes.includes('undef') || formattedRes.includes('Bad Argument') || formattedRes.includes('pnt') || formattedRes.includes('point[') || formattedRes.includes('536870912')) {
                                 delete StateManager.casSolutions[item.id];
+                                ExpressionManager.setError(item.id, 'Erro no cálculo simbólico');
                                 ExpressionManager.setResult(item.id, `- Erro no cálculo`);
                                 scheduleFrame();
                                 return;
@@ -2050,8 +2480,24 @@ function compileAllExpressions() {
                             ExpressionManager.setResult(item.id, `= ${formattedRes}`);
                             ExpressionManager.setError(item.id, null);
                             ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                            const curBlock = typeof document !== 'undefined' ? document.getElementById(item.id) : null;
+                            if (curBlock) ExpressionManager.updateMatrixBlockVisual(curBlock, true);
                             scheduleFrame();
                         });
+                    }
+                    return;
+                }
+
+                // 3. Resultados não-finitos sem variáveis livres (ex: 0/0 -> indef, 1/0 -> ∞)
+                if (typeof localVal === 'number' && (Number.isNaN(localVal) || !Number.isFinite(localVal))) {
+                    ExpressionManager.setError(item.id, null);
+                    ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                    if (Number.isNaN(localVal)) {
+                        ExpressionManager.setResult(item.id, '= indef');
+                    } else if (localVal === Infinity) {
+                        ExpressionManager.setResult(item.id, '= ∞');
+                    } else {
+                        ExpressionManager.setResult(item.id, '= -∞');
                     }
                     return;
                 }
@@ -2070,6 +2516,8 @@ function compileAllExpressions() {
                     let boundForSliders = [
                         'x', 'y', ...(StateManager.viewMode === '3d' ? ['z'] : []), 't', 'pi', 'e',
                         ...Object.keys(StateManager.values),
+                        ...Object.keys(StateManager.asts),
+                        ...Object.keys(passVarAsts),
                         ...Object.keys(StateManager.giacDefinitions),
                         ...definedMatrixNames,
                         ...definedUserFunctionNames,
@@ -2084,6 +2532,8 @@ function compileAllExpressions() {
                     const free = FaultTolerantParser.detectFreeVariables(cleanStr, boundForSliders, StateManager.viewMode !== '3d');
                     missingSliders = free.filter(v => 
                         StateManager.values[v] === undefined && 
+                        StateManager.asts[v] === undefined &&
+                        passVarAsts[v] === undefined &&
                         !MathEngine.compiledFuncs[v] &&
                         !StateManager.giacDefinitions[v] &&
                         !definedMatrixNames.has(v) &&
@@ -2127,6 +2577,11 @@ function compileAllExpressions() {
             // Em vez de engolir o erro com tarjas feias na tela, limpa o result display e sinaliza na margem esquerda (Estilo Desmos)
             ExpressionManager.setResult(item.id, '');
             ExpressionManager.processBlockState(item.id, '', {});
+            if (e instanceof DesmosSemanticError || e?.name === 'DesmosSemanticError') {
+                ExpressionManager.setError(item.id, e.message);
+                ExpressionManager.setSliderSuggestions(item.id, [], () => {});
+                return;
+            }
             const inc = FaultTolerantParser.checkIncompleteStatus(item.latex || '', ascii);
             if (ascii.trim().length === 0) {
                 ExpressionManager.setError(item.id, null);
@@ -2146,6 +2601,8 @@ function compileAllExpressions() {
                 const free = FaultTolerantParser.detectFreeVariables(cleanStr, [
                     ...(StateManager.viewMode === '3d' ? ['z'] : []),
                     ...Object.keys(StateManager.values),
+                    ...Object.keys(StateManager.asts),
+                    ...Object.keys(passVarAsts),
                     ...Object.keys(StateManager.giacDefinitions),
                     ...definedMatrixNames,
                     ...definedUserFunctionNames,
@@ -2153,6 +2610,8 @@ function compileAllExpressions() {
                 ], StateManager.viewMode !== '3d');
                 const missingSliders = free.filter(v => 
                     StateManager.values[v] === undefined && 
+                    StateManager.asts[v] === undefined &&
+                    passVarAsts[v] === undefined &&
                     !MathEngine.compiledFuncs[v] &&
                     !MathEngine.userFunctions[v] &&
                     !definedUserFunctionNames.has(v) &&
@@ -2249,6 +2708,14 @@ function drawFrame() {
     // --- RENDERIZAÇÃO 3D ---
     if (StateManager.viewMode === '3d') {
         const surfaces3D: Surface3DItem[] = [];
+        const guardRec = <T>(fn: () => T, fallback: T): T => {
+            try {
+                return fn();
+            } catch (err: any) {
+                if (err?.code === 'RECURSION_LIMIT_EXCEEDED') return fallback;
+                throw err;
+            }
+        };
 
         validEquations.forEach((item, index) => {
             if (item.isHidden) return;
@@ -2263,7 +2730,7 @@ function drawFrame() {
                         id: item.id,
                         color,
                         isImplicit: false,
-                        funcZ: (x, y, s) => fastZ(x, y, s),
+                        funcZ: (x, y, s) => guardRec(() => fastZ(x, y, s), NaN),
                         name: item.name
                     });
                 }
@@ -2304,7 +2771,7 @@ function drawFrame() {
                     id: item.id,
                     color,
                     isImplicit: false,
-                    parametric: (t, s) => [fastX(t, 0, s), fastY(t, 0, s), fastZ(t, 0, s)],
+                    parametric: (t, s) => guardRec(() => [fastX(t, 0, s), fastY(t, 0, s), fastZ(t, 0, s)], [NaN, NaN, NaN]),
                     tMin: item.tMin ?? -10,
                     tMax: item.tMax ?? 10
                 });
@@ -2320,8 +2787,9 @@ function drawFrame() {
     // --- RENDERIZAÇÃO 2D ---
     validEquations.forEach((item, index) => {
         if (item.isHidden) return;
-        
+
         const color = item.color || colors[index % colors.length];
+        try {
 
         if ((item as any).isTable && (item as any).tablePoints) {
             const tablePoints = (item as any).tablePoints as { x: number, y: number, rowIndex: number, tableBlockId: string }[];
@@ -2428,7 +2896,7 @@ function drawFrame() {
             // Usa amostragem adaptativa em vez de um loop fixo de 300 pontos
             const derivAst = item.ast;
             const derivVar = item.derivVar || 'x';
-            const pontos = MathEngine.generatePointsAdaptive(derivAst, Camera.xMin, Camera.xMax, StateManager.values, derivVar, canvasEl.clientWidth || Camera.width)
+            const pontos = MathEngine.generatePointsAdaptive(derivAst, Camera.xMin, Camera.xMax, StateManager.values, derivVar, canvasEl?.clientWidth || Camera.width)
                 .map(p => ({ x: p.x, y: f(p.x) }));
 
             renderer.drawCurve(pontos, color, item.lineStyle, item.lineWidth);
@@ -2452,7 +2920,7 @@ function drawFrame() {
             const minVal = MathEngine.evaluateAST(minAst, StateManager.values);
             const maxVal = MathEngine.evaluateAST(maxAst, StateManager.values);
 
-            const pontos = MathEngine.generatePointsAdaptive(funcAst, minVal, maxVal, StateManager.values, 'x', canvasEl.width);
+            const pontos = MathEngine.generatePointsAdaptive(funcAst, minVal, maxVal, StateManager.values, 'x', canvasEl?.width || Camera.width);
             let area = 0;
             if (pontos.length > 1) {
                 for (let i = 0; i < pontos.length - 1; i++) {
@@ -2465,14 +2933,26 @@ function drawFrame() {
             const fastF = MathEngine.compile(item.ast, item.variable || 'x');
             const f = (x: number) => {
                 if (item.condition && !item.condition(x, 0, StateManager.values)) return NaN;
-                return fastF(x, 0, StateManager.values);
+                try {
+                    return fastF(x, 0, StateManager.values);
+                } catch (sampleErr: any) {
+                    if (sampleErr?.code === 'RECURSION_LIMIT_EXCEEDED') return NaN;
+                    throw sampleErr;
+                }
             };
-            const pontos = MathEngine.generatePointsAdaptive(item.ast, Camera.xMin, Camera.xMax, StateManager.values, item.variable || 'x', canvasEl.clientWidth || Camera.width)
+            const pontos = MathEngine.generatePointsAdaptive(item.ast, Camera.xMin, Camera.xMax, StateManager.values, item.variable || 'x', canvasEl?.clientWidth || Camera.width)
                 .map(p => ({ x: p.x, y: f(p.x) }));
             
             renderer.drawCurve(pontos, color, item.lineStyle, item.lineWidth);
             explicitCurves.push({ f, color });
             renderMemory_curves.push({ f, color }); 
+        }
+        } catch (renderErr: any) {
+            if (renderErr instanceof DesmosSemanticError || renderErr?.name === 'DesmosSemanticError') {
+                ExpressionManager.setError(item.id, renderErr.message);
+            } else {
+                console.warn('[Main] Error rendering equation:', renderErr);
+            }
         }
     });
 
@@ -2857,6 +3337,7 @@ function animateSmoothZoom(targetScaleFactor: number, duration: number = 200) {
         Camera.xMax = startXMax + (targetXMax - startXMax) * ease;
         Camera.yMin = startYMin + (targetYMin - startYMin) * ease;
         Camera.yMax = startYMax + (targetYMax - startYMax) * ease;
+        Camera.hasUserInteracted = true;
 
         drawFrame();
 
@@ -2892,6 +3373,7 @@ function animateSmoothZoom(targetScaleFactor: number, duration: number = 200) {
     StateManager.clearAll();
     StateManager.updateViewportDimensions(Camera.width, Camera.height);
     MathEngine.userFunctions = {};
+    MathEngine.userBaseCases = {};
     MathEngine.initCompiledFuncs();
     ImplicitEngine.clearCache();
     pinnedPoints = [];
@@ -2902,17 +3384,8 @@ function animateSmoothZoom(targetScaleFactor: number, duration: number = 200) {
     drawFrame();
 };
 
-initSettingsPopoverListeners();
-
-// Inicialização — resize inicial obrigatório antes do primeiro draw
-resizeAll();
-drawFrame();
-
-// Inicializa ícones Lucide no documento
-setTimeout(() => { if ((window as any).lucide) (window as any).lucide.createIcons(); }, 100);
-
 // --- TECLADO VIRTUAL PERSONALIZADO MATHLIVE (Estilo Desmos / GeoGebra) ---
-setTimeout(() => {
+function applyCustomVirtualKeyboardLayouts() {
     if ((window as any).mathVirtualKeyboard) {
         (window as any).mathVirtualKeyboard.layouts = [
             {
@@ -3089,7 +3562,7 @@ setTimeout(() => {
             'alphabetic'
         ];
     }
-}, 500);
+}
 
     // Usa ResizeObserver no container para lidar com window resize E com md:resize-x da sidebar!
     const graphContainer = document.getElementById('graph-container');
@@ -3107,17 +3580,11 @@ setTimeout(() => {
     }
 
 // --- CONTROLES DE INTERFACE DO RATO ---
-const canvasEl = document.getElementById('graphCanvas') as HTMLCanvasElement;
-const sidebarEl = document.getElementById('sidebar') as HTMLElement;
-const sidebarHeader = document.getElementById('sidebar-header') as HTMLElement;
+// (canvasEl, sidebarEl, sidebarHeader e estados de drag já inicializados no topo)
 
 // Permite arrastar o topo do painel no celular para ajustar o tamanho!
-let isDraggingSidebar = false;
-let startY = 0;
-let startHeight = 0;
-
-sidebarHeader.addEventListener('touchstart', (e) => {
-    if (window.innerWidth <= 768) {
+sidebarHeader?.addEventListener('touchstart', (e) => {
+    if (window.innerWidth <= 768 && sidebarEl) {
         // Se tocou em um botão dentro do header, não inicia o arraste da gaveta
         if ((e.target as HTMLElement).closest('button, a')) return;
         isDraggingSidebar = true;
@@ -3140,7 +3607,7 @@ window.addEventListener('touchmove', (e) => {
     const maxH = screen.availHeight * 0.8;
     if (newHeight > maxH) newHeight = maxH;
     
-    sidebarEl.style.height = `${newHeight}px`;
+    if (sidebarEl) sidebarEl.style.height = `${newHeight}px`;
     resizeAll();
     drawFrame();
 }, {passive: false});
@@ -3154,14 +3621,6 @@ window.addEventListener('touchend', () => {
 });
 
 // --- CONTROLE DE REDIMENSIONAMENTO E COLAPSO DA BARRA LATERAL (Desktop & Mobile) ---
-const sidebarResizer = document.getElementById('sidebar-resizer');
-const sidebarExpandTab = document.getElementById('sidebar-expand-tab');
-const collapseSidebarBtn = document.getElementById('collapse-sidebar-btn');
-
-let savedSidebarWidth = 500;
-let isDraggingSidebarResizer = false;
-
-let activeSidebarAnimation: number | null = null;
 
 function animateSidebarWidth(targetWidth: number, onComplete?: () => void) {
     if (window.innerWidth <= 768) return;
@@ -3338,10 +3797,12 @@ if (sidebarEl) {
 
 
 // --- CONTROLE DE TECLADO VIRTUAL E GAVETA MOBILE (Estilo Desmos) ---
-setTimeout(() => {
-    // 1. Botão Flutuante de Abrir / Fechar Teclado
+let _vkInitialized = false;
+function initVirtualKeyboardAndMobileControls() {
+    // 1. Botão Flutuante de Abrir / Fechar Teclado (anexado de forma síncrona)
     const toggleKbBtn = document.getElementById('toggle-keyboard-btn');
-    if (toggleKbBtn) {
+    if (toggleKbBtn && !toggleKbBtn.dataset.vkBound) {
+        toggleKbBtn.dataset.vkBound = 'true';
         toggleKbBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             const vk = (window as any).mathVirtualKeyboard;
@@ -3360,14 +3821,15 @@ setTimeout(() => {
         });
     }
 
-    // 2. Botão de Recolher / Expandir Painel no Mobile
+    // 2. Botão de Recolher / Expandir Painel no Mobile (anexado de forma síncrona)
     const toggleSidebarBtn = document.getElementById('toggle-sidebar-mobile-btn');
     const sidebarChevron = document.getElementById('sidebar-chevron-icon');
     let isSidebarCollapsed = false;
-    if (toggleSidebarBtn) {
+    if (toggleSidebarBtn && !toggleSidebarBtn.dataset.sidebarBound) {
+        toggleSidebarBtn.dataset.sidebarBound = 'true';
         toggleSidebarBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            if (window.innerWidth <= 768) {
+            if (window.innerWidth <= 768 && sidebarEl) {
                 isSidebarCollapsed = !isSidebarCollapsed;
                 if (isSidebarCollapsed) {
                     if (!sidebarEl.dataset.savedHeight) {
@@ -3385,10 +3847,13 @@ setTimeout(() => {
         });
     }
 
-    // 3. Listener de exibição do Teclado Virtual MathLive
-    if ((window as any).mathVirtualKeyboard) {
-        (window as any).mathVirtualKeyboard.addEventListener('virtual-keyboard-toggle', () => {
-            const vk = (window as any).mathVirtualKeyboard;
+    // 3. Listener de exibição e layouts do Teclado Virtual MathLive
+    const bindMathKeyboard = () => {
+        const vk = (window as any).mathVirtualKeyboard;
+        if (!vk || _vkInitialized) return !!vk;
+        _vkInitialized = true;
+        applyCustomVirtualKeyboardLayouts();
+        vk.addEventListener('virtual-keyboard-toggle', () => {
             const kbIcon = document.getElementById('keyboard-btn-icon');
             const exprList = document.getElementById('expressions-list');
             if (vk.visible) {
@@ -3403,7 +3868,7 @@ setTimeout(() => {
                         const block = activeEl.closest('.group') as HTMLElement;
                         if (block) block.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                     }
-                } else {
+                } else if (sidebarEl) {
                     const keyboardHeight = vk.boundingRect.height || 280;
                     
                     if (!sidebarEl.dataset.savedHeight) {
@@ -3433,7 +3898,7 @@ setTimeout(() => {
                 }
                 if (window.innerWidth > 768) {
                     if (exprList) exprList.style.paddingBottom = '0px';
-                } else {
+                } else if (sidebarEl) {
                     sidebarEl.style.marginBottom = '0px';
                     sidebarEl.style.maxHeight = '';
                     sidebarEl.style.flex = '';
@@ -3452,11 +3917,13 @@ setTimeout(() => {
                 }
             }
         });
-    }
-}, 800);
+        return true;
+    };
 
-let isDragging = false;
-let lastX = 0; let lastY = 0;
+    if (!bindMathKeyboard()) {
+        setTimeout(() => bindMathKeyboard(), 300);
+    }
+}
 
 window.addEventListener('keydown', (e) => { 
     if(e.key === 'Shift') { isShiftDown = true; updateHover(); drawFrame(); }
@@ -3924,13 +4391,8 @@ canvasEl.addEventListener('wheel', (e) => {
 }, { passive: false });
 
 // --- TOUCH EVENTS PARA CELULAR ---
-let initialPinchDistance = -1;
-let touchStartTime = 0;
-let touchStartX = 0;
-let touchStartY = 0;
-let touchMoved = false;
-
-canvasEl.addEventListener('touchstart', (e) => {
+// (initialPinchDistance e estado touch inicializados no topo)
+canvasEl?.addEventListener('touchstart', (e) => {
     e.preventDefault(); // Impede scroll natural na tela
     if (e.touches.length === 1) {
         touchStartTime = Date.now();
@@ -4043,11 +4505,6 @@ canvasEl.addEventListener('touchend', (e) => {
 });
 
 // --- ALTERNADOR DE MODO 2D / 3D (Estilo Desmos / GeoGebra) ---
-const mode2dBtn = document.getElementById('mode-2d-btn');
-const mode3dBtn = document.getElementById('mode-3d-btn');
-const canvas3dEl = document.getElementById('canvas3d') as HTMLCanvasElement;
-const webgl2dCanvas = document.getElementById('webglCanvas') as HTMLCanvasElement;
-
 function switchViewMode(mode: '2d' | '3d') {
     StateManager.viewMode = mode;
     if (mode === '2d') {
@@ -4056,7 +4513,7 @@ function switchViewMode(mode: '2d' | '3d') {
         mode3dBtn?.classList.remove('bg-blue-600', 'text-white', 'shadow-sm');
         mode3dBtn?.classList.add('text-gray-500', 'hover:text-gray-900');
 
-        canvasEl.classList.remove('hidden');
+        canvasEl?.classList.remove('hidden');
         webgl2dCanvas?.classList.remove('hidden');
         canvas3dEl?.classList.add('hidden');
     } else {
@@ -4065,7 +4522,7 @@ function switchViewMode(mode: '2d' | '3d') {
         mode2dBtn?.classList.remove('bg-blue-600', 'text-white', 'shadow-sm');
         mode2dBtn?.classList.add('text-gray-500', 'hover:text-gray-900');
 
-        canvasEl.classList.add('hidden');
+        canvasEl?.classList.add('hidden');
         webgl2dCanvas?.classList.add('hidden');
         canvas3dEl?.classList.remove('hidden');
         renderer3d.resize();
@@ -4079,12 +4536,6 @@ mode2dBtn?.addEventListener('click', () => switchViewMode('2d'));
 mode3dBtn?.addEventListener('click', () => switchViewMode('3d'));
 
 // --- CONTROLES 3D (MOUSE & TOUCH) ---
-let isRotating3D = false;
-let isPanning3D = false;
-let last3DX = 0;
-let last3DY = 0;
-let initialPinch3D = -1;
-
 if (canvas3dEl) {
     canvas3dEl.addEventListener('contextmenu', (e) => e.preventDefault());
 
@@ -4191,3 +4642,21 @@ if (typeof window !== 'undefined') {
     (window as any).ExpressionManager = ExpressionManager;
     (window as any).MathEngine = MathEngine;
 }
+
+/**
+ * Inicialização determinística da aplicação após o registro completo dos listeners e estados DOM.
+ */
+function bootstrapApp() {
+    initSettingsPopoverListeners();
+    initVirtualKeyboardAndMobileControls();
+    resizeAll();
+    drawFrame();
+    if ((window as any).lucide) {
+        (window as any).lucide.createIcons();
+    }
+    setTimeout(() => {
+        if ((window as any).lucide) (window as any).lucide.createIcons();
+    }, 100);
+}
+
+bootstrapApp();

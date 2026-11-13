@@ -4,6 +4,8 @@
  * compreensões bidimensionais e transformações geométricas de pontos.
  */
 
+import { DesmosSemanticError } from './policy';
+
 export interface Point2DOr3D {
     x: number;
     y: number;
@@ -13,6 +15,15 @@ export interface Point2DOr3D {
 export class MatrixEngine {
     public static readonly MAX_ROWS = 32;
     public static readonly MAX_COLS = 32;
+
+    static validateDimensions(rows: number, cols: number): void {
+        if (cols > MatrixEngine.MAX_COLS) {
+            throw new DesmosSemanticError('As matrizes não podem ter mais que 32 colunas.', 'MATRIX_COL_LIMIT_EXCEEDED');
+        }
+        if (rows > MatrixEngine.MAX_ROWS) {
+            throw new DesmosSemanticError('As matrizes não podem ter mais que 32 linhas.', 'MATRIX_ROW_LIMIT_EXCEEDED');
+        }
+    }
 
     /**
      * Verifica se o valor é uma matriz 2D válida (array de arrays numéricos com dimensões uniformes)
@@ -464,8 +475,9 @@ export class MatrixEngine {
         const rList: any[] = Array.isArray(rVal) ? rVal : [rVal];
         const cList: any[] = Array.isArray(cVal) ? cVal : [cVal];
 
-        const numRows = Math.min(rList.length, MatrixEngine.MAX_ROWS);
-        const numCols = Math.min(cList.length, MatrixEngine.MAX_COLS);
+        MatrixEngine.validateDimensions(rList.length, cList.length);
+        const numRows = rList.length;
+        const numCols = cList.length;
 
         const mat: number[][] = [];
         for (let i = 0; i < numRows; i++) {

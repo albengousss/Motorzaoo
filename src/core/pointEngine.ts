@@ -4,6 +4,8 @@
  * rotações perpendiculares e acessores de coordenadas.
  */
 
+import { DesmosSemanticError } from './policy';
+
 export interface Point {
     x: number;
     y: number;
@@ -108,22 +110,37 @@ export class PointEngine {
     }
 
     /**
-     * Produto vetorial (cross product):
-     * - 2D: determinante escalar x1*y2 - y1*x2
-     * - 3D: vetor (y1*z2 - z1*y2, z1*x2 - x1*z2, x1*y2 - y1*x2)
+     * Produto vetorial (cross product) exclusivo para pontos/vetores 3D no estilo Desmos:
+     * Lança DesmosSemanticError explícito para pontos 2D em vez de retornar determinante escalar silencioso.
      */
-    static cross(p1: Point, p2: Point): Point | number {
-        const is3D = p1.z !== undefined || p2.z !== undefined;
-        if (!is3D) {
-            return Number((p1.x * p2.y - p1.y * p2.x).toPrecision(12));
+    static cross(p1: Point, p2: Point): Point {
+        if (p1.z === undefined || p2.z === undefined) {
+            throw new DesmosSemanticError(
+                'O produto vetorial (\\times / cross) exige pontos 3D; não é possível calcular em pontos 2D.',
+                'CROSS_PRODUCT_TYPE_ERROR'
+            );
         }
-        const z1 = p1.z || 0;
-        const z2 = p2.z || 0;
+        const z1 = p1.z;
+        const z2 = p2.z;
         return {
             x: Number((p1.y * z2 - z1 * p2.y).toPrecision(12)),
             y: Number((z1 * p2.x - p1.x * z2).toPrecision(12)),
             z: Number((p1.x * p2.y - p1.y * p2.x).toPrecision(12))
         };
+    }
+
+    /**
+     * Ponto médio entre dois pontos 2D ou 3D: midpoint(P1, P2)
+     */
+    static midpoint(p1: Point, p2: Point): Point {
+        const res: Point = {
+            x: Number(((p1.x + p2.x) / 2).toPrecision(12)),
+            y: Number(((p1.y + p2.y) / 2).toPrecision(12))
+        };
+        if (p1.z !== undefined || p2.z !== undefined) {
+            res.z = Number((((p1.z || 0) + (p2.z || 0)) / 2).toPrecision(12));
+        }
+        return res;
     }
 
     /**

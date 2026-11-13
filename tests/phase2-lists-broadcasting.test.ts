@@ -3,6 +3,7 @@ import { PrattParser } from '../src/core/prattParser';
 import { MathEngine } from '../src/core/mathEngine';
 import { ListEngine } from '../src/core/listEngine';
 import { StateManager } from '../src/core/stateManager';
+import { DesmosSemanticError } from '../src/core/policy';
 
 describe('Fase 2: Motor de Listas, Broadcasting e Compreensões (Desmos Parity)', () => {
 
@@ -64,11 +65,14 @@ describe('Fase 2: Motor de Listas, Broadcasting e Compreensões (Desmos Parity)'
             expect(res).toEqual([1]);
         });
 
-        it('respeita teto rígido de 10.000 elementos contra loops infinitos', () => {
-            const list = ListEngine.generateRange(1, 100000);
-            expect(list.length).toBe(10000);
-            expect(list[0]).toBe(1);
-            expect(list[9999]).toBe(10000);
+        it('permite exatamente 10.000 elementos e lança DesmosSemanticError explícito acima do limite', () => {
+            const maxList = ListEngine.generateRange(1, 10000);
+            expect(maxList.length).toBe(10000);
+            expect(maxList[0]).toBe(1);
+            expect(maxList[9999]).toBe(10000);
+
+            expect(() => ListEngine.generateRange(1, 10001)).toThrowError(DesmosSemanticError);
+            expect(() => ListEngine.generateRange(1, 100000)).toThrow('10.000');
         });
     });
 

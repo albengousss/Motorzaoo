@@ -3,6 +3,7 @@ import { MathEngine } from './mathEngine';
 
 // Conecta o armazenamento de valores do StateManager ao escopo global do MathEngine
 MathEngine.globalScopeProvider = () => StateManager.values;
+MathEngine.globalAstProvider = () => StateManager.asts;
 MathEngine.angleModeProvider = () => StateManager.angleMode;
 ListEngine.angleModeProvider = () => StateManager.angleMode;
 
@@ -168,6 +169,8 @@ export class StateManager {
         this.activeGiacQuery = {};
         this.giacDefinitions = {};
         this.userFunctions = {};
+        MathEngine.userBaseCases = {};
+        MathEngine.variableAsts = {};
     }
 
     /**

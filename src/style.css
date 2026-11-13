@@ -341,9 +341,12 @@ math-field::part(virtual-keyboard-toggle) {
   padding: 6px 10px;
   border-radius: 6px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
-  max-width: 250px;
+  width: max-content;
+  min-width: 140px;
+  max-width: 260px;
   white-space: normal;
-  word-break: break-word;
+  overflow-wrap: break-word;
+  word-break: normal;
   pointer-events: none;
   opacity: 0;
   z-index: 60;
@@ -470,6 +473,8 @@ div[data-type="expression"] {
   border-bottom: 1px solid #dcdcdc !important;
   border-left: 2px solid transparent !important;
   min-height: 43px;
+  flex-shrink: 0;
+  overflow: visible;
   transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
 }
 
@@ -614,14 +619,22 @@ div[data-type="folder"],
 div[data-type="matrix"] {
   content-visibility: auto;
   contain-intrinsic-size: 52px;
+  flex-shrink: 0;
 }
 
+div[data-type="expression"]:hover,
 div[data-type="expression"]:focus-within,
+div[data-type="expression"]:has(.warning-popover-tooltip.force-visible),
+div[data-type="table"]:hover,
 div[data-type="table"]:focus-within,
+div[data-type="note"]:hover,
 div[data-type="note"]:focus-within,
+div[data-type="folder"]:hover,
 div[data-type="folder"]:focus-within,
+div[data-type="matrix"]:hover,
 div[data-type="matrix"]:focus-within,
 div[data-type="expression"].is-focused,
 #expressions-list.is-editing-list > div {
   content-visibility: visible !important;
+  z-index: 30;
 }

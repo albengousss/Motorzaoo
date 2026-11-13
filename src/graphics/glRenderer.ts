@@ -115,10 +115,26 @@ export class GLRenderer {
                             return `(1.0 / max(1e-9, ${denom}))`;
                         }
                     } else {
-                        return `(${L} < 0.0 ? -1e9 : pow(max(0.0, ${L}), ${R}))`;
+                        return `(${L} < 0.0 ? motor_invalid() : pow(max(0.0, ${L}), ${R}))`;
                     }
                 }
                 return `motor_pow(${L}, ${R})`;
+            }
+            if (op === 'Piecewise') {
+                const branches = node.slice(1);
+                if (branches.length === 0) return '1.0';
+                let expr = 'motor_invalid()';
+                for (let i = branches.length - 1; i >= 0; i--) {
+                    const [condAst, valAst] = branches[i];
+                    const valGLSL = this.astToGLSL(valAst, scope, usedUniforms);
+                    if (condAst === null || condAst === undefined) {
+                        expr = valGLSL;
+                    } else {
+                        const condGLSL = this.astCondToGLSL(condAst, scope, usedUniforms);
+                        expr = `(${condGLSL} ? ${valGLSL} : ${expr})`;
+                    }
+                }
+                return expr;
             }
             const isDeg = typeof StateManager !== 'undefined' && StateManager.angleMode === 'degrees';
             const toRadGLSL = (val: string) => isDeg ? `((${val}) * 0.017453292519943295)` : val;
@@ -152,6 +168,24 @@ export class GLRenderer {
             if (op === 'Negate') return `(-(${L}))`;
         }
         return '0.0';
+    }
+
+    static astCondToGLSL(node: any, scope: Record<string, number> = {}, usedUniforms?: Set<string>): string {
+        if (!Array.isArray(node)) {
+            return `((${this.astToGLSL(node, scope, usedUniforms)}) != 0.0)`;
+        }
+        const op = node[0];
+        if (op === 'And') return `(${this.astCondToGLSL(node[1], scope, usedUniforms)} && ${this.astCondToGLSL(node[2], scope, usedUniforms)})`;
+        if (op === 'Or') return `(${this.astCondToGLSL(node[1], scope, usedUniforms)} || ${this.astCondToGLSL(node[2], scope, usedUniforms)})`;
+        const L = this.astToGLSL(node[1], scope, usedUniforms);
+        const R = this.astToGLSL(node[2], scope, usedUniforms);
+        if (op === 'LessThan') return `(${L} < ${R})`;
+        if (op === 'GreaterThan') return `(${L} > ${R})`;
+        if (op === 'LessEqual') return `(${L} <= ${R})`;
+        if (op === 'GreaterEqual') return `(${L} >= ${R})`;
+        if (op === 'Equal') return `(abs((${L}) - (${R})) < 1e-6)`;
+        if (op === 'NotEqual') return `(abs((${L}) - (${R})) >= 1e-6)`;
+        return `((${this.astToGLSL(node, scope, usedUniforms)}) != 0.0)`;
     }
 
     private getOrCreateProgram(ast: any, operator: string, scope: Record<string, number>): WebGLProgram | null {
@@ -237,6 +271,12 @@ export class GLRenderer {
             ${uniformDecls}
             varying vec2 v_uv;
 
+            bool g_domainInvalid = false;
+            float motor_invalid() {
+                g_domainInvalid = true;
+                return 0.0;
+            }
+
             float motor_pow(float b, float e) {
                 if (b == 0.0) return (e == 0.0 ? 1.0 : 0.0);
                 float re = floor(e + 0.5);
@@ -246,7 +286,8 @@ export class GLRenderer {
                     float res = isOdd ? (b < 0.0 ? -p : p) : p;
                     return re < 0.0 ? (1.0 / max(1e-9, res)) : res;
                 }
-                return b < 0.0 ? -1e9 : pow(max(0.0, b), e);
+                if (b < 0.0) return motor_invalid();
+                return pow(max(0.0, b), e);
             }
 
             float evalF(float x, float y) {
@@ -254,9 +295,11 @@ export class GLRenderer {
             }
 
             void main() {
+                g_domainInvalid = false;
                 float x = mix(u_bounds.x, u_bounds.y, v_uv.x);
                 float y = mix(u_bounds.z, u_bounds.w, v_uv.y);
                 float val = evalF(x, y);
+                if (g_domainInvalid) discard;
                 ${conditionCode}
             }
         `;

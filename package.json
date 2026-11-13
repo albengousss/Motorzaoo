@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "node tests/desmos-parity/08-hud-and-ui-e2e.pw.mjs"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.0",

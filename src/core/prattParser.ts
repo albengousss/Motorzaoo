@@ -78,6 +78,45 @@ export class PrattParser {
             return expr;
         }
 
+        if (token.type === TokenTypes.BRACE_LEFT) {
+            if (this.lookahead && this.lookahead.type === TokenTypes.BRACE_RIGHT) {
+                this.eat(TokenTypes.BRACE_RIGHT);
+                return ["Piecewise"];
+            }
+            const clauses: Array<{ cond: any; val: any; hasColon: boolean }> = [];
+            while (true) {
+                const first = this.parseExpression(0);
+                if (this.lookahead && this.lookahead.type === TokenTypes.COLON) {
+                    this.eat(TokenTypes.COLON);
+                    const val = this.parseExpression(0);
+                    clauses.push({ cond: first, val, hasColon: true });
+                } else {
+                    clauses.push({ cond: first, val: null, hasColon: false });
+                }
+                if (this.lookahead && this.lookahead.type === TokenTypes.COMMA) {
+                    this.eat(TokenTypes.COMMA);
+                    continue;
+                }
+                break;
+            }
+            this.eat(TokenTypes.BRACE_RIGHT);
+            const condOps = new Set(['LessThan', 'GreaterThan', 'LessEqual', 'GreaterEqual', 'Equal', 'NotEqual', 'And', 'Or']);
+            const branches: Array<[any, any]> = [];
+            for (let i = 0; i < clauses.length; i++) {
+                const c = clauses[i];
+                if (c.hasColon) {
+                    branches.push([c.cond, c.val]);
+                } else if (Array.isArray(c.cond) && condOps.has(c.cond[0])) {
+                    branches.push([c.cond, 1]);
+                } else if (i === clauses.length - 1) {
+                    branches.push([null, c.cond]);
+                } else {
+                    branches.push([c.cond, 1]);
+                }
+            }
+            return ["Piecewise", ...branches];
+        }
+
         if (token.type === TokenTypes.ELLIPSIS) {
             const end = this.parseExpression(0);
             return ["Slice", 1, end];
@@ -323,11 +362,11 @@ export class PrattParser {
             if (name === 'arcsec') name = 'asec';
             if (name === 'arccsc' || name === 'arccossec') name = 'acsc';
             if (name === 'arccot' || name === 'arccotan') name = 'acot';
-            if (name === 'arcsinh') name = 'asinh';
-            if (name === 'arccosh') name = 'acosh';
-            if (name === 'arctanh') name = 'atanh';
+            if (name === 'arcsinh' || name === 'arsinh') name = 'asinh';
+            if (name === 'arccosh' || name === 'arcosh') name = 'acosh';
+            if (name === 'arctanh' || name === 'artanh') name = 'atanh';
 
-            const unaryMathFuncs = ['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'asin', 'acos', 'atan', 'asec', 'acsc', 'acot', 'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh', 'log', 'ln', 'exp', 'sqrt', 'cbrt', 'abs'];
+            const unaryMathFuncs = ['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'asin', 'acos', 'atan', 'asec', 'acsc', 'acot', 'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh', 'log', 'ln', 'exp', 'sqrt', 'cbrt', 'abs', 'erf'];
 
             if (this.lookahead && this.lookahead.type === TokenTypes.PARENTHESIS_LEFT) {
                 this.eat(TokenTypes.PARENTHESIS_LEFT);
@@ -347,17 +386,8 @@ export class PrattParser {
                     }
                     return ['Log', args[0]];
                 }
-                if (name === 'log') {
-                    if (args.length === 2) {
-                        return ['Log', args[0], args[1]];
-                    }
-                    return ['Log', args[0]];
-                }
-                if (name === 'log') {
-                    if (args.length === 2) {
-                        return ['Log', args[0], args[1]];
-                    }
-                    return ['Log', args[0]];
+                if (name === 'atan' && args.length >= 2) {
+                    return ['Atan', args[0], args[1]];
                 }
                 if (unaryMathFuncs.includes(name)) {
                     return [name.charAt(0).toUpperCase() + name.slice(1), args[0]];
@@ -497,10 +527,14 @@ export class PrattParser {
 
             const right = this.parseExpression(8);
 
-            // Comparações encadeadas: ex: -inf < L < inf ou 0 <= x <= 5
+            // Comparações encadeadas: ex: -inf < L < inf, -6 < x <= -5, 1 < x < y < 5
             const relOps = new Set(['LessThan', 'GreaterThan', 'LessEqual', 'GreaterEqual', 'Equal', 'NotEqual']);
             if (Array.isArray(left) && relOps.has(left[0])) {
                 const middle = left[2];
+                return ["And", left, [op, middle, right]];
+            }
+            if (Array.isArray(left) && left[0] === 'And' && Array.isArray(left[2]) && relOps.has(left[2][0])) {
+                const middle = left[2][2];
                 return ["And", left, [op, middle, right]];
             }
 
@@ -550,6 +584,27 @@ export class PrattParser {
             return ["Comprehension", left, bindings];
         }
 
+        if (token.type === TokenTypes.WITH) {
+            const bindings: Array<[string, any]> = [];
+            while (true) {
+                const varToken = this.lookahead;
+                if (!varToken || (varToken.type !== TokenTypes.IDENTIFIER && varToken.type !== TokenTypes.VAR)) {
+                    throw new SyntaxError(`Esperado identificador de variável após "with".`);
+                }
+                const varName = varToken.value.replace(/[\{\}\\]/g, '');
+                this.eat(varToken.type);
+                this.eat(TokenTypes.ASSIGNMENT);
+                const valExpr = this.parseExpression(2);
+                bindings.push([varName, valExpr]);
+                if (this.lookahead && this.lookahead.type === TokenTypes.COMMA) {
+                    this.eat(TokenTypes.COMMA);
+                } else {
+                    break;
+                }
+            }
+            return ["With", left, bindings];
+        }
+
         throw new SyntaxError(`Infixo desconhecido para: ${token.value}`);
     }
 
@@ -565,7 +620,7 @@ export class PrattParser {
             type === TokenTypes.NOT_EQUAL) return 8;
         if (type === TokenTypes.AND) return 4;
         if (type === TokenTypes.OR) return 3;
-        if (type === TokenTypes.FOR) return 2;
+        if (type === TokenTypes.FOR || type === TokenTypes.WITH) return 2;
         return 0;
     }
 }

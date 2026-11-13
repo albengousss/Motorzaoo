@@ -4,6 +4,7 @@ import { MathEngine } from '../src/core/mathEngine';
 import { MatrixEngine } from '../src/core/matrixEngine';
 import { PointEngine, type Point } from '../src/core/pointEngine';
 import { StateManager } from '../src/core/stateManager';
+import { DesmosSemanticError } from '../src/core/policy';
 
 describe('Fase 3: Álgebra Matricial Estilo Desmos & Vetores de Ponto', () => {
 
@@ -325,10 +326,20 @@ describe('Fase 3: Álgebra Matricial Estilo Desmos & Vetores de Ponto', () => {
             ]);
         });
 
-        it('aplica limite de segurança MAX_ROWS e MAX_COLS (32x32)', () => {
-            const ast = new PrattParser('[r + c for r = 1...50; c = 1...50]').parseExpression();
-            const mat = MathEngine.evaluateAST(ast);
-            expect(MatrixEngine.getDimensions(mat)).toEqual({ rows: 32, cols: 32 });
+        it('permite até 32x32 e lança DesmosSemanticError explícito ao exceder MAX_ROWS ou MAX_COLS', () => {
+            const exactMax = MathEngine.evaluateAST(new PrattParser('[r + c for r = 1...32; c = 1...32]').parseExpression());
+            expect(MatrixEngine.getDimensions(exactMax)).toEqual({ rows: 32, cols: 32 });
+
+            const tooManyColsAst = new PrattParser('[r + c for r = 1...32; c = 1...33]').parseExpression();
+            expect(() => MathEngine.evaluateAST(tooManyColsAst)).toThrowError(DesmosSemanticError);
+            expect(() => MathEngine.evaluateAST(tooManyColsAst)).toThrow('32 colunas');
+
+            const tooManyRowsAst = new PrattParser('[r + c for r = 1...33; c = 1...32]').parseExpression();
+            expect(() => MathEngine.evaluateAST(tooManyRowsAst)).toThrowError(DesmosSemanticError);
+            expect(() => MathEngine.evaluateAST(tooManyRowsAst)).toThrow('32 linhas');
+
+            const over50Ast = new PrattParser('[r + c for r = 1...50; c = 1...50]').parseExpression();
+            expect(() => MathEngine.evaluateAST(over50Ast)).toThrowError(DesmosSemanticError);
         });
     });
 
@@ -376,9 +387,8 @@ describe('Fase 3: Álgebra Matricial Estilo Desmos & Vetores de Ponto', () => {
             expect(PointEngine.dot(P3D_1, P3D_2)).toBe(32);
         });
 
-        it('produto vetorial (cross product): 2D escalar e 3D vetor', () => {
-            // 2D: determinante escalar 1*4 - 2*3 = 4 - 6 = -2
-            expect(PointEngine.cross(P1, P2)).toBe(-2);
+        it('produto vetorial (cross product): erro semântico em 2D e vetor em 3D', () => {
+            expect(() => PointEngine.cross(P1, P2)).toThrowError(DesmosSemanticError);
 
             // 3D: vetor
             // x = 2*6 - 3*5 = 12 - 15 = -3
@@ -577,9 +587,9 @@ describe('Fase 3: Álgebra Matricial Estilo Desmos & Vetores de Ponto', () => {
             expect(MathEngine.evaluateAST(new PrattParser('inv(M)').parseExpression())).toEqual([[0.5, 0], [0, 0.2]]);
         });
 
-        it('dot(p1, p2), cross(p1, p2), pointperp(p1), distance(p1, p2)', () => {
+        it('dot(p1, p2), cross(p1, p2) erro 2D, pointperp(p1), distance(p1, p2)', () => {
             expect(MathEngine.evaluateAST(new PrattParser('dot(p1, p2)').parseExpression())).toBe(0);
-            expect(MathEngine.evaluateAST(new PrattParser('cross(p1, p2)').parseExpression())).toBe(1);
+            expect(() => MathEngine.evaluateAST(new PrattParser('cross(p1, p2)').parseExpression())).toThrowError(DesmosSemanticError);
             expect(MathEngine.evaluateAST(new PrattParser('pointperp(p1)').parseExpression())).toEqual({ x: 0, y: 1 });
             expect(MathEngine.evaluateAST(new PrattParser('distance(p1, p2)').parseExpression())).toBeCloseTo(Math.SQRT2);
         });
